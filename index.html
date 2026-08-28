@@ -197,6 +197,10 @@ details .body b{color:var(--txt)} details .body .k{color:var(--gold);font-weight
   #log{height:48px;min-height:48px}
   .act{min-height:48px} .act.wide{min-height:44px}
   .btn.big{padding:16px 12px;font-size:19px}
+  .btn.ghost{padding:10px;font-size:14px}
+  .card{padding:10px 12px;gap:6px}
+  .res{padding:5px 0}
+  #panel{gap:5px}
   h1{font-size:24px} h2{font-size:17px}
 }
 @media (prefers-reduced-motion:reduce){
@@ -1610,7 +1614,8 @@ function screenReveal(){
   return '<h2>РАУНД ' + lastRec.round + ' — ВСКРЫТИЕ</h2>' +
     '<div class="card">' + resRow(0, lastRec, true) + resRow(1, lastRec, true) + '</div>' +
     '<button class="btn gold big" data-go="' + (isOver() ? 'over' : 'next') + '">' +
-    (isOver() ? 'ИТОГ БОЯ →' : 'СЛЕДУЮЩИЙ РАУНД →') + '</button>';
+    (isOver() ? 'ИТОГ БОЯ →' : 'СЛЕДУЮЩИЙ РАУНД →') + '</button>' +
+    '<button class="btn ghost" data-go="rewatch">↺ ПЕРЕСМОТРЕТЬ РАУНД</button>';
 }
 
 function verdict(){
@@ -1691,6 +1696,37 @@ function runRound(rec, done){
   playRound(rec, done);
 }
 
+/* Пересмотр только что показанного раунда прямо на экране вскрытия —
+   без изменения счёта боя. Расчёт урона в applyImpact() полностью
+   читается из rec (уже сохранённой записи), поэтому один и тот же
+   раунд безопасно проигрывать заново сколько угодно раз: F[] это боевое
+   состояние не трогает. Устроено как облегчённая версия replayNext() —
+   тот же снос бойцов к состоянию «до раунда» и проигрыш той же записи. */
+function rewatchRound(){
+  if(animating || !lastRec) return;
+  var rec = lastRec, i;
+  revealDone = false; render();
+  for(i = 0; i < 2; i++){
+    B[i].charge = rec.before.pending[i];
+    B[i].down = false;
+    B[i].tired = rec.before.fat[i] > TIRED_AT;
+    disp[i].hp = rec.before.hp[i]; disp[i].fat = rec.before.fat[i];
+  }
+  for(i = 0; i < 14; i++){ driveIdle(); settle(1 / 60); }
+  ragResetAll();
+  paintHud(false);
+  clearTimeout(openT);
+  openT = setTimeout(function(){
+    runRound(rec, function(){
+      for(var j = 0; j < 2; j++){                    // возвращаем настоящее состояние боя
+        B[j].down = !!F[j].ko; B[j].charge = F[j].pending; B[j].tired = F[j].fat > TIRED_AT;
+      }
+      syncDisp();
+      revealDone = true; render();
+    });
+  }, RM ? 0 : 320);
+}
+
 /* --- повтор боя --- */
 function replayStart(){
   clearTimeout(rpTimer); paused = false;
@@ -1747,6 +1783,7 @@ P.addEventListener('click', function(ev){
   else if(go === 'done'){ nextChooser(active + 1); }
   else if(go === 'next'){ round++; startRound(); }
   else if(go === 'over'){ phase = 'over'; render(); }
+  else if(go === 'rewatch'){ rewatchRound(); }
   else if(go === 'restart'){ replayStop(); newFight(); resetRing(); phase = 'start'; render(); }
   else if(go === 'replay'){ replayStart(); }
   else if(go === 'rpPause'){ paused = !paused; render(); }
