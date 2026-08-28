@@ -302,7 +302,8 @@ var ACT = {
   crossLand:{id:'crossLand',kind:'attack', name:'Кросс',        em:'💥', dmg:50, fat:6,   level:false, hint:''}
 };
 
-var F, round, phase, active, choices, pendLevel, lastRec, revealDone, bouts;
+var F, round, phase, active, choices, pendLevel, lastRec, revealDone, bouts, eyesDone;
+var EYES_HP = 25;                   // ниже этого начинается «решающий» размен
 var disp = [{hp:MAX_HP,fat:0},{hp:MAX_HP,fat:0}];
 
 function newFight(){
@@ -311,7 +312,7 @@ function newFight(){
     {i:1, name:'КРАСНЫЙ', cls:'r', ico:'🔴', hp:MAX_HP, fat:0, pending:false, ko:false}
   ];
   round = 1; choices = [null,null]; pendLevel = null; lastRec = null; revealDone = false;
-  bouts = [];
+  bouts = []; eyesDone = false;
   syncDisp();
   document.getElementById('log').innerHTML = '<div class="empty">Бой ещё не начался.</div>';
 }
@@ -390,6 +391,13 @@ function resolveRound(){
   lastRec = {round:round, choices:[choices[0], choices[1]], out:out, tired:tired,
              before:before, hp:[F[0].hp,F[1].hp], fat:[F[0].fat,F[1].fat],
              ko:[F[0].ko, F[1].ko]};
+  /* Сплит «глаза в глаза»: перед первым разменом и один раз перед решающим.
+     Признак живёт в самой записи — пересмотр раунда и повтор боя показывают
+     его там же и ровно столько же раз, сколько живой бой. */
+  if(round === 1) lastRec.eyes = 'gong';
+  else if(!eyesDone && Math.min(before.hp[0], before.hp[1]) <= EYES_HP){
+    lastRec.eyes = 'decisive'; eyesDone = true;
+  }
   bouts.push(lastRec);
   pushLog(lastRec);
 }
@@ -666,6 +674,9 @@ function applyImpact(rec){
       var k = o.dmg / 50;                            // сила удара 0..1
       heavy = Math.max(heavy, k);
       var mode = heavyMode(rec, i);
+      if(c.id === 'crossLand' && o.mult === 1) cutArm('cross', {i:i, j:j, dir:f, lvl:lvl, round:rec.round});
+      else if(c.id === 'uppercut' && rec.choices[j].id === 'slip')
+        cutArm('upper', {i:i, j:j, dir:f, lvl:lvl, round:rec.round});
       if(mode && ragHit(d, mode, c.id, lvl, f)){
         rag = true;
         seqExtend(mode === 'down' ? 2600 : 1700);
@@ -702,6 +713,10 @@ function applyImpact(rec){
       if(k >= .6) whiten();
     } else {
       var dd = rec.choices[j] ? rec.choices[j].id : null;
+      /* защитник угадал — это тоже момент для врезки, и самый частый из них */
+      if(dd === 'block' || dd === 'slip' || dd === 'step')
+        cutArm(dd === 'block' ? 'guard' : (dd === 'slip' ? 'slip' : 'step'),
+               {i:i, j:j, dir:f, lvl:lvl, round:rec.round});
       if(dd === 'block'){
         sndBlock();
         d.hx.v += f * 26; d.hand[0].x.v += f * 55; d.hand[1].x.v += f * 42;
@@ -709,9 +724,14 @@ function applyImpact(rec){
         burst(hp.x, hp.y, 8, .25, '#cfe6ff');
         freeze += 45; shake = Math.max(shake, 1.8);
       }
-      popAt(d.J.head.x, d.J.head.y - 22,
-            dd === 'step' ? 'МИМО' : (dd === 'slip' ? 'НЫРОК!' : 'БЛОК!'), 'good');
+      if(!cutQ)                                   // если про это будет панель, надпись лишняя
+        popAt(d.J.head.x, d.J.head.y - 22,
+              dd === 'step' ? 'МИМО' : (dd === 'slip' ? 'НЫРОК!' : 'БЛОК!'), 'good');
     }
+  }
+  if(cutQ){                       // панель держит сцену, чтобы размен не оборвался на ней
+    seqExtend(CUT[cutQ.id].dur + 260);
+    cutFlush();
   }
   return heavy;
 }
@@ -1202,7 +1222,8 @@ function drawStage(){
   drawCaption();
   if(dark > .002){ cx.fillStyle = 'rgba(4,6,10,' + dark.toFixed(3) + ')'; cx.fillRect(0, 0, VW, VH); }
   if(flashA > 0){ cx.fillStyle = 'rgba(255,255,255,' + flashA + ')'; cx.fillRect(0, 0, VW, VH); }
-  drawKoCard();
+  drawCut();                                         // врезка ложится поверх сцены,
+  drawKoCard();                                      // но «НОКАУТ» остаётся читаемым
 }
 
 /* шлейф падающего тела: несколько прошлых поз с затуханием */
@@ -1318,6 +1339,583 @@ function drawArena(){
 function whiten(){ if(!RM) flashA = 0.24; }
 
 /* =========================================================================
+   4b. АНИМЕ-ВРЕЗКИ
+   Панели в духе манхвы поверх сцены. Рисуются кодом на том же холсте, но в
+   экранных пикселях (0..VW / 0..VH) — камера ринга на них не влияет.
+   Каждая запись реестра CUT — отдельный кадр со своей длительностью, форматом
+   и рисовалкой. Рисовалка получает прогресс e (0..1) и обязана двигаться всё
+   это время: статичных панелей в игре нет.
+   Шов под замену: положив в img готовую картинку (data-URI — файл остаётся
+   одним), получаем ту же панель с тем же влётом, дрейфом и линиями поверх,
+   и ни одной правки в местах вызова.
+   ========================================================================= */
+var cut = null, cutQ = null;
+var CUT = {
+  eyes:  {dur:1250, prio:5, full:true,  img:null, draw:cutEyes},
+  ko:    {dur:1450, prio:4, full:true,  img:null, draw:cutKo},
+  cross: {dur: 950, prio:3, full:true,  img:null, draw:cutCross},
+  upper: {dur: 950, prio:3, full:true,  img:null, draw:cutUpper},
+  guard: {dur: 780, prio:1, full:false, img:null, draw:cutGuard},
+  slip:  {dur: 780, prio:1, full:false, img:null, draw:cutSlip},
+  step:  {dur: 780, prio:1, full:false, img:null, draw:cutStep}
+};
+
+/* В одном размене могут сработать оба бойца — копим кандидатов и показываем
+   одну панель, самую крупную по смыслу. */
+function cutArm(id, data){
+  if(!CUT[id]) return;
+  if(cutQ && CUT[cutQ.id].prio >= CUT[id].prio) return;
+  data = data || {}; data.id = id; cutQ = data;
+}
+function cutFlush(){
+  if(!cutQ) return;
+  var q = cutQ; cutQ = null;
+  cutStart(q.id, q);
+}
+function cutStart(id, data){
+  var d = CUT[id]; if(!d) return;
+  cut = data || {};
+  cut.id = id; cut.dur = d.dur; cut.t = d.dur;
+  if(cut.i == null) cut.i = 0;
+  if(cut.j == null) cut.j = 1 - cut.i;
+  if(cut.dir == null) cut.dir = B[cut.i] ? B[cut.i].face : 1;
+  if(cut.round == null) cut.round = seq ? seq.rec.round : 1;
+  cut.seed = ((cut.round * 7919 + cut.i * 104729 + id.length * 613) >>> 0) % 997;
+  if(cut.hold) animating = true;
+  sndCut(id);
+}
+/* панель досмотрена или прервана тапом; then() — то, что она задерживала */
+function cutSkip(){
+  if(!cut) return false;
+  var th = cut.then; cut = null;
+  if(th) th();
+  return true;
+}
+
+/* --- общие примитивы аниме-кадра ------------------------------------- */
+function cutA(hex, a){
+  var n = parseInt(hex.slice(1), 16);
+  return 'rgba(' + (n >> 16 & 255) + ',' + (n >> 8 & 255) + ',' + (n & 255) + ',' + a + ')';
+}
+/* радиальные скоростные линии; ph гонит их наружу, поэтому кадр всегда живой */
+function cutSpeed(W, H, ox, oy, n, col, ph, near, far){
+  cx.save(); cx.strokeStyle = col; cx.lineCap = 'round';
+  for(var i = 0; i < n; i++){
+    var a = i / n * 6.284 + (i % 3) * .09;
+    var run = ((ph + i * .137) % 1);
+    var r0 = near * (.5 + ((i * 37) % 100) / 150) + run * far * .55;
+    var r1 = r0 + far * (.35 + ((i * 53) % 100) / 190);
+    cx.globalAlpha = (.08 + ((i * 17) % 8) / 26) * (1 - run * .55);
+    cx.lineWidth = 1 + ((i * 29) % 5) * .85;
+    cx.beginPath();
+    cx.moveTo(ox + Math.cos(a) * r0, oy + Math.sin(a) * r0);
+    cx.lineTo(ox + Math.cos(a) * r1, oy + Math.sin(a) * r1);
+    cx.stroke();
+  }
+  cx.restore();
+}
+/* полутоновый растр: плитка в паттерне, чтобы не рисовать тысячу дуг за кадр */
+var tonePat = {};
+function cutTone(W, H, col, ph, alpha, step){
+  var key = col + '|' + step;
+  if(!tonePat[key]){
+    var c = document.createElement('canvas');
+    c.width = step; c.height = step;
+    var g = c.getContext('2d');
+    g.fillStyle = col;
+    g.beginPath(); g.arc(step * .5, step * .5, step * .23, 0, 6.284); g.fill();
+    tonePat[key] = cx.createPattern(c, 'repeat');
+  }
+  if(RM) ph = 0;                        // «меньше движения»: растр не мерцает
+  cx.save();
+  cx.globalAlpha = alpha;
+  cx.fillStyle = tonePat[key];
+  cx.translate((ph * 23) % step, (ph * 13) % step);
+  cx.fillRect(-step * 2, -step * 2, W + step * 4, H + step * 4);
+  cx.restore();
+}
+function cutStar(x, y, R, spikes, col){
+  cx.save(); cx.translate(x, y); cx.beginPath();
+  for(var i = 0; i < spikes * 2; i++){
+    var a = i / (spikes * 2) * 6.284 - 1.57;
+    var r = (i % 2 ? R * .38 : R) * (1 + ((i * 31) % 10) / 55);
+    if(i === 0) cx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+    else cx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+  }
+  cx.closePath();
+  cx.fillStyle = col; cx.fill();
+  cx.lineJoin = 'round'; cx.lineWidth = Math.max(2, R * .06); cx.strokeStyle = INK; cx.stroke();
+  cx.restore();
+}
+function cutWord(txt, x, y, size, col, rot, k, maxW){
+  if(k <= 0) return;
+  cx.save();
+  cx.font = '700 ' + Math.round(size) + 'px ' + DISPF;
+  if(maxW){                                   // длинное слово ужимаем, а не режем краем
+    var w = cx.measureText(txt).width * k;
+    if(w > maxW) size *= maxW / w;
+    x = Math.min(Math.max(x, maxW * .5 + 4), VW - maxW * .5 - 4);
+  }
+  cx.translate(x, y); cx.rotate(rot || 0); cx.scale(k, k);
+  cx.textAlign = 'center'; cx.textBaseline = 'middle';
+  cx.font = '700 ' + Math.round(size) + 'px ' + DISPF;
+  cx.lineJoin = 'round';
+  cx.lineWidth = Math.max(5, size * .26); cx.strokeStyle = INK; cx.strokeText(txt, 0, 0);
+  cx.lineWidth = Math.max(2, size * .10); cx.strokeStyle = '#fff'; cx.strokeText(txt, 0, 0);
+  cx.fillStyle = col; cx.fillText(txt, 0, 0);
+  cx.restore();
+}
+/* перчатка: та же пара цветов, что у бойца на ринге */
+function cutGlove(x, y, r, side, rot){
+  var s = SKIN[side];
+  cx.save(); cx.translate(x, y); cx.rotate(rot || 0);
+  cx.strokeStyle = INK; cx.lineWidth = Math.max(2, r * .14); cx.lineJoin = 'round';
+  var g = cx.createRadialGradient(-r * .3, -r * .4, r * .1, 0, 0, r * 1.25);
+  g.addColorStop(0, s.glove); g.addColorStop(1, s.gloveD);
+  cx.fillStyle = g;
+  cx.beginPath();
+  cx.moveTo(-r * .72, r * .58);
+  cx.quadraticCurveTo(-r * 1.06, -r * .3, -r * .22, -r * .95);
+  cx.quadraticCurveTo(r * .78, -r * 1.02, r * .96, -r * .06);
+  cx.quadraticCurveTo(r * 1.04, r * .66, r * .22, r * .8);
+  cx.closePath(); cx.fill(); cx.stroke();
+  cx.beginPath(); cx.ellipse(-r * .52, r * .12, r * .3, r * .44, -.42, 0, 6.284);
+  cx.fill(); cx.stroke();
+  cx.fillStyle = shadeHex(s.trunk, 1.9);
+  cx.beginPath(); cx.moveTo(-r * .78, r * .56); cx.lineTo(r * .5, r * .68);
+  cx.lineTo(r * .42, r * 1.08); cx.lineTo(-r * .82, r * .96); cx.closePath();
+  cx.fill(); cx.stroke();
+  cx.restore();
+}
+/* аниме-глаз: миндалевидная склера, радужка цвета бойца, блик, зрачок */
+function cutEye(ex, ey, ew, eh, sq, look, glint, s, lw){
+  cx.beginPath();                                        // разрез глаза: верхнее и нижнее веко
+  cx.moveTo(ex - ew * .5, ey + eh * .05);
+  cx.quadraticCurveTo(ex - ew * .14, ey - eh * 1.62, ex + ew * .5, ey - eh * .28);
+  cx.quadraticCurveTo(ex + ew * .04, ey + eh * 1.3, ex - ew * .5, ey + eh * .05);
+  cx.closePath();
+  cx.fillStyle = '#f4f8ff'; cx.fill();
+  cx.save(); cx.clip();
+  var px = ex + ew * .1 + look * ew * .14, py = ey - eh * .06;
+  cx.fillStyle = shadeHex(s.bodyD, 1.35);
+  cx.beginPath(); cx.arc(px, py, eh * .6, 0, 6.284); cx.fill();
+  cx.fillStyle = '#070a11';
+  cx.beginPath(); cx.arc(px, py, eh * .29 * (1 - .35 * sq), 0, 6.284); cx.fill();
+  cx.fillStyle = 'rgba(255,255,255,.95)';
+  cx.beginPath(); cx.arc(px - eh * .24, py - eh * .3, eh * .17, 0, 6.284); cx.fill();
+  cx.fillStyle = 'rgba(255,255,255,.5)';
+  cx.beginPath(); cx.arc(px + eh * .24, py + eh * .26, eh * .09, 0, 6.284); cx.fill();
+  if(glint != null){                                     // блик проезжает по глазу
+    cx.globalAlpha = .55; cx.fillStyle = '#fff';
+    cx.fillRect(ex - ew * .5 + glint * ew, ey - eh * 2, ew * .1, eh * 4);
+    cx.globalAlpha = 1;
+  }
+  cx.fillStyle = 'rgba(9,12,20,.5)';                     // тень от верхнего века
+  cx.beginPath();
+  cx.moveTo(ex - ew * .6, ey - eh * .5);
+  cx.quadraticCurveTo(ex - ew * .14, ey - eh * 1.62, ex + ew * .6, ey - eh * .5);
+  cx.lineTo(ex + ew * .6, ey - eh * 2); cx.lineTo(ex - ew * .6, ey - eh * 2);
+  cx.closePath(); cx.fill();
+  cx.restore();
+  cx.strokeStyle = INK; cx.lineWidth = lw; cx.lineJoin = 'round'; cx.stroke();
+  cx.lineWidth = lw * 1.7; cx.lineCap = 'round';         // тяжёлая линия верхнего века
+  cx.beginPath();
+  cx.moveTo(ex - ew * .48, ey + eh * .02);
+  cx.quadraticCurveTo(ex - ew * .14, ey - eh * 1.62, ex + ew * .48, ey - eh * .29);
+  cx.stroke();
+}
+/* круглый боец крупным планом: тот же силуэт, но с аниме-мимикой */
+function cutHead(x, y, R, side, o){
+  o = o || {};
+  var s = SKIN[side], f = o.face == null ? 1 : o.face, sq = o.squint || 0, mo = o.open || 0;
+  var lw = Math.max(2, R * .095), look = o.look || 0;
+  cx.save();
+  cx.translate(x, y); cx.rotate(o.tilt || 0); cx.scale(f, 1);
+  cx.lineJoin = 'round'; cx.lineCap = 'round';
+  var g = cx.createRadialGradient(-R * .3, -R * .36, R * .12, 0, 0, R * 1.2);
+  g.addColorStop(0, shadeHex(s.body, 1.12)); g.addColorStop(1, shadeHex(s.bodyD, .92));
+  cx.fillStyle = g; cx.strokeStyle = INK; cx.lineWidth = lw;
+  cx.beginPath(); cx.arc(0, 0, R, 0, 6.284); cx.fill(); cx.stroke();
+
+  cx.save();                                             // шлем — козырёк, не полголовы
+  cx.beginPath(); cx.arc(0, 0, R, 0, 6.284); cx.clip();
+  cx.fillStyle = s.dark;
+  cx.beginPath();
+  cx.moveTo(-R * 1.2, -R * .36);
+  cx.quadraticCurveTo(0, -R * .68, R * 1.2, -R * .42);
+  cx.lineTo(R * 1.2, -R * 1.3); cx.lineTo(-R * 1.2, -R * 1.3); cx.closePath();
+  cx.fill();
+  cx.restore();
+  cx.lineWidth = lw * .8;
+  cx.beginPath();
+  cx.moveTo(-R * .95, -R * .32);
+  cx.quadraticCurveTo(0, -R * .67, R * .92, -R * .38);
+  cx.stroke();
+
+  cutEye(R * .36, R * .12, R * .46, R * .28 * (1 - .55 * sq), sq, look, o.glint, s, lw * .58);
+  cutEye(-R * .32, R * .16, R * .32, R * .21 * (1 - .55 * sq), sq, look, null, s, lw * .5);
+  cx.lineCap = 'round'; cx.lineWidth = lw * .78;         // злые брови: внутренний край ниже
+  cx.strokeStyle = INK;
+  cx.beginPath();
+  cx.moveTo(R * .12, -R * .26); cx.lineTo(R * .64, -R * .44); cx.stroke();
+  cx.beginPath();
+  cx.moveTo(-R * .5, -R * .34); cx.lineTo(-R * .16, -R * .2); cx.stroke();
+
+  cx.fillStyle = '#20090f'; cx.lineWidth = lw * .55;     // рот
+  cx.beginPath();
+  cx.ellipse(R * .12, R * .55, R * .15 + R * .05 * mo, R * .045 + R * .17 * mo, .06, 0, 6.284);
+  cx.fill();
+  if(mo > .3){
+    cx.save(); cx.clip();
+    cx.fillStyle = '#fff';
+    cx.fillRect(-R * .1, R * .55 - (R * .045 + R * .17 * mo), R * .45, R * .06 + R * .04 * mo);
+    cx.restore();
+  }
+  cx.stroke();
+  if(o.sweat){
+    cx.fillStyle = 'rgba(200,232,255,.9)'; cx.strokeStyle = 'rgba(120,170,220,.9)';
+    cx.lineWidth = lw * .35;
+    cx.beginPath(); cx.ellipse(-R * .62, -R * .5, R * .08, R * .13, .35, 0, 6.284);
+    cx.fill(); cx.stroke();
+  }
+  cx.restore();
+}
+/* сверхкрупный план глаза для сплит-экрана «взгляд в взгляд» */
+function cutBigEye(x, y, w, side, sq, glint){
+  var s = SKIN[side], h = w * .42 * (1 - .38 * sq);
+  cx.save();
+  cx.translate(x, y);
+  cx.lineJoin = 'round'; cx.lineCap = 'round';
+  cutEye(0, 0, w, h, sq, .55, glint, s, Math.max(3, w * .045));
+  cx.strokeStyle = INK; cx.lineCap = 'round';
+  cx.lineWidth = w * .11;                                // бровь тяжёлым мазком
+  cx.beginPath();
+  cx.moveTo(-w * .52, -h * 1.5); cx.lineTo(w * .5, -h * 2.15 - w * .04); cx.stroke();
+  cx.lineWidth = w * .045;                               // складка века
+  cx.beginPath();
+  cx.moveTo(-w * .42, -h * .95); cx.quadraticCurveTo(0, -h * 1.5, w * .42, -h * 1.05); cx.stroke();
+  cx.restore();
+}
+/* силуэт бойца для нокаут-панели: те же круглые пропорции, что на ринге */
+function cutBodySil(x, y, R, rot, col, win){
+  cx.save(); cx.translate(x, y); cx.rotate(rot);
+  cx.strokeStyle = col; cx.fillStyle = col; cx.lineCap = 'round'; cx.lineJoin = 'round';
+  cx.lineWidth = R * .95;
+  cx.beginPath(); cx.moveTo(0, R * .6); cx.lineTo(0, R * 1.5); cx.stroke();
+  cx.lineWidth = R * .42;
+  cx.beginPath(); cx.moveTo(-R * .15, R * 1.5); cx.lineTo(-R * .7, R * 2.5); cx.stroke();
+  cx.beginPath(); cx.moveTo(R * .15, R * 1.5); cx.lineTo(R * .85, R * 2.35); cx.stroke();
+  cx.lineWidth = R * .36;
+  if(win){                                           // победитель вскинул перчатку
+    cx.beginPath(); cx.moveTo(-R * .3, R * .8); cx.lineTo(-R * 1.0, -R * .5); cx.stroke();
+    cx.beginPath(); cx.arc(-R * 1.05, -R * .62, R * .4, 0, 6.284); cx.fill();
+    cx.beginPath(); cx.moveTo(R * .3, R * .85); cx.lineTo(R * .9, R * 1.35); cx.stroke();
+    cx.beginPath(); cx.arc(R * .95, R * 1.42, R * .4, 0, 6.284); cx.fill();
+  } else {
+    cx.beginPath(); cx.moveTo(-R * .3, R * .85); cx.lineTo(-R * 1.15, R * .3); cx.stroke();
+    cx.beginPath(); cx.arc(-R * 1.2, R * .22, R * .38, 0, 6.284); cx.fill();
+    cx.beginPath(); cx.moveTo(R * .3, R * .95); cx.lineTo(R * 1.0, R * 1.6); cx.stroke();
+    cx.beginPath(); cx.arc(R * 1.05, R * 1.68, R * .38, 0, 6.284); cx.fill();
+  }
+  cx.beginPath(); cx.arc(0, -R * .3, R * .85, 0, 6.284); cx.fill();
+  cx.restore();
+}
+
+/* --- сами панели ------------------------------------------------------ */
+
+/* Сплит-экран: соперники встречаются взглядом. Половины влетают навстречу,
+   зрачки сужаются, по глазу проезжает блик, по разрезу бежит искра. */
+function cutEyes(e, c, W, H){
+  var slide = e < .22 ? 1 - e / .22 : 0, sq = Math.min(1, Math.max(0, (e - .2) / .5));
+  var skew = W * .13;
+  for(var k = 0; k < 2; k++){
+    var s = SKIN[k], off = (k ? 1 : -1) * slide * W * .6;
+    cx.save();
+    cx.beginPath();
+    if(k === 0){ cx.moveTo(0, 0); cx.lineTo(W * .52 + skew, 0); cx.lineTo(W * .52 - skew, H); cx.lineTo(0, H); }
+    else { cx.moveTo(W * .55 + skew, 0); cx.lineTo(W, 0); cx.lineTo(W, H); cx.lineTo(W * .55 - skew, H); }
+    cx.closePath(); cx.clip();
+    cx.translate(off, 0);
+    var ox = W * (k ? .74 : .26), oy = H * (.46 - .03 * k);
+    var g = cx.createRadialGradient(ox, oy, H * .04, ox, oy, H * .95);
+    g.addColorStop(0, shadeHex(s.body, .95)); g.addColorStop(.55, shadeHex(s.bodyD, .8)); g.addColorStop(1, '#05070c');
+    cx.fillStyle = g; cx.fillRect(-W, -H, W * 3, H * 3);
+    cutSpeed(W, H, ox, oy, 22, cutA(s.body, .5), e * 1.4 + k * .3, H * .22, H * .85);
+    cx.save();
+    cx.translate(ox, oy); if(k) cx.scale(-1, 1);
+    cutBigEye(0, 0, W * .42, k, sq * .5, -.35 + e * 1.8);
+    cx.restore();
+    cx.restore();
+  }
+  cx.save();                                            // разрез между половинами
+  cx.strokeStyle = '#04060a'; cx.lineWidth = Math.max(5, W * .022);
+  cx.beginPath(); cx.moveTo(W * .535 + skew, -2); cx.lineTo(W * .535 - skew, H + 2); cx.stroke();
+  if(e > .3){                                           // искра бежит по разрезу
+    var sp = (e - .3) / .7;
+    cx.strokeStyle = 'rgba(255,236,170,.95)'; cx.lineWidth = Math.max(2, W * .008);
+    cx.beginPath();
+    for(var t = 0; t <= 1; t += .1){
+      var yy = H * t, xx = W * .535 + skew - 2 * skew * t + Math.sin(t * 22 + sp * 12) * W * .012 * (1 - Math.abs(t - sp) * 2);
+      if(t === 0) cx.moveTo(xx, yy); else cx.lineTo(xx, yy);
+    }
+    cx.stroke();
+  }
+  cx.restore();
+  cutTone(W, H, 'rgba(255,255,255,.5)', e * 2.2, .05, 7);
+  var kw = e < .34 ? 0 : Math.min(1, (e - .34) / .1);
+  cutWord(c.decisive ? 'РЕШАЮЩИЙ РАЗМЕН' : 'ГОНГ', W * .5, H * .87,
+          Math.max(20, H * .12), '#ffd257', -.03, kw < 1 ? .6 + kw * .55 : 1.03 - kw * .03, W * .9);
+}
+
+/* Кросс в камеру: перчатка растёт с ракурсным укорочением. */
+function cutCross(e, c, W, H){
+  var s = SKIN[c.i], grow = e < .62 ? Math.pow(e / .62, .7) : 1 + (e - .62) * .1;
+  var gx = W * (.44 - .12 * (1 - grow) * c.dir), gy = H * (.68 - .14 * grow);
+  var R = H * (.07 + .25 * grow);
+  var g = cx.createRadialGradient(gx, gy, H * .04, gx, gy, H * 1.2);
+  g.addColorStop(0, shadeHex(s.bodyD, .8)); g.addColorStop(1, '#05070c');
+  cx.fillStyle = g; cx.fillRect(0, 0, W, H);
+  cutSpeed(W, H, gx, gy, 34, cutA(s.body, .7), e * 2.6, H * .16, H * 1.15);
+  cutTone(W, H, 'rgba(255,255,255,.55)', -e * 1.7, .055, 8);
+  cutHead(W * (.5 + .28 * c.dir), H * .29, H * .21, c.j,   // защищающийся отлетает
+          {face: -c.dir, tilt: c.dir * (.25 + e * .75), squint: .75, open: .5 + e * .4, sweat: true});
+  cx.save();                                            // предплечье уходит за кадр
+  cx.strokeStyle = shadeHex(s.body, .8); cx.lineWidth = R * .8; cx.lineCap = 'round';
+  cx.beginPath(); cx.moveTo(gx, gy); cx.lineTo(gx - c.dir * W * .55, H * 1.3); cx.stroke();
+  cx.restore();
+  cutGlove(gx, gy, R, c.i, -.22 * c.dir);
+  if(e > .5){
+    var fl = Math.min(1, (e - .5) / .18);
+    cutStar(gx, gy, R * (.9 + fl * 1.6), 12, 'rgba(255,255,255,' + (.5 * (1 - fl)) + ')');
+  }
+  var kw = e < .5 ? 0 : Math.min(1, (e - .5) / .1);
+  cutWord('КРОСС!', W * .3, H * .88, Math.max(22, H * .16), '#ffd257', -.1,
+          kw < 1 ? .55 + kw * .6 : 1.02 - kw * .02, W * .62);
+}
+
+/* Апперкот, пробивший нырок: камера снизу, голова уходит назад. */
+function cutUpper(e, c, W, H){
+  var s = SKIN[c.i], hit = Math.min(1, e / .42), af = e > .42 ? (e - .42) / .58 : 0;
+  var g = cx.createLinearGradient(0, H, 0, 0);
+  g.addColorStop(0, shadeHex(s.bodyD, .75)); g.addColorStop(1, '#05070c');
+  cx.fillStyle = g; cx.fillRect(0, 0, W, H);
+  cx.save();                                            // вертикальные линии рвутся вверх
+  cx.strokeStyle = cutA(s.body, .5); cx.lineCap = 'round';
+  for(var i = 0; i < 26; i++){
+    var x = ((i * 61) % 100) / 100 * W, run = ((e * 1.9 + i * .11) % 1);
+    cx.globalAlpha = .1 + ((i * 13) % 6) / 22;
+    cx.lineWidth = 1 + ((i * 7) % 4) * .8;
+    cx.beginPath(); cx.moveTo(x, H * (1.15 - run * 1.3)); cx.lineTo(x, H * (1.15 - run * 1.3) - H * .3); cx.stroke();
+  }
+  cx.restore();
+  cutTone(W, H, 'rgba(255,255,255,.5)', e * 1.6, .05, 8);
+  var hx = W * .58, hy = H * (.36 + .05 * af);
+  cutHead(hx, hy, H * .28, c.j,
+          {face: -c.dir, tilt: c.dir * (.15 + af * .95), squint: .15, open: .35 + af * .6, sweat: af > .2});
+  var gx = W * (.5 - .06 * c.dir), gy = H * (1.12 - .62 * hit);
+  cx.save();
+  cx.strokeStyle = shadeHex(s.body, .8); cx.lineWidth = H * .17; cx.lineCap = 'round';
+  cx.beginPath(); cx.moveTo(gx, gy); cx.lineTo(gx - c.dir * W * .12, H * 1.3); cx.stroke();
+  cx.restore();
+  cutGlove(gx, gy, H * .22, c.i, -1.35 * c.dir);
+  if(af > 0){
+    cutStar(gx, gy - H * .1, H * (.16 + af * .5), 10, 'rgba(255,255,255,' + (.62 * (1 - af)) + ')');
+    cx.fillStyle = 'rgba(226,240,255,' + (.85 * (1 - af)) + ')';
+    for(var q = 0; q < 12; q++){
+      var a = -1.9 + (q / 12) * 2.2, d = af * H * (.25 + ((q * 17) % 10) / 22);
+      cx.beginPath();
+      cx.arc(gx + Math.cos(a) * d, gy - H * .1 + Math.sin(a) * d, H * .012 + ((q * 5) % 3) * H * .004, 0, 6.284);
+      cx.fill();
+    }
+  }
+  var kw = e < .42 ? 0 : Math.min(1, (e - .42) / .1);
+  cutWord('АППЕРКОТ!', W * .5, H * .88, Math.max(20, H * .14), '#ffd257', -.06,
+          kw < 1 ? .5 + kw * .65 : 1.02 - kw * .02, W * .86);
+}
+
+/* Нокаут: силуэт валится, кадр заливает светом победителя. */
+function cutKo(e, c, W, H){
+  var s = SKIN[c.i], fall = Math.min(1, e / .5), d = c.dir;
+  var g = cx.createRadialGradient(W * .5, H * .38, H * .04, W * .5, H * .38, H * 1.25);
+  g.addColorStop(0, shadeHex(s.body, 1.1)); g.addColorStop(.42, shadeHex(s.bodyD, .68)); g.addColorStop(1, '#04060a');
+  cx.fillStyle = g; cx.fillRect(0, 0, W, H);
+  cutSpeed(W, H, W * .5, H * .38, 40, 'rgba(255,255,255,.75)', e * 1.9, H * .1, H * 1.2);
+  cutTone(W, H, 'rgba(0,0,0,.6)', -e * 1.3, .1, 9);
+  cx.save(); cx.globalAlpha = .42;                       // победитель стоит на заднем плане
+  cutBodySil(W * (.5 - d * .33), H * .3, H * .075, -d * .04, '#04060a', true);
+  cx.restore();
+  cutBodySil(W * (.5 + d * (.08 + .16 * fall)), H * (.22 + .16 * fall), H * .115,
+             d * (.3 + fall * 1.45), 'rgba(6,8,13,.95)');
+  cx.fillStyle = 'rgba(255,255,255,' + (.5 * (1 - fall)) + ')';   // брызги от добивания
+  for(var q = 0; q < 14; q++){
+    var a = (q / 14) * 6.284, dd = fall * H * (.18 + ((q * 19) % 10) / 26);
+    cx.beginPath();
+    cx.arc(W * .5 + Math.cos(a) * dd * 1.4, H * .26 + Math.sin(a) * dd,
+           H * .011 + ((q * 7) % 3) * H * .004, 0, 6.284);
+    cx.fill();
+  }
+  var vg = cx.createRadialGradient(W * .5, H * .45, H * .22, W * .5, H * .45, H * .95);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.78)');
+  cx.fillStyle = vg; cx.fillRect(0, 0, W, H);
+  var kw = e < .18 ? 0 : Math.min(1, (e - .18) / .1);
+  cutWord('K.O.', W * .5, H * .8, Math.max(26, H * .2), '#fff0b4', 0,
+          kw < 1 ? .45 + kw * .7 : 1.04 - kw * .04, W * .6);
+}
+
+/* --- полосы «защитник угадал» ---------------------------------------- */
+function cutBandBg(e, c, W, H, side, tint){
+  var s = SKIN[side];
+  var g = cx.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, '#05070c'); g.addColorStop(.5, shadeHex(s.bodyD, tint || .7)); g.addColorStop(1, '#05070c');
+  cx.fillStyle = g; cx.fillRect(0, 0, W, H);
+  cutTone(W, H, 'rgba(255,255,255,.5)', e * 2.4, .05, 7);
+}
+/* Блок принял удар: кулак впечатывается в скрещенные перчатки. */
+function cutGuard(e, c, W, H){
+  var fly = Math.min(1, e / .33), af = e > .33 ? (e - .33) / .67 : 0;
+  var d = c.dir, dx0 = W * (.5 - d * .68), dx1 = W * (.5 - d * .1);
+  cutBandBg(e, c, W, H, c.j, .62);
+  cutSpeed(W, H, W * .5, H * .5, 26, cutA(SKIN[c.j].body, .7), e * 2.1, H * .2, W * .8);
+  /* защитник смотрит поверх перчаток — он угадал, и это должно читаться */
+  cutHead(W * (.5 + d * .34), H * .34, H * .25, c.j,
+          {face: -d, squint: .4, open: .12, tilt: d * .07 * af, look: .4});
+  var px = W * (.5 + d * (.14 + af * .05));             // перчатки высокого блока
+  cutGlove(px + d * H * .06, H * .52, H * .19, c.j, -.55 * d);
+  cutGlove(px, H * .76, H * .19, c.j, .5 * d);
+  var ax = dx0 + (dx1 - dx0) * (1 - (1 - fly) * (1 - fly));
+  cx.save();
+  cx.strokeStyle = shadeHex(SKIN[c.i].body, .8); cx.lineWidth = H * .14; cx.lineCap = 'round';
+  cx.beginPath(); cx.moveTo(ax, H * .58); cx.lineTo(ax - d * W * .35, H * .68); cx.stroke();
+  cx.restore();
+  cutGlove(ax, H * .58, H * .18, c.i, .1 * d);
+  if(af > 0) cutStar(px - d * H * .1, H * .56, H * (.18 + af * .62), 11,
+                     'rgba(214,238,255,' + (.72 * (1 - af)) + ')');
+  var kw = e < .33 ? 0 : Math.min(1, (e - .33) / .1);
+  cutWord('БЛОК!', W * (.5 - d * .28), H * .19, Math.max(18, H * .21), '#a9d8ff', -.09,
+          kw < 1 ? .5 + kw * .65 : 1.02 - kw * .02, W * .4);
+}
+/* Нырок увёл корпус: голова уходит по дуге, кулак идёт мимо. */
+function cutSlip(e, c, W, H){
+  var pass = Math.min(1, e / .5), d = c.dir;
+  cutBandBg(e, c, W, H, c.j, .6);
+  cx.save();                                            // горизонтальные линии скорости
+  cx.strokeStyle = cutA(SKIN[c.i].body, .55); cx.lineCap = 'round';
+  for(var i = 0; i < 20; i++){
+    var y = ((i * 47) % 100) / 100 * H, run = ((e * 2.3 + i * .13) % 1);
+    cx.globalAlpha = .1 + ((i * 11) % 6) / 24; cx.lineWidth = 1 + ((i * 5) % 4) * .8;
+    var x0 = W * (d > 0 ? -.2 + run * 1.4 : 1.2 - run * 1.4);
+    cx.beginPath(); cx.moveTo(x0, y); cx.lineTo(x0 + d * W * .26, y); cx.stroke();
+  }
+  cx.restore();
+  var hx = W * (.5 + d * (.22 + pass * .07)), hy = H * (.38 + pass * .3);
+  cutHead(hx, hy, H * .25, c.j, {face: -d, tilt: -d * (.1 + pass * .55), squint: .45, open: .1,
+                                 look: .4, sweat: pass > .5});
+  var ax = W * (.5 - d * .55) + d * W * pass * 1.05;
+  cx.save();
+  cx.strokeStyle = shadeHex(SKIN[c.i].body, .8); cx.lineWidth = H * .15; cx.lineCap = 'round';
+  cx.beginPath(); cx.moveTo(ax, H * .3); cx.lineTo(ax - d * W * .32, H * .36); cx.stroke();
+  cx.restore();
+  cx.save(); cx.globalAlpha = .45;                      // шлейф пролетевшего кулака
+  cutGlove(ax - d * W * .14, H * .3, H * .17, c.i, .05 * d);
+  cx.restore();
+  cutGlove(ax, H * .3, H * .18, c.i, .08 * d);
+  var kw = e < .38 ? 0 : Math.min(1, (e - .38) / .1);
+  cutWord('НЫРОК!', W * (.5 - d * .28), H * .8, Math.max(18, H * .2), '#9ff2c8', -.07,
+          kw < 1 ? .5 + kw * .65 : 1.02 - kw * .02, W * .42);
+}
+/* Шаг назад разорвал дистанцию: кулак не достаёт. */
+function cutStep(e, c, W, H){
+  var back = Math.min(1, e / .45), d = c.dir;
+  cutBandBg(e, c, W, H, c.j, .55);
+  cutSpeed(W, H, W * (.5 + d * .1), H * .5, 20, cutA(SKIN[c.j].body, .55), e * 1.6, H * .25, W * .7);
+  var hx = W * (.5 + d * (.22 + back * .16));
+  cutHead(hx, H * .48, H * .24, c.j, {face: -d, squint: .35, open: .1, tilt: -d * .05, look: .4});
+  cx.save();                                            // пыль из-под ступни
+  cx.fillStyle = 'rgba(150,170,200,' + (.42 * (1 - back * .5)) + ')';
+  for(var q = 0; q < 8; q++){
+    var t = ((q * 13) % 10) / 10;
+    cx.beginPath();
+    cx.arc(hx - d * H * (.05 + back * .2 + t * .2), H * (.88 - t * .05), H * (.025 + t * .035), 0, 6.284);
+    cx.fill();
+  }
+  cx.restore();
+  var ax = W * (.5 - d * (.3 - back * .05));
+  cx.save();                                            // бьющий остался за кадром
+  cx.strokeStyle = shadeHex(SKIN[c.i].body, .8); cx.lineWidth = H * .16; cx.lineCap = 'round';
+  cx.beginPath(); cx.moveTo(ax, H * .5); cx.lineTo(ax - d * W * .4, H * .6); cx.stroke();
+  cx.restore();
+  cutGlove(ax, H * .5, H * .18, c.i, .06 * d);
+  cx.save();                                            // пунктир недостающей дистанции
+  cx.strokeStyle = 'rgba(255,236,170,.75)'; cx.lineWidth = Math.max(1.5, H * .012);
+  if(cx.setLineDash) cx.setLineDash([H * .05, H * .05]);
+  cx.lineDashOffset = -e * H * .5;
+  cx.beginPath(); cx.moveTo(ax + d * H * .2, H * .5); cx.lineTo(hx - d * H * .3, H * .5); cx.stroke();
+  if(cx.setLineDash) cx.setLineDash([]);
+  cx.restore();
+  var kw = e < .4 ? 0 : Math.min(1, (e - .4) / .1);
+  cutWord('МИМО!', W * .5, H * .19, Math.max(18, H * .2), '#ffd257', -.05,
+          kw < 1 ? .5 + kw * .65 : 1.02 - kw * .02, W * .44);
+}
+
+/* --- конверт: влёт, дрейф камеры, уход, чернильная рамка -------------- */
+function drawCut(){
+  if(!cut) return;
+  var d = CUT[cut.id]; if(!d) return;
+  var e = 1 - cut.t / cut.dur;
+  if(e < 0) e = 0; else if(e > 1) e = 1;
+  var full = d.full, H = full ? VH : VH * .62, Y = full ? 0 : (VH - H) * .5, W = VW;
+  var IN = .11, OUT = .87;
+  var ain = e < IN ? e / IN : 1, aout = e > OUT ? (e - OUT) / (1 - OUT) : 0;
+  var slam = (1 - ain) * (1 - ain);
+  var alpha = RM ? Math.min(1, ain * 1.5) * (1 - aout) : Math.min(1, ain * 3) * (1 - aout * .85);
+
+  cx.save();
+  cx.globalAlpha = alpha;
+  cx.translate(W / 2, Y + H / 2);
+  if(!RM){
+    if(full) cx.scale(1 + slam * .14 + aout * .07, 1 + slam * .14 + aout * .07);
+    else cx.translate(-cut.dir * (slam * W * .75 + aout * W * .55), 0);
+  }
+  cx.translate(-W / 2, -H / 2);
+
+  cx.save();                                            // рамка кадра = область отсечения
+  cx.beginPath();
+  if(full) cx.rect(0, 0, W, H);
+  else {
+    var sk = H * .12;
+    cx.moveTo(0, sk); cx.lineTo(W, 0); cx.lineTo(W, H - sk); cx.lineTo(0, H); cx.closePath();
+  }
+  cx.clip();
+  if(!RM){                                              // медленный дрейф внутри кадра
+    var kz = 1 + e * .06;
+    cx.translate(W / 2, H / 2); cx.scale(kz, kz);
+    cx.translate(-W / 2 + (e - .5) * W * .025 * cut.dir, -H / 2 + (e - .5) * H * .02);
+  }
+  if(d.img && d.img.complete && d.img.naturalWidth){
+    var iw = d.img.naturalWidth, ih = d.img.naturalHeight, ik = Math.max(W / iw, H / ih);
+    cx.fillStyle = '#05070c'; cx.fillRect(0, 0, W, H);
+    cx.drawImage(d.img, (W - iw * ik) / 2, (H - ih * ik) / 2, iw * ik, ih * ik);
+  } else d.draw(e, cut, W, H);
+  if(!RM && e > .42 && e < .56){                        // вспышка на контакте
+    cx.fillStyle = 'rgba(255,255,255,' + (.42 * (1 - Math.abs(e - .49) / .07)) + ')';
+    cx.fillRect(0, 0, W, H);
+  }
+  cx.restore();
+
+  cx.lineJoin = 'round';                                // жёсткая чернильная обводка
+  cx.strokeStyle = INK; cx.lineWidth = Math.max(3, VH * .016);
+  cx.beginPath();
+  if(full) cx.rect(1, 1, W - 2, H - 2);
+  else {
+    var s2 = H * .12;
+    cx.moveTo(0, s2); cx.lineTo(W, 0); cx.lineTo(W, H - s2); cx.lineTo(0, H); cx.closePath();
+  }
+  cx.stroke();
+  cx.restore();
+  cx.globalAlpha = 1;
+}
+
+/* =========================================================================
    5. ЦИКЛ КАДРОВ И ПРОКРУТКА РАУНДА
    ========================================================================= */
 var freeze = 0, slowT = 0, seq = null, lastT = 0, animating = false, paused = false;
@@ -1364,9 +1962,13 @@ function frame(now){
       seq.koDone = true;
       for(var z = 0; z < 2; z++) if(seq.rec.ko[z] && !B[z].down){
         B[z].down = true; koCardT = 1500;
-        sndDown(); crowdCheer(1.4);
+        sndDown(); crowdCheer(1.4); musicCrash();
         if(!B[z].rd){ B[z].lean.v -= 3.6; B[z].hy.v += 30; }   // запасной путь без Matter
         shake = Math.max(shake, 6);
+        /* нокаут-панель встаёт в очередь за уже идущей, а не перебивает её */
+        cutArm('ko', {i:1 - z, j:z, dir:B[1 - z].face, round:seq.rec.round});
+        seqExtend(CUT.ko.dur + (cut ? cut.t : 0) + 300);
+        if(cut) cut.then = cutFlush; else cutFlush();
       }
     }
     driveActor(0, seq.t, seq.rec); driveActor(1, seq.t, seq.rec);
@@ -1417,6 +2019,10 @@ function frame(now){
   }
   cam.step(dtR); camY.step(dtR); zoomS.step(dtR);
   if(koCardT > 0) koCardT -= raw;
+  if(cut){                        // панель живёт реальным временем, а не замедленным
+    cut.t -= raw;
+    if(cut.t <= 0){ var cth = cut.then; cut = null; if(cth) cth(); }
+  }
   for(var ri = rays.length - 1; ri >= 0; ri--){
     rays[ri].life += dt; if(rays[ri].life > rays[ri].max) rays.splice(ri, 1);
   }
@@ -1459,7 +2065,7 @@ function playRound(rec, done){
 function snapEnd(rec){
   var i;
   freeze = 0; slowT = 0; parts.length = 0; rays.length = 0; clearPops();
-  dark = 0; darkT = 0; cineT = 0; cineFollow = -1; koCardT = 0;
+  dark = 0; darkT = 0; cineT = 0; cineFollow = -1; koCardT = 0; cut = null; cutQ = null;
   for(i = 0; i < 2; i++) B[i].gh = [];
   ragResetAll();
   for(i = 0; i < 2; i++){
@@ -1481,7 +2087,9 @@ function settle(dt){
   }
 }
 function skipSeq(){
+  if(cut && cut.hold){ cutSkip(); return; }        // панель держит размен — сразу к нему
   if(!seq) return;
+  cut = null; cutQ = null;
   var rec = seq.rec, done = seq.done;
   seq = null; animating = false; skipEl.classList.add('off');
   snapEnd(rec);
@@ -1791,6 +2399,7 @@ function sndWhoosh(power){                        // рассекание воз
 function sndHit(power, body){                     // попадание: низкий толчок + шлепок
   if(!AC) return;
   var t = AC.currentTime;
+  musicDuck(.38 * Math.min(1, power + .2));       // удар пробивается сквозь музыку
   tone('sine', (body ? 78 : 108) * (1 + power * .12), body ? 32 : 44, t, body ? .3 : .21, .8 * power);
   hiss('bandpass', body ? 400 : 950, body ? 220 : 500, t, body ? .15 : .1, .55 * power, .9);
   if(power > .6) tone('triangle', 210, 90, t, .12, .26 * power);
@@ -1854,6 +2463,195 @@ function crowdCheer(power){
   crowdGain.gain.linearRampToValueAtTime(base, t + 1.2);
 }
 
+/* удар кинокадра под влёт врезки; для сплита — низкий дрон напряжения */
+function sndStare(){
+  if(!AC) return;
+  var t = AC.currentTime;
+  var o = AC.createOscillator(), o2 = AC.createOscillator(), g = AC.createGain(), lp = AC.createBiquadFilter();
+  o.type = 'sawtooth'; o.frequency.setValueAtTime(48, t); o.frequency.linearRampToValueAtTime(63, t + 1.1);
+  o2.type = 'sine'; o2.frequency.setValueAtTime(96, t); o2.frequency.linearRampToValueAtTime(126, t + 1.1);
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(210, t); lp.frequency.exponentialRampToValueAtTime(1300, t + 1.05);
+  g.gain.setValueAtTime(.0001, t);
+  g.gain.exponentialRampToValueAtTime(.15, t + .55);
+  g.gain.exponentialRampToValueAtTime(.0001, t + 1.24);
+  o.connect(lp); o2.connect(lp); lp.connect(g); g.connect(master);
+  o.start(t); o.stop(t + 1.3); o2.start(t); o2.stop(t + 1.3);
+  hiss('highpass', 300, 5200, t, 1.02, .06, .8);
+}
+function sndCut(id){
+  if(!AC) return;
+  if(id === 'eyes'){ sndStare(); return; }
+  var t = AC.currentTime, big = (id === 'cross' || id === 'upper' || id === 'ko');
+  tone('sine', big ? 96 : 150, big ? 38 : 72, t, big ? .3 : .15, big ? .42 : .22);
+  hiss('bandpass', big ? 2600 : 3400, big ? 700 : 1600, t, big ? .2 : .11, big ? .26 : .16, 1.1);
+}
+
+/* =========================================================================
+   8c. МУЗЫКА
+   Аниме-опенинг под повтор боя. Файлов нет и быть не может — трек собирается
+   из осцилляторов тут же. Ноты ставятся не таймером на каждую (он плывёт),
+   а планировщиком с забеганием вперёд по часам AudioContext.
+   ========================================================================= */
+var musBus = null, musShape = null, musTimer = null, musStep = 0, musNext = 0, musCrash = false;
+var BPM = 168, SPB = 60 / BPM, STEP = SPB / 4, MUS_VOL = .3;
+var MUS_CH = [0, -4, 3, -2];          // Am – F – C – G, ход всех опенингов сразу
+var MUS_3RD = [3, 4, 4, 4];
+var MUS_MEL = [                       // хук припева: шаги такта и полутона над ля
+  [[0,7],[3,5],[6,7],[8,12],[12,10]],
+  [[0,8],[3,7],[6,5],[8,8],[12,7]],
+  [[0,3],[3,5],[6,7],[8,10],[12,12]],
+  [[0,14],[4,12],[8,10],[12,7]]
+];
+function mf(n){ return 55 * Math.pow(2, n / 12); }   // ля субконтроктавы как ноль
+
+function mKick(t){
+  tone('sine', 132, 44, t, .22, .9, musBus);
+  hiss('lowpass', 900, 130, t, .05, .26, .7, musBus);
+}
+function mSnare(t){
+  hiss('bandpass', 1900, 1150, t, .15, .42, .8, musBus);
+  tone('triangle', 225, 150, t, .09, .2, musBus);
+}
+function mHat(t, open){
+  hiss('highpass', 7200, 6200, t, open ? .17 : .04, open ? .1 : .075, .7, musBus);
+}
+function mCrash(t){ hiss('highpass', 4200, 2400, t, 1.25, .17, .5, musBus); }
+function mBass(t, f, dur){
+  var o = AC.createOscillator(), g = AC.createGain(), lp = AC.createBiquadFilter();
+  o.type = 'sawtooth'; o.frequency.value = f;
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(f * 7, t);
+  lp.frequency.exponentialRampToValueAtTime(Math.max(90, f * 2.2), t + dur);
+  g.gain.setValueAtTime(.0001, t);
+  g.gain.exponentialRampToValueAtTime(.42, t + .012);
+  g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  o.connect(lp); lp.connect(g); g.connect(musBus);
+  o.start(t); o.stop(t + dur + .03);
+}
+function mChord(t, f, dur){          // «глушёная» ритм-гитара сквозь общий перегруз
+  for(var i = 0; i < 2; i++){
+    var o = AC.createOscillator(), g = AC.createGain();
+    o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = i ? 7 : -7;
+    g.gain.setValueAtTime(.0001, t);
+    g.gain.exponentialRampToValueAtTime(.3, t + .008);
+    g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    o.connect(g); g.connect(musShape);
+    o.start(t); o.stop(t + dur + .03);
+  }
+}
+function mLead(t, f, dur){
+  var o = AC.createOscillator(), g = AC.createGain(), lp = AC.createBiquadFilter();
+  var lfo = AC.createOscillator(), lg = AC.createGain();
+  o.type = 'square'; o.frequency.value = f;
+  lfo.type = 'sine'; lfo.frequency.value = 5.4; lg.gain.value = f * .011;
+  lfo.connect(lg); lg.connect(o.frequency);
+  lp.type = 'lowpass'; lp.frequency.value = 2700;
+  g.gain.setValueAtTime(.0001, t);
+  g.gain.exponentialRampToValueAtTime(.17, t + .02);
+  g.gain.setValueAtTime(.17, t + dur * .62);
+  g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  o.connect(lp); lp.connect(g); g.connect(musBus);
+  o.start(t); o.stop(t + dur + .03); lfo.start(t); lfo.stop(t + dur + .03);
+}
+function mPad(t, fs, dur){
+  for(var i = 0; i < fs.length; i++){
+    var o = AC.createOscillator(), g = AC.createGain(), lp = AC.createBiquadFilter();
+    o.type = 'sawtooth'; o.frequency.value = fs[i]; o.detune.value = (i - 1) * 7;
+    lp.type = 'lowpass'; lp.frequency.value = 1500;
+    g.gain.setValueAtTime(.0001, t);
+    g.gain.linearRampToValueAtTime(.05, t + dur * .35);
+    g.gain.linearRampToValueAtTime(.0001, t + dur);
+    o.connect(lp); lp.connect(g); g.connect(musBus);
+    o.start(t); o.stop(t + dur + .05);
+  }
+}
+
+function musNote(s, t){
+  var bar = (s / 16) | 0, k = s % 16, ch = bar % 4, root = MUS_CH[ch];
+  var intro = bar < 2, chorus = !intro && ((bar - 2) % 8) >= 4;
+  if(musCrash && k === 0){ musCrash = false; mCrash(t); }
+  if(k % 2 === 0) mHat(t, k === 14);
+  if(intro){
+    if(k === 0) mPad(t, [mf(24 + root), mf(24 + root + MUS_3RD[ch]), mf(24 + root + 7)], SPB * 4);
+    if(bar === 1 && k >= 8 && k % 2 === 0) mSnare(t);          // подъём во вступление
+    if(bar === 1 && k === 8) hiss('bandpass', 380, 5400, t, SPB * 2, .16, .8, musBus);
+    return;
+  }
+  if(k === 0 && bar % 4 === 0) mCrash(t);
+  if(k === 0 || k === 6 || k === 8 || k === 14) mKick(t);
+  if(k === 4 || k === 12) mSnare(t);
+  if(k % 2 === 0) mBass(t, mf(12 + root + (k >= 12 ? 12 : 0)), STEP * 1.7);
+  if(k === 0 || k === 3 || k === 6 || k === 8 || k === 11 || k === 14){
+    mChord(t, mf(24 + root), STEP * 1.6);
+    mChord(t, mf(24 + root + 7), STEP * 1.6);
+  }
+  if(chorus){
+    if(k === 0) mPad(t, [mf(24 + root), mf(24 + root + MUS_3RD[ch]), mf(24 + root + 7)], SPB * 4);
+    var mel = MUS_MEL[ch];
+    for(var i = 0; i < mel.length; i++) if(mel[i][0] === k){
+      var nx = i + 1 < mel.length ? mel[i + 1][0] : 16;
+      mLead(t, mf(36 + mel[i][1]), (nx - k) * STEP * .92);
+    }
+  }
+}
+function musTick(){
+  if(!AC || !musBus) return;
+  if(musNext < AC.currentTime) musNext = AC.currentTime + .05;   // вкладка была в фоне
+  var horizon = AC.currentTime + .18;
+  while(musNext < horizon){ musNote(musStep, musNext); musNext += STEP; musStep++; }
+}
+function musicStart(){
+  if(!AC || musTimer) return;
+  musBus = AC.createGain(); musBus.gain.value = MUS_VOL; musBus.connect(master);
+  var sh = AC.createWaveShaper(), n = 1024, cv = new Float32Array(n);
+  for(var i = 0; i < n; i++) cv[i] = Math.tanh((i / (n - 1) * 2 - 1) * 3.2);
+  sh.curve = cv; sh.oversample = '2x';
+  var lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3300;
+  var gg = AC.createGain(); gg.gain.value = .2;
+  sh.connect(lp); lp.connect(gg); gg.connect(musBus);
+  musShape = sh;
+  musStep = 0; musCrash = false; musNext = AC.currentTime + .1;
+  musTimer = setInterval(musTick, 25);
+}
+function musicStop(){
+  if(musTimer){ clearInterval(musTimer); musTimer = null; }
+  if(musBus && AC){
+    var g = musBus, t = AC.currentTime;
+    g.gain.cancelScheduledValues(t);
+    g.gain.setValueAtTime(g.gain.value, t);
+    g.gain.linearRampToValueAtTime(.0001, t + .3);
+    setTimeout(function(){ try { g.disconnect(); } catch(e){} }, 700);
+  }
+  musBus = null; musShape = null;
+}
+function musicPause(on){
+  if(!musBus || !AC) return;
+  var t = AC.currentTime;
+  musBus.gain.cancelScheduledValues(t);
+  if(on){
+    if(musTimer){ clearInterval(musTimer); musTimer = null; }
+    musBus.gain.setValueAtTime(musBus.gain.value, t);
+    musBus.gain.linearRampToValueAtTime(.0001, t + .12);
+  } else if(!musTimer){
+    musNext = t + .1;
+    musBus.gain.setValueAtTime(.0001, t);
+    musBus.gain.linearRampToValueAtTime(MUS_VOL, t + .16);
+    musTimer = setInterval(musTick, 25);
+  }
+}
+function musicDuck(a){
+  if(!musBus || !AC) return;
+  var t = AC.currentTime;
+  musBus.gain.cancelScheduledValues(t);
+  musBus.gain.setValueAtTime(musBus.gain.value, t);
+  musBus.gain.linearRampToValueAtTime(MUS_VOL * (1 - a), t + .025);
+  musBus.gain.linearRampToValueAtTime(MUS_VOL, t + .34);
+}
+/* сбивка ставится на ближайшую сильную долю: краш посреди такта звучал бы мимо */
+function musicAccent(){ if(musBus) musCrash = true; }
+function musicCrash(){ if(musBus && AC) mCrash(AC.currentTime); }
+
 /* =========================================================================
    9. МАШИНА СОСТОЯНИЙ И ПОВТОР
    ========================================================================= */
@@ -1894,6 +2692,12 @@ function nextChooser(from){
    При системном «уменьшении движения» гасятся только вестибулярные эффекты
    (наезд камеры, тряска, вспышки, рапид, кинополосы), сам бой остаётся. */
 function runRound(rec, done){
+  if(rec.eyes){                                     // сперва сплит-экран, потом размен
+    cutStart('eyes', {hold:true, i:0, j:1, dir:1, round:rec.round,
+                      decisive:rec.eyes === 'decisive',
+                      then:function(){ playRound(rec, done); }});
+    return;
+  }
   playRound(rec, done);
 }
 
@@ -1930,10 +2734,12 @@ function rewatchRound(){
 
 /* --- повтор боя --- */
 function replayStart(){
-  clearTimeout(rpTimer); paused = false;
+  clearTimeout(rpTimer); clearTimeout(openT); paused = false;
+  cut = null; cutQ = null;
   replay = {idx:0};
   for(var i = 0; i < 2; i++) B[i].reset();
   phase = 'replay'; render();
+  musicStart();                                     // повтор боя идёт под опенинг
   rpTimer = setTimeout(replayNext, 420);
 }
 function replayNext(){
@@ -1950,16 +2756,18 @@ function replayNext(){
   for(i = 0; i < 14; i++) { driveIdle(); settle(1/60); }
   ragResetAll();
   paintHud(false); render();
-  playRound(rec, function(){
+  musicAccent();                                    // сбивка попадает в начало раунда
+  runRound(rec, function(){
     replay.idx++;
     render();
     rpTimer = setTimeout(replayNext, 620);
   });
 }
 function replayStop(){
-  clearTimeout(rpTimer); rpTimer = null; replay = null; paused = false;
+  clearTimeout(rpTimer); rpTimer = null; clearTimeout(openT); replay = null; paused = false;
+  musicStop();
   seq = null; animating = false; skipEl.classList.add('off'); clearPops(); parts.length = 0; rays.length = 0;
-  dark = 0; darkT = 0; cineT = 0; cineFollow = -1; koCardT = 0; lb = 0;
+  dark = 0; darkT = 0; cineT = 0; cineFollow = -1; koCardT = 0; lb = 0; cut = null; cutQ = null;
   for(var g = 0; g < 2; g++) B[g].gh = [];
   ragResetAll();
   for(var i = 0; i < 2; i++){ B[i].down = !!F[i].ko; B[i].charge = false; B[i].tired = F[i].fat > TIRED_AT; }
@@ -1993,16 +2801,16 @@ P.addEventListener('click', function(ev){
   else if(go === 'over'){ phase = 'over'; render(); sndBell(.85); crowdCheer(1.6); }
   else if(go === 'restart'){ replayStop(); newFight(); resetRing(); phase = 'start'; render(); }
   else if(go === 'replay'){ replayStart(); }
-  else if(go === 'rpPause'){ paused = !paused; render(); }
+  else if(go === 'rpPause'){ paused = !paused; musicPause(paused); render(); }
   else if(go === 'rpAgain'){ replayStart(); }
   else if(go === 'rpClose'){ replayStop(); }
 });
 
 function resetRing(){
   clearTimeout(rpTimer); clearTimeout(openT); replay = null; paused = false;
-  seq = null; animating = false; skipEl.classList.add('off');
+  seq = null; animating = false; skipEl.classList.add('off'); musicStop();
   clearPops(); parts.length = 0; rays.length = 0; freeze = 0; slowT = 0; shake = 0; flashA = 0;
-  dark = 0; darkT = 0; cineT = 0; cineFollow = -1; koCardT = 0; lb = 0;
+  dark = 0; darkT = 0; cineT = 0; cineFollow = -1; koCardT = 0; lb = 0; cut = null; cutQ = null;
   for(var i = 0; i < 2; i++){ B[i].reset(); B[i].gh = []; }
   ragResetAll();
 }
