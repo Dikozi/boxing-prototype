@@ -49,12 +49,12 @@ body{
 #ring{
   flex:0 0 auto;position:relative;overflow:hidden;
   height:clamp(74px,12vh,116px);
-  transition:height .5s cubic-bezier(.3,.9,.3,1);
+  transition:height .3s cubic-bezier(.25,.9,.3,1);
   background:var(--ink);
   border-bottom:2px solid var(--line);
 }
-#ring.full{height:clamp(178px,31vh,286px)}
-#ring.cinema{height:clamp(230px,44vh,400px)}
+#ring.full{height:clamp(172px,29vh,270px)}
+#ring.cinema{height:clamp(236px,54vh,520px)}
 #ring.slim{height:0;border-bottom-width:0}
 #cv{position:absolute;inset:0;width:100%;height:100%;display:block}
 #ring::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,#0000,var(--gold),#0000);opacity:.45;pointer-events:none}
@@ -155,8 +155,9 @@ button{font-family:inherit;color:inherit;cursor:pointer;touch-action:manipulatio
 /* ===================== ЖУРНАЛ ===================== */
 #logWrap{flex:0 0 auto;background:var(--panel);border-top:2px solid var(--line)}
 #logWrap.off{display:none}
-/* на невысоких экранах журнал уступает место сцене: во вскрытии он дублирует то, что видно */
-@media (max-height:800px){ #logWrap.rev{display:none} #ring.full{height:clamp(150px,26vh,240px)} }
+/* во вскрытии журнал уступает место сцене — он дублирует то, что и так видно */
+#logWrap.rev{display:none}
+@media (max-height:800px){ #ring.full{height:clamp(148px,25vh,230px)} }
 #logHead{display:flex;justify-content:space-between;align-items:center;padding:5px 12px 3px;
   font-size:9px;font-weight:800;letter-spacing:.22em;color:var(--dim);text-transform:uppercase}
 #log{height:15vh;min-height:66px;max-height:150px;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 12px 9px;font-size:12.5px;line-height:1.4}
@@ -646,7 +647,10 @@ function applyImpact(rec){
         rag = true;
         seqExtend(mode === 'down' ? 2600 : 1700);
         slowT = mode === 'down' ? 1150 : 520;
-        if(mode === 'down') seqDark = seq.t + 1150;
+        cinePush(hp.x, hp.y, mode === 'down' ? 1.52 : 1.42,
+                 mode === 'down' ? 2300 : 1000, mode === 'down' ? j : -1);
+        spawnRays(hp.x, hp.y, mode === 'down' ? 14 : 10, f > 0 ? 0 : Math.PI);
+        if(mode === 'down') seqDark = seq.t + 1250;
       } else {
         d.hx.v += f * (55 + 105 * k);                // лёгкое попадание остаётся на позах
         if(lvl === 'head'){
@@ -660,7 +664,8 @@ function applyImpact(rec){
       }
       a.hx.v -= f * 26 * k;                          // отдача бьющему
       a.hand[c.id === 'jab' ? 0 : 1].x.v -= f * 40 * k;
-      burst(hp.x, hp.y, 14 + (k * 12 | 0), k);
+      burst(hp.x, hp.y, 16 + (k * 20 | 0), k);
+      if(!mode) spawnRays(hp.x, hp.y, 4, f > 0 ? 0 : Math.PI, '#ffd48a');
       popAt(hp.x, hp.y - 24, '−' + o.dmg, o.mult < 1 ? 'half' : 'dmg');
       freeze += 55 + 55 * k;
       shake = Math.max(shake, 2.6 + 5.4 * k);
@@ -964,7 +969,31 @@ var cv = document.getElementById('cv'), cx = cv.getContext('2d');
 var fxL = document.getElementById('fx'), skipEl = document.getElementById('skip');
 var DPR = 1, VW = 0, VH = 0, SC = 1, OX = 0;
 var shake = 0, shakeX = 0, shakeY = 0, flashA = 0;
-var cam = null;   // пружина слежения, создаётся после Sp
+var cam = null, camY = null, zoomS = null;        // пружины слежения, создаются после Sp
+var cineT = 0, cineZ = 1, camFx = 0, camFy = 0, cineFollow = -1, lb = 0, koCardT = 0;
+var rays = [], ghTick = 0;
+/* наезд на точку контакта: живёт реальным временем, а не замедленным,
+   поэтому камера успевает подъехать, пока тело падает в рапиде */
+function cinePush(px, py, z, hold, follow){
+  camFx = px; camFy = py; cineZ = z;
+  cineT = Math.max(cineT, hold);
+  cineFollow = follow == null ? -1 : follow;
+}
+function viewCx(){ return STAGE_W / 2 + (cam ? cam.x : 0); }
+function viewCy(){ return STAGE_H / 2 + (camY ? camY.x : 0); }
+function viewSc(){ return SC * (zoomS ? zoomS.x : 1); }
+function toScreen(sx, sy){
+  var k = viewSc();
+  return {x:VW / 2 + (sx - viewCx()) * k + shakeX * SC,
+          y:VH / 2 + (sy - viewCy()) * k + shakeY * SC};
+}
+function spawnRays(x, y, n, dir, col){
+  for(var i = 0; i < n; i++){
+    var a = dir + (Math.random() * 2 - 1) * 1.45;
+    rays.push({x:x, y:y, a:a, r0:2 + Math.random() * 4, len:4.5 + Math.random() * 10,
+               w:.55 + Math.random() * 1.1, life:0, max:.14 + Math.random() * .12, c:col || '#fff0c8'});
+  }
+}
 var parts = [];
 
 function fitCanvas(){
@@ -972,7 +1001,7 @@ function fitCanvas(){
   DPR = Math.min(window.devicePixelRatio || 1, 2.5);
   VW = Math.max(1, r.width); VH = Math.max(1, r.height);
   cv.width = Math.round(VW * DPR); cv.height = Math.round(VH * DPR);
-  SC = VH / STAGE_H;
+  SC = Math.min(VH / STAGE_H, VW / 125);        // не приближаемся ближе, чем 125 единиц по ширине
   OX = (VW - STAGE_W * SC) / 2;
 }
 if(window.ResizeObserver) new ResizeObserver(fitCanvas).observe(ring);
@@ -1036,7 +1065,7 @@ function glove(p, prev, col, colD, r){
 }
 
 function drawBoxer(b){
-  var s = SKIN[b.i], J = poseOf(b), f = b.face, fw = J.fw, up = J.up;
+  var s = SKIN[b.i], J = b.drawJ || poseOf(b), f = b.face, fw = J.fw, up = J.up;
   var dim = b.down ? 0.55 : 1;
   function mix(c){ return dim < 1 ? shadeHex(c, dim) : c; }
 
@@ -1116,38 +1145,115 @@ function drawStage(){
   cx.setTransform(DPR, 0, 0, DPR, 0, 0);
   cx.clearRect(0, 0, VW, VH);
   cx.save();
-  cx.translate(OX + shakeX * SC, shakeY * SC);
-  cx.scale(SC, SC);
-  cx.translate(-(cam ? cam.x : 0), 0);
+  var k = viewSc();
+  cx.translate(VW / 2 + shakeX * SC, VH / 2 + shakeY * SC);
+  cx.scale(k, k);
+  cx.translate(-viewCx(), -viewCy());
   drawArena();
 
-  var order = drawOrder;
+  var order = drawOrder, i;
+  for(i = 0; i < 2; i++) if(B[i].gh && B[i].gh.length) drawGhosts(B[i]);
   drawBoxer(B[order[0]]); drawBoxer(B[order[1]]);
 
-  for(var i = 0; i < parts.length; i++){
-    var p = parts[i], al = 1 - p.life / p.max;
-    cx.globalAlpha = al * al; cx.fillStyle = p.c;
+  for(i = 0; i < rays.length; i++){                 // лучи от точки контакта
+    var r = rays[i], e = r.life / r.max, sp = 1 + e * 2.2, al = (1 - e) * (1 - e);
+    cx.globalAlpha = al * .8; cx.strokeStyle = r.c; cx.lineWidth = r.w * (1 - e * .8); cx.lineCap = 'round';
+    cx.beginPath();
+    cx.moveTo(r.x + Math.cos(r.a) * r.r0 * sp, r.y + Math.sin(r.a) * r.r0 * sp);
+    cx.lineTo(r.x + Math.cos(r.a) * (r.r0 + r.len) * sp, r.y + Math.sin(r.a) * (r.r0 + r.len) * sp);
+    cx.stroke();
+  }
+  for(i = 0; i < parts.length; i++){
+    var p = parts[i], pa = 1 - p.life / p.max;
+    cx.globalAlpha = pa * pa; cx.fillStyle = p.c;
     cx.beginPath(); cx.arc(p.x, p.y, p.r, 0, 6.284); cx.fill();
   }
   cx.globalAlpha = 1;
   cx.restore();
+  drawLetterbox();
+  drawCaption();
   if(dark > .002){ cx.fillStyle = 'rgba(4,6,10,' + dark.toFixed(3) + ')'; cx.fillRect(0, 0, VW, VH); }
   if(flashA > 0){ cx.fillStyle = 'rgba(255,255,255,' + flashA + ')'; cx.fillRect(0, 0, VW, VH); }
+  drawKoCard();
+}
+
+/* шлейф падающего тела: несколько прошлых поз с затуханием */
+function drawGhosts(b){
+  var s = SKIN[b.i], i, k;
+  cx.lineCap = 'round'; cx.lineJoin = 'round';
+  for(i = 0; i < b.gh.length; i++){
+    var J = b.gh[i];
+    cx.globalAlpha = (i + 1) / (b.gh.length + 1) * .26;
+    cx.strokeStyle = s.body; cx.fillStyle = s.body;
+    cx.lineWidth = 7;
+    for(k = 0; k < 2; k++){
+      cx.beginPath(); cx.moveTo(J.arms[k].sh.x, J.arms[k].sh.y);
+      cx.lineTo(J.arms[k].el.x, J.arms[k].el.y); cx.lineTo(J.arms[k].hand.x, J.arms[k].hand.y); cx.stroke();
+      cx.beginPath(); cx.moveTo(J.legs[k].hip.x, J.legs[k].hip.y);
+      cx.lineTo(J.legs[k].knee.x, J.legs[k].knee.y); cx.lineTo(J.legs[k].foot.x, J.legs[k].foot.y); cx.stroke();
+    }
+    cx.lineWidth = 15;
+    cx.beginPath(); cx.moveTo(J.hip.x, J.hip.y); cx.lineTo(J.neck.x, J.neck.y); cx.stroke();
+    cx.beginPath(); cx.arc(J.head.x, J.head.y, HEAD_R, 0, 6.284); cx.fill();
+  }
+  cx.globalAlpha = 1;
+}
+
+function drawLetterbox(){
+  if(lb < .01) return;
+  var h = VH * .075 * lb;
+  cx.fillStyle = '#04060a';
+  cx.fillRect(0, 0, VW, h); cx.fillRect(0, VH - h, VW, h);
+}
+
+var DISPF = '"Oswald","Arial Narrow",system-ui,sans-serif';
+function drawCaption(){                              // подпись раунда уходит к моменту удара
+  if(!seq || seq.t > 520) return;
+  var a = seq.t < 170 ? seq.t / 170 : (seq.t > 380 ? (520 - seq.t) / 140 : 1);
+  if(a <= 0) return;
+  var top = VH * .075 * lb + Math.max(5, VH * .02);
+  cx.globalAlpha = Math.min(1, a);
+  cx.textBaseline = 'top';
+  cx.textAlign = 'center';
+  cx.font = '700 ' + Math.round(Math.max(15, VH * .058)) + 'px ' + DISPF;
+  cx.fillStyle = '#ffc44d';
+  cx.fillText('РАУНД ' + seq.rec.round, VW / 2, top);
+  var y2 = top + Math.max(17, VH * .066);
+  cx.font = '500 ' + Math.round(Math.max(11, VH * .038)) + 'px ' + DISPF;
+  cx.textAlign = 'left';  cx.fillStyle = '#8dbcff'; cx.fillText(label(seq.rec.choices[0]), 9, y2);
+  cx.textAlign = 'right'; cx.fillStyle = '#ffa3ab'; cx.fillText(label(seq.rec.choices[1]), VW - 9, y2);
+  cx.globalAlpha = 1;
+}
+
+function drawKoCard(){
+  if(koCardT <= 0) return;
+  var e = 1 - koCardT / 1500, sc = e < .12 ? .5 + e / .12 * .5 : 1;
+  var al = e > .8 ? (1 - e) / .2 : 1;
+  cx.save();
+  cx.globalAlpha = Math.max(0, al);
+  cx.translate(VW / 2, VH * .21);
+  cx.scale(sc, sc);
+  cx.textAlign = 'center'; cx.textBaseline = 'middle';
+  cx.font = '700 ' + Math.round(Math.max(24, VH * .105)) + 'px ' + DISPF;
+  cx.lineWidth = 5; cx.strokeStyle = '#04060a'; cx.strokeText('НОКАУТ', 0, 0);
+  cx.fillStyle = '#ffe08a'; cx.fillText('НОКАУТ', 0, 0);
+  cx.restore();
 }
 var drawOrder = [0, 1];
 
 /* задник ринга: канаты с провисом, угловые стойки, пятно софита на настиле.
    Канаты идут с параллаксом — на движении камеры видно глубину. */
 function drawArena(){
-  var vis = VW / SC, left = -OX / SC + (cam ? cam.x : 0);   // видимая полоса сцены
+  var k = viewSc(), halfW = VW / (2 * k), halfH = VH / (2 * k);
+  var left = viewCx() - halfW, top = viewCy() - halfH, vis = halfW * 2, visH = halfH * 2;
   var bg = cx.createLinearGradient(0, 0, 0, STAGE_H);
   bg.addColorStop(0, '#0f1622'); bg.addColorStop(.5, '#080c13'); bg.addColorStop(1, '#04060a');
-  cx.fillStyle = bg; cx.fillRect(left - 20, -40, vis + 40, STAGE_H + 60);
+  cx.fillStyle = bg; cx.fillRect(left - 20, top - 30, vis + 40, visH + 60);
   var mid0 = (B[0].J.hip.x + B[1].J.hip.x) / 2;
   var sp = cx.createRadialGradient(mid0, -26, 4, mid0, -26, 96);
   sp.addColorStop(0, 'rgba(198,220,255,.10)'); sp.addColorStop(.6, 'rgba(198,220,255,.035)');
   sp.addColorStop(1, 'rgba(198,220,255,0)');
-  cx.fillStyle = sp; cx.fillRect(left - 20, -40, vis + 40, STAGE_H + 60);
+  cx.fillStyle = sp; cx.fillRect(left - 20, top - 30, vis + 40, visH + 60);
 
   var px = (cam ? cam.x : 0) * 0.55;                 // канаты сдвигаются меньше бойцов
   cx.save(); cx.translate(px, 0);
@@ -1171,7 +1277,7 @@ function drawArena(){
 
   var fg = cx.createLinearGradient(0, FLOOR - 3, 0, STAGE_H);
   fg.addColorStop(0, '#18202e'); fg.addColorStop(1, '#070a10');
-  cx.fillStyle = fg; cx.fillRect(-260, FLOOR, STAGE_W + 520, STAGE_H - FLOOR);
+  cx.fillStyle = fg; cx.fillRect(left - 40, FLOOR, vis + 80, Math.max(24, top + visH - FLOOR + 30));
 
   var mid = (B[0].J.hip.x + B[1].J.hip.x) / 2;       // пятно софита едет за бойцами
   var lp = cx.createRadialGradient(mid, FLOOR + 2, 2, mid, FLOOR + 2, 74);
@@ -1220,9 +1326,8 @@ function frame(now){
     if(!seq.koDone && seq.t >= T_IMPACT + 240){
       seq.koDone = true;
       for(var z = 0; z < 2; z++) if(seq.rec.ko[z] && !B[z].down){
-        B[z].down = true;
+        B[z].down = true; koCardT = 1500;
         if(!B[z].rd){ B[z].lean.v -= 3.6; B[z].hy.v += 30; }   // запасной путь без Matter
-        popAt(B[z].J.head.x, B[z].J.head.y - 20, 'НОКАУТ', 'info');
         shake = Math.max(shake, 6);
       }
     }
@@ -1244,12 +1349,39 @@ function frame(now){
     }
     b.solve();
   }
+  ghTick++;
+  for(i = 0; i < 2; i++){
+    var bb = B[i];
+    if(!bb.gh) bb.gh = [];
+    bb.drawJ = poseOf(bb);
+    if(bb.rd && cineT > 0){
+      if(ghTick % 2 === 0){ bb.gh.push(bb.drawJ); if(bb.gh.length > 5) bb.gh.shift(); }
+    } else if(bb.gh.length) bb.gh.length = 0;
+  }
   stepPhys(ms);
   stepParts(dt);
   dark += (darkT - dark) * Math.min(1, dt * 4.5);
-  if(!cam) cam = new Sp(0, 110, 20);
-  cam.set((B[0].J.hip.x + B[1].J.hip.x) / 2 - (POS[0] + POS[1]) / 2);
-  cam.step(dt);
+  if(!cam){ cam = new Sp(0, 110, 20); camY = new Sp(1, 70, 17); zoomS = new Sp(1, 60, 15); }
+  var dtR = raw / 1000;                              // камера живёт реальным временем
+  if(cineT > 0){
+    cineT -= raw;
+    if(cineFollow >= 0){ var fb = B[cineFollow].rag.torso; camFx = fb.position.x; camFy = fb.position.y; }
+    cam.set(camFx - STAGE_W / 2, 150, 23);
+    camY.set((camFy - STAGE_H / 2) * .5, 150, 23);
+    zoomS.set(cineZ, 120, 21);
+    lb += (1 - lb) * Math.min(1, dtR * 8);
+  } else {
+    cineFollow = -1;
+    cam.set((B[0].J.hip.x + B[1].J.hip.x) / 2 - STAGE_W / 2, 110, 20);
+    camY.set(1, 70, 17);
+    zoomS.set(1, 55, 15);
+    lb += (0 - lb) * Math.min(1, dtR * 5);
+  }
+  cam.step(dtR); camY.step(dtR); zoomS.step(dtR);
+  if(koCardT > 0) koCardT -= raw;
+  for(var ri = rays.length - 1; ri >= 0; ri--){
+    rays[ri].life += dt; if(rays[ri].life > rays[ri].max) rays.splice(ri, 1);
+  }
   shake = Math.max(0, shake - 30 * dt);
   shakeX = (Math.random() * 2 - 1) * shake; shakeY = (Math.random() * 2 - 1) * shake * .55;
   flashA = Math.max(0, flashA - 1.7 * dt);
@@ -1263,9 +1395,10 @@ function clearPops(){
 }
 function popAt(sx, sy, text, cls){
   var el = document.createElement('div');
+  var scr = toScreen(sx, sy);
   el.className = 'pop ' + cls; el.textContent = text;
-  el.style.left = (OX + (sx - (cam ? cam.x : 0)) * SC) + 'px';
-  el.style.top = Math.max(2, sy * SC) + 'px';
+  el.style.left = scr.x + 'px';
+  el.style.top = Math.max(VH * .08 + 4, scr.y) + 'px';
   fxL.appendChild(el);
   setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 1250);
 }
@@ -1275,17 +1408,19 @@ function airPoint(i, rec){
 }
 
 function playRound(rec, done){
-  clearPops(); parts.length = 0; freeze = 0; slowT = 0;
+  clearPops(); parts.length = 0; rays.length = 0; freeze = 0; slowT = 0;
   rec._air = [airPoint(0, rec), airPoint(1, rec)];
   drawOrder = (rec.out[0].dmg || 0) >= (rec.out[1].dmg || 0) ? [1, 0] : [0, 1];
   seq = {t:0, rec:rec, hit:false, koDone:false, end:SEQ_END, done:done};
-  animating = true; skipEl.classList.remove('off');
+  animating = true;
 }
 
 /* мгновенно доиграть раунд до конца — по тапу или при «меньше движения» */
 function snapEnd(rec){
   var i;
-  freeze = 0; slowT = 0; parts.length = 0; clearPops(); dark = 0; darkT = 0;
+  freeze = 0; slowT = 0; parts.length = 0; rays.length = 0; clearPops();
+  dark = 0; darkT = 0; cineT = 0; cineFollow = -1; koCardT = 0;
+  for(i = 0; i < 2; i++) B[i].gh = [];
   ragResetAll();
   for(i = 0; i < 2; i++){
     disp[i].hp = rec.hp[i]; disp[i].fat = rec.fat[i];
@@ -1348,8 +1483,8 @@ function paintRounds(){
 }
 function paintRing(){
   if(phase !== 'replay') for(var i = 0; i < 2; i++) B[i].tired = F[i].fat > TIRED_AT && !F[i].ko;
-  ring.classList.toggle('full', phase === 'reveal' || phase === 'over');
-  ring.classList.toggle('cinema', phase === 'replay');
+  ring.classList.toggle('full', (phase === 'reveal' && revealDone) || phase === 'over');
+  ring.classList.toggle('cinema', phase === 'replay' || (phase === 'reveal' && !revealDone));
   ring.classList.toggle('slim', phase === 'choose');
   var lw = document.getElementById('logWrap');
   lw.classList.toggle('off', phase === 'replay');
@@ -1470,12 +1605,12 @@ function resRow(i, rec, full){
 function isOver(){ return F[0].hp <= 0 || F[1].hp <= 0 || round >= MAX_ROUNDS; }
 
 function screenReveal(){
-  var h = '<h2>РАУНД ' + lastRec.round + ' — ВСКРЫТИЕ</h2>' +
-    '<div class="card">' + resRow(0, lastRec, revealDone) + resRow(1, lastRec, revealDone) + '</div>';
-  h += revealDone
-    ? '<button class="btn gold big" data-go="' + (isOver() ? 'over' : 'next') + '">' + (isOver() ? 'ИТОГ БОЯ →' : 'СЛЕДУЮЩИЙ РАУНД →') + '</button>'
-    : '<div class="sub">Идёт размен…</div>';
-  return h;
+  if(!revealDone)                                   // во время размена панель не мешает сцене
+    return '<div class="sub">Размен идёт на ринге · тап — пропустить</div>';
+  return '<h2>РАУНД ' + lastRec.round + ' — ВСКРЫТИЕ</h2>' +
+    '<div class="card">' + resRow(0, lastRec, true) + resRow(1, lastRec, true) + '</div>' +
+    '<button class="btn gold big" data-go="' + (isOver() ? 'over' : 'next') + '">' +
+    (isOver() ? 'ИТОГ БОЯ →' : 'СЛЕДУЮЩИЙ РАУНД →') + '</button>';
 }
 
 function verdict(){
@@ -1519,7 +1654,7 @@ function screenReplay(){
    9. МАШИНА СОСТОЯНИЙ И ПОВТОР
    ========================================================================= */
 var RM = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-var replay = null, rpTimer = null;
+var replay = null, rpTimer = null, openT = null;
 var TAG = [];
 
 function render(){
@@ -1545,8 +1680,11 @@ function nextChooser(from){
   for(var i = from; i < 2; i++)
     if(!choices[i]){ active = i; phase = 'handoff'; render(); return; }
   resolveRound();
-  phase = 'reveal'; render();
-  runRound(lastRec, function(){ revealDone = true; render(); });
+  phase = 'reveal'; revealDone = false; render();
+  clearTimeout(openT);
+  openT = setTimeout(function(){                    // ждём, пока ринг раскроется, и только потом бьём
+    runRound(lastRec, function(){ revealDone = true; render(); });
+  }, RM ? 0 : 320);
 }
 function runRound(rec, done){
   if(RM){ snapEnd(rec); done(); return; }
@@ -1583,8 +1721,10 @@ function replayNext(){
 }
 function replayStop(){
   clearTimeout(rpTimer); rpTimer = null; replay = null; paused = false;
-  seq = null; animating = false; skipEl.classList.add('off'); clearPops(); parts.length = 0;
-  dark = 0; darkT = 0; ragResetAll();
+  seq = null; animating = false; skipEl.classList.add('off'); clearPops(); parts.length = 0; rays.length = 0;
+  dark = 0; darkT = 0; cineT = 0; cineFollow = -1; koCardT = 0; lb = 0;
+  for(var g = 0; g < 2; g++) B[g].gh = [];
+  ragResetAll();
   for(var i = 0; i < 2; i++){ B[i].down = !!F[i].ko; B[i].charge = false; B[i].tired = F[i].fat > TIRED_AT; }
   syncDisp();
   for(var n = 0; n < 40; n++){ driveIdle(); settle(1/60); }
@@ -1615,10 +1755,11 @@ P.addEventListener('click', function(ev){
 });
 
 function resetRing(){
-  clearTimeout(rpTimer); replay = null; paused = false;
+  clearTimeout(rpTimer); clearTimeout(openT); replay = null; paused = false;
   seq = null; animating = false; skipEl.classList.add('off');
-  clearPops(); parts.length = 0; freeze = 0; slowT = 0; shake = 0; flashA = 0; dark = 0; darkT = 0;
-  for(var i = 0; i < 2; i++) B[i].reset();
+  clearPops(); parts.length = 0; rays.length = 0; freeze = 0; slowT = 0; shake = 0; flashA = 0;
+  dark = 0; darkT = 0; cineT = 0; cineFollow = -1; koCardT = 0; lb = 0;
+  for(var i = 0; i < 2; i++){ B[i].reset(); B[i].gh = []; }
   ragResetAll();
 }
 
@@ -1627,7 +1768,7 @@ function syncTags(){
   for(var i = 0; i < 2; i++){
     var on = B[i].charge && !B[i].down;
     if(TAG[i]._on !== on){ TAG[i]._on = on; TAG[i].style.display = on ? '' : 'none'; }
-    if(on) TAG[i].style.left = (OX + (B[i].J.hip.x - (cam ? cam.x : 0)) * SC) + 'px';
+    if(on) TAG[i].style.left = toScreen(B[i].J.hip.x, 0).x + 'px';
   }
 }
 
