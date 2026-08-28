@@ -11,7 +11,7 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
-  --ink:#07090d; --bg:#0d1016; --panel:#151922; --panel2:#1c2230; --line:#2b3344;
+  --ink:#06080c; --bg:#0d1016; --panel:#151922; --panel2:#1c2230; --line:#2b3344;
   --txt:#eef2f8; --dim:#93a0b8;
   --blue:#3d8bfd; --blueL:#8dbcff; --blueD:#1a4a91;
   --red:#ff4d5e;  --redL:#ffa3ab;  --redD:#96202e;
@@ -29,7 +29,7 @@ body{
 }
 :focus-visible{outline:3px solid var(--gold);outline-offset:2px}
 
-/* ================= ПОЛОСКИ БОЙЦОВ ================= */
+/* ===================== ПОЛОСКИ БОЙЦОВ ===================== */
 #hud{flex:0 0 auto;display:flex;gap:6px;padding:7px 7px 5px;background:var(--panel);border-bottom:1px solid var(--line)}
 .corner{flex:1 1 0;min-width:0;padding:7px 8px 8px;border-radius:13px;background:var(--panel2);border:1px solid var(--line);display:flex;flex-direction:column;gap:4px;position:relative;overflow:hidden}
 .corner::before{content:"";position:absolute;inset:0 auto 0 0;width:3px}
@@ -40,78 +40,47 @@ body{
 .lab{display:flex;justify-content:space-between;align-items:baseline;gap:4px;font-size:9px;font-weight:700;color:var(--dim);letter-spacing:.1em;padding-left:6px}
 .lab b{font-family:var(--disp);color:var(--txt);font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
 .bar{position:relative;height:11px;border-radius:6px;background:#04060a;border:1px solid #2c3547;overflow:hidden;margin-left:6px}
-.bar i{position:absolute;inset:0 auto 0 0;display:block;height:100%;width:0;transition:width .42s cubic-bezier(.3,0,.2,1),background .42s ease}
+.bar i{position:absolute;inset:0 auto 0 0;display:block;height:100%;width:0;transition:width .3s cubic-bezier(.3,0,.2,1),background .3s ease}
 .bar u{position:absolute;top:0;bottom:0;left:80%;width:2px;background:#ffffff4d}
-.bar.flash{animation:barFlash .4s ease-out}
-@keyframes barFlash{0%{box-shadow:0 0 0 0 #fff0}30%{box-shadow:0 0 0 3px #ffffff6b}100%{box-shadow:0 0 0 0 #fff0}}
+.bar.flash{animation:barFlash .45s ease-out}
+@keyframes barFlash{0%{box-shadow:inset 0 0 0 0 #fff0}25%{box-shadow:inset 0 0 12px 2px #ffffff9e}100%{box-shadow:inset 0 0 0 0 #fff0}}
 
-/* ================= РИНГ ================= */
+/* ===================== РИНГ ===================== */
 #ring{
   flex:0 0 auto;position:relative;overflow:hidden;
-  height:clamp(62px,10.5vh,100px);
-  transition:height .48s cubic-bezier(.32,.9,.32,1);
-  background:radial-gradient(125% 90% at 50% -14%,#20293b 0%,#0b0e14 58%,var(--ink) 100%);
+  height:clamp(74px,12vh,116px);
+  transition:height .5s cubic-bezier(.3,.9,.3,1);
+  background:var(--ink);
   border-bottom:2px solid var(--line);
-  display:flex;align-items:flex-end;justify-content:center;gap:1%;
 }
-#ring.full{height:clamp(156px,27vh,248px)}
-#ring::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,#0000,var(--gold),#0000);opacity:.5}
-.slot{flex:0 0 46%;height:100%;position:relative;display:flex;align-items:flex-end}
-.bx{width:100%;height:100%;display:block;overflow:visible}
-.slot.r .bx{transform:scaleX(-1)}
+#ring.full{height:clamp(178px,31vh,286px)}
+#ring.cinema{height:clamp(230px,44vh,400px)}
+#ring.slim{height:0;border-bottom-width:0}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block}
+#ring::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,#0000,var(--gold),#0000);opacity:.45;pointer-events:none}
 
-/* оси вращения частей бойца */
-.bx .root,.bx .fall,.bx .bob,.bx .stance,.bx .hit{transform-box:view-box;transform-origin:60px 166px}
-.bx .head{transform-box:view-box;transform-origin:59px 58px}
-.bx .armL,.bx .gL{transform-box:view-box;transform-origin:74px 74px}
-.bx .armR,.bx .gR{transform-box:view-box;transform-origin:48px 74px}
-.bx .armL,.bx .gL{transform:rotate(-52deg)}
-.bx .armR,.bx .gR{transform:rotate(-72deg)}
-.bx .bob{animation:bob 2.4s ease-in-out infinite}
-.bx.tired .bob{animation-duration:1.1s}
-@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}
-.bx .fall{transition:transform .6s cubic-bezier(.36,.9,.4,1)}
-.bx.ko .fall{transform:rotate(-44deg) scaleY(.62) translateY(4px)}
-.bx.ko .bob{animation:none}
-.bx.ko .torso,.bx.ko .head circle,.bx.ko .leg,.bx.ko .arm,.bx.ko .glove{filter:grayscale(.75) brightness(.62)}
-.bx .shadow{opacity:.34;transition:opacity .6s ease}
-.bx.ko .shadow{opacity:.15}
-/* поза заряженного кросса — держится между раундами */
-.bx.windup .armR,.bx.windup .gR{transform:rotate(-140deg) scaleX(.92)}
-.bx.windup .gR{transform:rotate(-140deg) translateX(-1.6px)}
-.bx.windup .stance{transform:rotate(-9deg)}
-.bx.windup .glove.r{animation:chargeGlow 1.15s ease-in-out infinite}
-@keyframes chargeGlow{0%,100%{filter:drop-shadow(0 0 0 #ffb02000)}50%{filter:drop-shadow(0 0 7px #ffb020)}}
-
-/* эффекты поверх ринга */
 #fx{position:absolute;inset:0;pointer-events:none}
-#flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;mix-blend-mode:screen}
 .pop{position:absolute;transform:translate(-50%,0);font-family:var(--disp);font-weight:700;white-space:nowrap;
-     font-size:clamp(21px,6.4vw,34px);letter-spacing:.02em;animation:popUp 1.05s cubic-bezier(.2,.8,.3,1) forwards}
-.pop.dmg{color:#fff;text-shadow:0 2px 0 #8e0d19,0 0 16px #ff2f45cc}
-.pop.half{color:#ffdd8a;text-shadow:0 2px 0 #6b4a00,0 0 14px #ffb020aa}
-.pop.info{font-size:clamp(15px,4.4vw,22px);color:var(--txt);text-shadow:0 2px 6px #000d,0 0 12px #0009;letter-spacing:.12em}
-.pop.good{color:#7dffb4;text-shadow:0 2px 0 #06482a,0 0 14px #37d17899}
-@keyframes popUp{0%{opacity:0;transform:translate(-50%,10px) scale(.5)}
-  16%{opacity:1;transform:translate(-50%,-6px) scale(1.22)}
-  30%{transform:translate(-50%,-11px) scale(1)}
-  70%{opacity:1}
-  100%{opacity:0;transform:translate(-50%,-46px) scale(.98)}}
-.burst{position:absolute;width:clamp(64px,19vw,108px);aspect-ratio:1;transform:translate(-50%,-50%);
-       background:radial-gradient(circle,#fff 0%,#ffe9a8 22%,#ff8a3c 46%,#ff2f4500 72%);
-       animation:burstOut .42s ease-out forwards}
-@keyframes burstOut{0%{opacity:0;transform:translate(-50%,-50%) scale(.25)}
-  20%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(1.9)}}
-.guardSpark{position:absolute;width:clamp(46px,13vw,74px);aspect-ratio:1;transform:translate(-50%,-50%);
-       background:radial-gradient(circle,#eaf4ff 0%,#8dbcff 38%,#3d8bfd00 70%);
-       animation:burstOut .38s ease-out forwards}
-.tag{position:absolute;transform:translateX(-50%);top:5px;font-family:var(--disp);font-weight:700;
-     font-size:11px;letter-spacing:.12em;color:#2a1c00;background:var(--gold);
-     padding:2px 9px;border-radius:20px;white-space:nowrap;animation:tagIn .3s ease-out both,tagPulse 1.3s ease-in-out .3s infinite}
-@keyframes tagIn{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
-@keyframes tagPulse{0%,100%{box-shadow:0 0 0 0 #ffc44d00}50%{box-shadow:0 0 0 5px #ffc44d33}}
+     font-size:clamp(22px,6.6vw,36px);animation:popUp 1.1s cubic-bezier(.2,.85,.3,1) forwards}
+.pop.dmg{color:#fff;text-shadow:0 2px 0 #8e0d19,0 0 18px #ff2f45cc}
+.pop.half{color:#ffdd8a;text-shadow:0 2px 0 #6b4a00,0 0 15px #ffb020aa}
+.pop.info{font-size:clamp(15px,4.6vw,23px);color:var(--txt);letter-spacing:.14em;text-shadow:0 2px 7px #000e}
+.pop.good{color:#8dffbd;text-shadow:0 2px 0 #06482a,0 0 15px #37d17899}
+@keyframes popUp{0%{opacity:0;transform:translate(-50%,12px) scale(.45)}
+  14%{opacity:1;transform:translate(-50%,-6px) scale(1.28)}
+  26%{transform:translate(-50%,-12px) scale(1)}
+  72%{opacity:1}
+  100%{opacity:0;transform:translate(-50%,-52px) scale(.96)}}
+.tag{position:absolute;transform:translateX(-50%);top:6px;font-family:var(--disp);font-weight:700;
+     font-size:11px;letter-spacing:.12em;color:#2a1c00;background:var(--gold);padding:2px 9px;border-radius:20px;white-space:nowrap;
+     animation:tagIn .3s ease-out both,tagPulse 1.3s ease-in-out .3s infinite}
+@keyframes tagIn{from{opacity:0;transform:translateX(-50%) translateY(-9px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+@keyframes tagPulse{0%,100%{box-shadow:0 0 0 0 #ffc44d00}50%{box-shadow:0 0 0 5px #ffc44d38}}
+#skip{position:absolute;right:7px;top:6px;font-family:var(--disp);font-size:9.5px;letter-spacing:.12em;
+      color:#7d8ba3;background:#0a0d13a6;border:1px solid #23293a;border-radius:20px;padding:3px 9px;pointer-events:none}
+#skip.off{display:none}
 
-/* ================= ТАБЛО РАУНДА ================= */
+/* ===================== ТАБЛО РАУНДА ===================== */
 #rbar{flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:9px;
   font-family:var(--disp);font-size:13px;font-weight:700;letter-spacing:.2em;color:var(--gold);
   padding:5px 0 6px;background:var(--panel);border-bottom:2px solid var(--line)}
@@ -119,33 +88,35 @@ body{
 #rbar span.on{background:var(--gold)}
 #rbar span.now{background:var(--gold);box-shadow:0 0 0 3px #ffc44d2e}
 
-/* ================= ПАНЕЛЬ ================= */
+/* ===================== ПАНЕЛЬ ===================== */
 #panel{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:11px;display:flex;flex-direction:column;gap:9px}
-#panel>*{animation:rise .3s cubic-bezier(.2,.8,.3,1) both}
+#panel>*{animation:rise .32s cubic-bezier(.2,.85,.3,1) both}
 #panel>*:nth-child(2){animation-delay:.05s}
 #panel>*:nth-child(3){animation-delay:.1s}
 #panel>*:nth-child(4){animation-delay:.15s}
 #panel>*:nth-child(5){animation-delay:.2s}
-@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes rise{from{opacity:0;transform:translateY(13px)}to{opacity:1;transform:none}}
 h1{font-family:var(--disp);font-size:clamp(28px,8.6vw,38px);font-weight:700;line-height:1.02;text-align:center;letter-spacing:.03em;text-wrap:balance}
 h2{font-family:var(--disp);font-size:clamp(20px,5.8vw,25px);font-weight:700;text-align:center;line-height:1.15;letter-spacing:.04em;text-wrap:balance}
 .sub{font-size:14.5px;color:var(--dim);text-align:center;line-height:1.45;max-width:34em;margin-inline:auto}
-.card{background:var(--panel2);border:1px solid var(--line);border-radius:15px;padding:12px 14px;display:flex;flex-direction:column;gap:7px}
+.card{background:var(--panel2);border:1px solid var(--line);border-radius:15px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
 .card.b{border-color:#1d3a63;background:linear-gradient(#141d2e,#111825)}
 .card.r{border-color:#5c2129;background:linear-gradient(#241519,#1d1216)}
 .spacer{flex:1 1 auto;min-height:2px}
 
-/* ================= КНОПКИ ================= */
+/* ===================== КНОПКИ ===================== */
 button{font-family:inherit;color:inherit;cursor:pointer;touch-action:manipulation;border:none;background:none}
 .btn{width:100%;border:1px solid var(--line);border-radius:15px;background:var(--panel2);
-  padding:17px 14px;font-family:var(--disp);font-size:20px;font-weight:700;letter-spacing:.05em;line-height:1.1;transition:transform .09s ease,filter .12s ease}
+  padding:17px 14px;font-family:var(--disp);font-size:20px;font-weight:700;letter-spacing:.05em;line-height:1.1;
+  transition:transform .09s ease,filter .12s ease}
 .btn:active{transform:scale(.972);filter:brightness(1.16)}
 .btn.big{padding:21px 14px;font-size:23px}
 .btn.blue{background:linear-gradient(#3d8bfd,#2160cd);border-color:#8dbcff;color:#fff}
 .btn.red{background:linear-gradient(#ff4d5e,#d02536);border-color:#ffa3ab;color:#fff}
 .btn.gold{background:linear-gradient(#ffcf6b,#e19100);border-color:#ffe3a6;color:#2a1c00}
-.btn.gold::after{content:"";position:absolute}
 .btn.ghost{background:none;color:var(--dim);font-size:16px;padding:13px;border-style:dashed}
+.row{display:flex;gap:8px}
+.row .btn{flex:1 1 0}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .act{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:2px;
   min-height:clamp(60px,10vh,90px);padding:8px 6px;border-radius:15px;border:1px solid var(--line);
@@ -163,18 +134,29 @@ button{font-family:inherit;color:inherit;cursor:pointer;touch-action:manipulatio
 .act.def .t{color:var(--blueL)}
 .hdr{font-size:10px;font-weight:800;letter-spacing:.22em;color:var(--dim);text-transform:uppercase}
 
-/* ================= РАЗБОР РАУНДА ================= */
-.rw .who{font-family:var(--disp);font-size:17px;font-weight:700;letter-spacing:.04em}
-.card.b .who{color:var(--blueL)} .card.r .who{color:var(--redL)}
-.res{font-size:14.5px;font-weight:500;line-height:1.4}
-.res.miss{color:var(--dim)}
-.dmg{display:inline-block;font-family:var(--disp);font-weight:700;color:#fff;background:#b81f2e;border-radius:7px;padding:0 8px;margin-left:5px}
-.dmg.half{background:#8a6300}
-.zero{display:inline-block;font-family:var(--disp);font-weight:700;color:#06210f;background:var(--ok);border-radius:7px;padding:0 8px;margin-left:5px}
+/* ===================== РАЗБОР РАУНДА ===================== */
+.res{display:flex;flex-direction:column;gap:3px;padding:7px 0}
+.res+.res{border-top:1px solid var(--line)}
+.res .top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.res .who{font-family:var(--disp);font-size:16px;font-weight:700;letter-spacing:.03em;line-height:1.15}
+.res.b .who{color:var(--blueL)} .res.r .who{color:var(--redL)}
+.res .why{font-size:12.5px;color:var(--dim);line-height:1.35}
+.hit{font-family:var(--disp);font-weight:700;font-size:17px;color:#fff;background:#b81f2e;border-radius:7px;padding:0 9px;flex:0 0 auto}
+.hit.half{background:#8a6300} .hit.zero{background:#20304a;color:#9fb2cf}
 .warnline{font-size:12.5px;font-weight:700;color:var(--warn);line-height:1.3}
 
-/* ================= ЖУРНАЛ ================= */
+/* ===================== ПОВТОР ===================== */
+#rp{display:flex;flex-direction:column;gap:8px}
+.rpcap{font-family:var(--disp);font-size:17px;font-weight:700;letter-spacing:.03em;text-align:center;line-height:1.3}
+#rp .row .btn{font-size:15px;padding:13px 6px;letter-spacing:.03em}
+.rpbar{height:5px;border-radius:3px;background:#0a0d13;border:1px solid var(--line);overflow:hidden}
+.rpbar i{display:block;height:100%;background:var(--gold);width:0}
+
+/* ===================== ЖУРНАЛ ===================== */
 #logWrap{flex:0 0 auto;background:var(--panel);border-top:2px solid var(--line)}
+#logWrap.off{display:none}
+/* на невысоких экранах журнал уступает место сцене: во вскрытии он дублирует то, что видно */
+@media (max-height:800px){ #logWrap.rev{display:none} #ring.full{height:clamp(150px,26vh,240px)} }
 #logHead{display:flex;justify-content:space-between;align-items:center;padding:5px 12px 3px;
   font-size:9px;font-weight:800;letter-spacing:.22em;color:var(--dim);text-transform:uppercase}
 #log{height:15vh;min-height:66px;max-height:150px;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 12px 9px;font-size:12.5px;line-height:1.4}
@@ -194,7 +176,6 @@ details[open] summary::before{content:"▾ "}
 details .body{font-size:13.5px;line-height:1.55;color:#bcc6d8;padding-top:10px;display:flex;flex-direction:column;gap:9px}
 details .body b{color:var(--txt)} details .body .k{color:var(--gold);font-weight:700}
 
-/* низкие экраны: всё должно доставаться пальцем без прокрутки */
 @media (max-height:730px){
   #hud{padding:5px 5px 4px;gap:5px}
   .corner{padding:5px 7px 6px;gap:3px}
@@ -202,8 +183,7 @@ details .body b{color:var(--txt)} details .body .k{color:var(--gold);font-weight
   .lab{font-size:8.5px} .lab b{font-size:13px}
   .bar{height:9px}
   #rbar{padding:3px 0 4px;font-size:11px;gap:7px}
-  #ring{height:clamp(50px,8vh,100px)}
-  #ring.slim{height:0;border-bottom-width:0}   /* на экране выбора ринг уступает место кнопкам */
+  #ring{height:clamp(60px,9.5vh,110px)}
   #log{height:13vh;min-height:54px}
   #panel{gap:6px;padding:8px}
   .act{min-height:clamp(52px,9vh,84px)}
@@ -212,14 +192,15 @@ details .body b{color:var(--txt)} details .body .k{color:var(--gold);font-weight
   details{padding:9px 12px}
 }
 @media (max-height:600px){
-  #ring{height:44px}
+  #ring{height:48px}
   #log{height:48px;min-height:48px}
   .act{min-height:48px} .act.wide{min-height:44px}
   .btn.big{padding:16px 12px;font-size:19px}
   h1{font-size:24px} h2{font-size:17px}
 }
 @media (prefers-reduced-motion:reduce){
-  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+  #panel>*,#log .ent,.pop,.tag{animation-duration:.01ms!important;animation-iteration-count:1!important}
+  #ring{transition-duration:.01ms}
 }
 </style>
 </head>
@@ -243,10 +224,9 @@ details .body b{color:var(--txt)} details .body .k{color:var(--gold);font-weight
 </div>
 
 <div id="ring">
-  <div class="slot b" id="slot0"></div>
-  <div class="slot r" id="slot1"></div>
-  <div id="flash"></div>
+  <canvas id="cv"></canvas>
   <div id="fx"></div>
+  <div id="skip" class="off">ТАП — ПРОПУСТИТЬ</div>
 </div>
 
 <div id="rbar"></div>
@@ -261,7 +241,7 @@ details .body b{color:var(--txt)} details .body .k{color:var(--gold);font-weight
 "use strict";
 
 /* =========================================================================
-   БАЛАНС
+   1. ПРАВИЛА И БАЛАНС
    ========================================================================= */
 var MAX_HP = 100, MAX_FAT = 100, MAX_ROUNDS = 10;
 var TIRED_AT = 80;      // усталость ВЫШЕ этого значения — штраф к урону
@@ -277,7 +257,7 @@ var REST = 8;           // пассивное восстановление за 
       только апперкот в ГОЛОВУ: боксёр ныряет прямо под удар. */
 var BLOCK_STOPS_HEAD_UPPERCUT = true;
 var UPPERCUT_PIERCES_SLIP_HEAD_ONLY = true;
-var CROSS_BLOCK_MULT = 0.5;   // высокий блок гасит половину кросса
+var CROSS_BLOCK_MULT = 0.5;
 
 var ACT = {
   jab:      {id:'jab',      kind:'attack', name:'Прямой',       em:'👊', dmg:20, fat:14,  level:true,  hint:'20 урона · сразу'},
@@ -289,38 +269,31 @@ var ACT = {
   crossLand:{id:'crossLand',kind:'attack', name:'Кросс',        em:'💥', dmg:50, fat:6,   level:false, hint:''}
 };
 
-/* =========================================================================
-   СОСТОЯНИЕ
-   ========================================================================= */
-var F, round, phase, active, choices, pendLevel, lastReport, revealDone;
-var disp = [{hp:MAX_HP,fat:0},{hp:MAX_HP,fat:0}];   // то, что сейчас нарисовано на полосках
+var F, round, phase, active, choices, pendLevel, lastRec, revealDone, bouts;
+var disp = [{hp:MAX_HP,fat:0},{hp:MAX_HP,fat:0}];
 
 function newFight(){
   F = [
     {i:0, name:'СИНИЙ',   cls:'b', ico:'🔵', hp:MAX_HP, fat:0, pending:false, ko:false},
     {i:1, name:'КРАСНЫЙ', cls:'r', ico:'🔴', hp:MAX_HP, fat:0, pending:false, ko:false}
   ];
-  round = 1; choices = [null,null]; pendLevel = null; lastReport = null; revealDone = false;
+  round = 1; choices = [null,null]; pendLevel = null; lastRec = null; revealDone = false;
+  bouts = [];
   syncDisp();
   document.getElementById('log').innerHTML = '<div class="empty">Бой ещё не начался.</div>';
 }
 function syncDisp(){ for(var i=0;i<2;i++){ disp[i].hp = F[i].hp; disp[i].fat = F[i].fat; } }
 
-/* =========================================================================
-   РАЗБОР УДАРА: что стало с атакой atk против действия защитника def
-   ========================================================================= */
 function resolve(atk, def){
   var d = def ? def.id : null;
-
   if(atk.id === 'crossLand'){
     if(d === 'block') return {mult:CROSS_BLOCK_MULT, why:'высокий блок принял кросс — урон вдвое меньше'};
     if(d === 'step')  return {mult:1, why:'шаг назад НЕ спасает от объявленного кросса'};
     if(d === 'slip')  return {mult:1, why:'нырок не помогает против кросса'};
     return {mult:1, why:'кросс дошёл без помех'};
   }
-  if(atk.id === 'cross') return null;                    // замах, урона нет
+  if(atk.id === 'cross') return null;
   if(d === 'step') return {mult:0, why:'шаг назад разорвал дистанцию — удар не достал'};
-
   if(atk.id === 'jab'){
     if(atk.lvl === 'head'){
       if(d === 'block') return {mult:0, why:'высокий блок закрыл голову'};
@@ -331,7 +304,6 @@ function resolve(atk, def){
     if(d === 'block') return {mult:1, why:'высокий блок держал голову — корпус открыт'};
     return {mult:1, why:'соперник не защищался'};
   }
-
   if(atk.id === 'uppercut'){
     if(atk.lvl === 'head'){
       if(d === 'block') return BLOCK_STOPS_HEAD_UPPERCUT
@@ -354,17 +326,14 @@ function label(c){
   if(c.id === 'crossLand') return 'КРОСС ПРИЛЕТАЕТ';
   if(c.id === 'cross')     return 'Кросс — замах';
   var a = ACT[c.id];
-  if(c.lvl) return a.name + (c.lvl === 'head' ? ' в голову' : ' в корпус');
-  return a.name;
+  return a.name + (c.lvl ? (c.lvl === 'head' ? ' в голову' : ' в корпус') : '');
 }
 
-/* =========================================================================
-   ПРОСЧЁТ РАУНДА (одновременный)
-   ========================================================================= */
+/* просчёт раунда: оба удара считаются от состояния НА НАЧАЛО раунда */
 function resolveRound(){
-  var startFat = [F[0].fat, F[1].fat];
-  var tired = [startFat[0] > TIRED_AT, startFat[1] > TIRED_AT];
-  var out = [null,null], i;
+  var i, before = {hp:[F[0].hp,F[1].hp], fat:[F[0].fat,F[1].fat], pending:[F[0].pending,F[1].pending]};
+  var tired = [F[0].fat > TIRED_AT, F[1].fat > TIRED_AT];
+  var out = [null,null];
 
   for(i = 0; i < 2; i++){
     var mine = choices[i], A = ACT[mine.id];
@@ -375,7 +344,7 @@ function resolveRound(){
               mult:r.mult, why:r.why, tired:tired[i]};
   }
 
-  F[1].hp = Math.max(0, F[1].hp - out[0].dmg);   // урон применяется одновременно
+  F[1].hp = Math.max(0, F[1].hp - out[0].dmg);
   F[0].hp = Math.max(0, F[0].hp - out[1].dmg);
 
   for(i = 0; i < 2; i++){
@@ -385,241 +354,654 @@ function resolveRound(){
     if(F[i].hp <= 0) F[i].ko = true;
   }
 
-  lastReport = {round:round, choices:[choices[0], choices[1]], out:out,
-                hp:[F[0].hp, F[1].hp], fat:[F[0].fat, F[1].fat], tired:tired};
-  pushLog(lastReport);
+  lastRec = {round:round, choices:[choices[0], choices[1]], out:out, tired:tired,
+             before:before, hp:[F[0].hp,F[1].hp], fat:[F[0].fat,F[1].fat],
+             ko:[F[0].ko, F[1].ko]};
+  bouts.push(lastRec);
+  pushLog(lastRec);
 }
 
 /* =========================================================================
-   БОЙЦЫ: СИЛУЭТЫ И АНИМАЦИЯ
+   2. ФИЗИКА: пружины, скелет, инверсная кинематика
    ========================================================================= */
-var ARM = 20;                       // длина руки в единицах viewBox
-var NUDGE = 17;                     // сдвиг бойца к центру ринга, единицы viewBox
-var GUARD = {L:-52, R:-72};         // углы рук в стойке
-var RM = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+var STAGE_W = 168, STAGE_H = 106, FLOOR = 97;
+var POS = [63, 105];                      // 42 единицы между бойцами — дистанция удара
+var TORSO = 24, HEAD_UP = 9.4, HEAD_R = 7.0;
+var UPARM = 13.5, FOREARM = 13.5, THIGH = 16.5, SHIN = 16.5;
+var GLOVE = 5.2, HIP_Y = FLOOR - 31;
+
+/* Пружина с полунеявным Эйлером и подшагами: держит жёсткие ударные
+   пружины устойчивыми даже при просадке кадра. */
+function Sp(v, k, d){ this.x = v; this.v = 0; this.t = v; this.k = k; this.d = d; }
+Sp.prototype.set = function(t, k, d){ this.t = t; if(k != null) this.k = k; if(d != null) this.d = d; };
+Sp.prototype.step = function(dt){
+  var n = Math.min(8, Math.max(1, Math.ceil(dt * 180))), h = dt / n;
+  for(var i = 0; i < n; i++){
+    this.v += ((this.t - this.x) * this.k - this.v * this.d) * h;
+    this.x += this.v * h;
+  }
+};
+Sp.prototype.reset = function(v){ this.x = v; this.t = v; this.v = 0; };
+
+function Boxer(i){
+  this.i = i; this.face = i === 0 ? 1 : -1; this.base = POS[i];
+  this.hx = new Sp(POS[i], 130, 21);
+  this.hy = new Sp(HIP_Y, 220, 27);
+  this.lean = new Sp(0, 150, 22);
+  this.head = new Sp(0, 260, 17);
+  this.hand = [
+    {x:new Sp(POS[i], 200, 25), y:new Sp(HIP_Y - 27, 200, 25)},
+    {x:new Sp(POS[i], 200, 25), y:new Sp(HIP_Y - 27, 200, 25)}
+  ];
+  this.foot = [new Sp(POS[i] + 10 * this.face, 170, 24), new Sp(POS[i] - 11 * this.face, 170, 24)];
+  this.trail = [[], []];
+  this.breath = Math.random() * 6;
+  this.charge = false; this.down = false; this.tired = false;
+  this.J = null;
+  this.solve();
+}
+Boxer.prototype.reset = function(){
+  var f = this.face;
+  this.hx.reset(this.base); this.hy.reset(HIP_Y); this.lean.reset(0); this.head.reset(0);
+  this.foot[0].reset(this.base + 10 * f); this.foot[1].reset(this.base - 11 * f);
+  this.charge = false; this.down = false; this.tired = false;
+  this.trail = [[], []];
+  this.solve();
+  this.hand[0].x.reset(this.J.neck.x + 8 * f); this.hand[0].y.reset(this.J.neck.y - 1);
+  this.hand[1].x.reset(this.J.neck.x + 1 * f); this.hand[1].y.reset(this.J.neck.y - 4);
+  this.solve();
+};
+
+/* двухзвенная ИК: где встанет локоть или колено */
+function ik(ax, ay, tx, ty, l1, l2, bend){
+  var dx = tx - ax, dy = ty - ay, d = Math.hypot(dx, dy) || 0.001;
+  var dc = Math.min(d, l1 + l2 - 0.01);
+  var c = (dc * dc + l1 * l1 - l2 * l2) / (2 * dc * l1);
+  var ang = Math.atan2(dy, dx) + bend * Math.acos(Math.max(-1, Math.min(1, c)));
+  return {x: ax + Math.cos(ang) * l1, y: ay + Math.sin(ang) * l1,
+          ex: ax + dx / d * dc, ey: ay + dy / d * dc};
+}
+
+/* пересчёт всех точек скелета из текущего состояния пружин */
+Boxer.prototype.solve = function(){
+  var f = this.face, lean = this.lean.x;
+  var hip = {x:this.hx.x, y:this.hy.x};
+  var up = {x:Math.sin(lean) * f, y:-Math.cos(lean)};
+  var fw = {x:Math.cos(lean) * f, y:Math.sin(lean) * f};
+  var neck = {x:hip.x + up.x * TORSO, y:hip.y + up.y * TORSO};
+  var shB  = {x:neck.x - up.x * 3.5,  y:neck.y - up.y * 3.5};
+  var ha = lean + this.head.x;
+  var head = {x:neck.x + Math.sin(ha) * f * HEAD_UP, y:neck.y - Math.cos(ha) * HEAD_UP};
+  var sh = [
+    {x:shB.x + fw.x * 4.2, y:shB.y + fw.y * 4.2},
+    {x:shB.x - fw.x * 4.2, y:shB.y - fw.y * 4.2}
+  ];
+  var arms = [], legs = [], k;
+  for(k = 0; k < 2; k++){
+    var h = {x:this.hand[k].x.x, y:this.hand[k].y.x};
+    var e = ik(sh[k].x, sh[k].y, h.x, h.y, UPARM, FOREARM, f > 0 ? 1 : -1);
+    arms.push({sh:sh[k], el:{x:e.x, y:e.y}, hand:{x:e.ex, y:e.ey}});
+  }
+  for(k = 0; k < 2; k++){
+    var hipK = {x:hip.x + fw.x * (k === 0 ? 2 : -2), y:hip.y + 1};
+    var ft = {x:this.foot[k].x, y:FLOOR};
+    var kn = ik(hipK.x, hipK.y, ft.x, ft.y, THIGH, SHIN, f > 0 ? -1 : 1);
+    legs.push({hip:hipK, knee:{x:kn.x, y:kn.y}, foot:{x:kn.ex, y:kn.ey}});
+  }
+  this.J = {hip:hip, up:up, fw:fw, neck:neck, shB:shB, head:head, ha:ha, sh:sh, arms:arms, legs:legs};
+};
+
+var B = [new Boxer(0), new Boxer(1)];
+
+/* --- удобные сеттеры целей --- */
+function handTo(b, k, x, y, kk, dd){ b.hand[k].x.set(x, kk, dd); b.hand[k].y.set(y, kk, dd); }
+function footTo(b, k, x, kk, dd){ b.foot[k].set(x, kk, dd); }
+function headPt(o){ return {x:o.J.head.x + 5.5 * o.face, y:o.J.head.y + 2.2}; }
+function bodyPt(o){ return {x:o.J.hip.x + 5.5 * o.face, y:o.J.hip.y - 12}; }
+function guardPt(o){
+  var a = o.J.arms[0].hand, b2 = o.J.arms[1].hand;
+  return {x:(a.x + b2.x) / 2 + 3 * o.face, y:(a.y + b2.y) / 2};
+}
+/* Насколько шагнуть вперёд, чтобы цель оказалась в пределах вытянутой руки.
+   Считается от нейтрального положения плеча, поэтому не раскачивается. */
+var REACH = UPARM + FOREARM;
+function lungeX(b, k, p, extra, cap, sep){
+  var shx = b.base + (k === 0 ? 4.2 : -4.2) * b.face;
+  var need = Math.abs(p.x - shx) - REACH * 0.92;
+  var d = Math.max(0, need) + (extra || 0);
+  var x = b.base + Math.min(d, cap == null ? 26 : cap) * b.face;
+  var lim = B[1 - b.i].hx.x - (sep == null ? 29 : sep) * b.face;
+  return b.face > 0 ? Math.min(x, lim) : Math.max(x, lim);
+}
+
+/* =========================================================================
+   3. СТОЙКА И ДЕЙСТВИЯ
+   ========================================================================= */
+function driveGuard(b){
+  var f = b.face, n = b.J.neck;
+  var drop = b.tired ? 3.4 : 0;                 // выдохся — руки опускаются
+  var br = Math.sin(b.breath) * (b.tired ? 1.7 : 0.75);
+  b.hx.set(b.base, 130, 21);
+  b.hy.set(HIP_Y + br, 220, 27);
+  b.lean.set(b.tired ? 0.07 : 0.02, 150, 22);
+  b.head.set(0, 260, 17);
+  handTo(b, 0, n.x + 10 * f, n.y - 1 + drop, 190, 25);
+  handTo(b, 1, n.x + 5 * f, n.y - 3.5 + drop, 190, 25);
+  footTo(b, 0, b.base + 10 * f, 170, 24);
+  footTo(b, 1, b.base - 11 * f, 170, 24);
+}
+
+function applyCharge(b){                        // заряженный кросс держится позой
+  var f = b.face, n = b.J.neck;
+  handTo(b, 1, n.x - 13 * f, n.y + 2, 210, 26);
+  b.lean.set(-0.20, 150, 22);
+  b.hx.set(b.base - 4 * f, 130, 21);
+  footTo(b, 1, b.base - 15 * f, 170, 24);
+}
+
+function driveDown(b){                          // нокдаун: тело оседает на настил
+  var f = b.face;
+  b.hy.set(FLOOR - 10, 95, 15);
+  b.hx.set(b.base + 5 * f, 60, 14);
+  b.lean.set(-1.16, 62, 12);
+  b.head.set(-0.30, 95, 13);
+  footTo(b, 0, b.J.hip.x + 16 * f, 80, 16);
+  footTo(b, 1, b.J.hip.x - 4 * f, 80, 16);
+  handTo(b, 0, b.J.hip.x - 6 * f, FLOOR - 4, 80, 17);
+  handTo(b, 1, b.J.hip.x - 14 * f, FLOOR - 2, 80, 17);
+}
+
+/* --- куда летит кулак: по живой цели, в блок или в пустоту --- */
+function targetPoint(i, rec){
+  var o = B[1 - i], c = rec.choices[i], out = rec.out[i], oc = rec.choices[1 - i];
+  var lvl = c.lvl || 'head';
+  if(out.dmg > 0) return lvl === 'body' ? bodyPt(o) : headPt(o);   // попадание — ведём цель
+  if(oc && oc.id === 'block') return guardPt(o);                   // упёрся в перчатки
+  return rec._air[i];                                              // рассекает воздух
+}
+
+var SEQ_END = 1520, T_IMPACT = 520;
+
+function driveActor(i, t, rec){
+  var b = B[i], f = b.face, c = rec.choices[i], n = b.J.neck, p;
+  if(b.down){ driveDown(b); return; }
+  driveGuard(b);
+
+  switch(c.id){
+    case 'jab':
+      if(t < 365){                                   // замах: плечо назад, вес на заднюю ногу
+        handTo(b, 0, n.x + 4 * f, n.y + 1, 240, 26);
+        b.lean.set(-0.07, 170, 22); b.hx.set(b.base - 2.5 * f, 150, 21);
+      } else if(t < 800){                            // вынос
+        p = targetPoint(i, rec);
+        handTo(b, 0, p.x, p.y, 950, 41);
+        var jx = lungeX(b, 0, p, 3, 22, 30);
+        b.lean.set(0.17, 230, 21); b.hx.set(jx, 230, 23);
+        footTo(b, 0, jx + 11 * f, 220, 24); footTo(b, 1, jx - 12 * f, 210, 24);
+      }
+      break;
+
+    case 'uppercut':
+      if(t < 350){                                   // просадка: кулак уходит вниз
+        handTo(b, 1, n.x - 3 * f, n.y + 17, 300, 27);
+        b.hy.set(HIP_Y + 5, 240, 26); b.lean.set(0.10, 180, 22);
+      } else if(t < 830){                            // взрыв снизу вверх
+        p = targetPoint(i, rec);
+        handTo(b, 1, p.x, p.y, 1000, 40);
+        var ux = lungeX(b, 1, p, 6, 28, 29);
+        b.hy.set(HIP_Y - 5, 300, 24); b.lean.set(0.08, 230, 21);
+        b.hx.set(ux, 240, 23);
+        footTo(b, 0, ux + 12 * f, 220, 24); footTo(b, 1, ux - 12 * f, 210, 24);
+      }
+      break;
+
+    case 'cross':                                    // замах: скрутка и удержание
+      handTo(b, 1, n.x - 13 * f, n.y + 2, t < 620 ? 230 : 210, 26);
+      handTo(b, 0, n.x + 9 * f, n.y - 1, 200, 25);
+      b.lean.set(-0.21, 150, 22); b.hx.set(b.base - 4 * f, 130, 21);
+      footTo(b, 1, b.base - 15 * f, 170, 24);
+      if(t > 560) b.charge = true;
+      break;
+
+    case 'crossLand':
+      if(t < 360){                                   // добирает скрутку
+        handTo(b, 1, n.x - 17 * f, n.y + 4, 260, 26);
+        b.lean.set(-0.30, 190, 22); b.hx.set(b.base - 5 * f, 160, 21);
+        footTo(b, 1, b.base - 17 * f, 190, 24);
+      } else if(t < 880){                            // всем корпусом
+        p = targetPoint(i, rec);
+        handTo(b, 1, p.x, p.y, 1250, 43);
+        var cxx = lungeX(b, 1, p, 7, 34, 24);
+        b.lean.set(0.34, 280, 21); b.hx.set(cxx, 280, 23);
+        footTo(b, 0, cxx + 14 * f, 250, 24); footTo(b, 1, cxx - 11 * f, 250, 24);
+        b.charge = false;
+      }
+      break;
+
+    case 'block':
+      if(t > 90 && t < 980){                         // обе перчатки к лицу, локти внутрь
+        handTo(b, 0, n.x + 5.5 * f, n.y - 3.5, 330, 27);
+        handTo(b, 1, n.x - 0.5 * f, n.y - 4.5, 330, 27);
+        b.lean.set(0.12, 210, 24); b.hy.set(HIP_Y + 2.5, 220, 26);
+      }
+      break;
+
+    case 'slip':
+      if(t > 100 && t < 980){                        // присед: колени сгибает ИК, ступни на месте
+        b.hy.set(HIP_Y + 14, 250, 25);
+        b.lean.set(0.30, 210, 23);
+        handTo(b, 0, n.x + 6 * f, n.y + 1, 270, 26);
+        handTo(b, 1, n.x + 0.5 * f, n.y - 2, 270, 26);
+      }
+      break;
+
+    case 'step':
+      if(t > 90 && t < 1000){                        // разрыв дистанции
+        b.hx.set(b.base - 13 * f, 200, 23);
+        footTo(b, 0, b.base - 3 * f, 210, 24); footTo(b, 1, b.base - 23 * f, 210, 24);
+        b.lean.set(-0.11, 170, 22);
+        handTo(b, 0, n.x + 7 * f, n.y - 1, 230, 25);
+      }
+      break;
+  }
+  if(b.charge && c.id === 'cross' && t >= 560) applyCharge(b);
+}
+
+/* --- момент попадания: импульсы, брызги, стоп-кадр --- */
+function applyImpact(rec){
+  var heavy = 0, i;
+  for(i = 0; i < 2; i++){
+    var o = rec.out[i], j = 1 - i, a = B[i], d = B[j], c = rec.choices[i];
+    if(o.type === 'windup'){ popAt(a.J.arms[1].hand.x, a.J.arms[1].hand.y - 12, 'ЗАМАХ', 'info'); continue; }
+    if(o.type !== 'atk') continue;
+    var lvl = c.lvl || 'head', f = a.face, hp = a.J.arms[c.id === 'jab' ? 0 : 1].hand;
+
+    if(o.dmg > 0){
+      var k = o.dmg / 50;                            // сила удара 0..1
+      heavy = Math.max(heavy, k);
+      d.hx.v += f * (55 + 105 * k);
+      if(lvl === 'head'){
+        d.head.v -= (7.5 + 10 * k);
+        d.lean.v -= (2.4 + 3.4 * k);
+        d.hand[0].y.v += 26 * k; d.hand[1].y.v += 20 * k;
+      } else {
+        d.lean.v += (3.2 + 4.4 * k);
+        d.hy.v += 34 * k; d.head.v += 2.5 * k;
+      }
+      a.hx.v -= f * 26 * k;                          // отдача бьющему
+      a.hand[c.id === 'jab' ? 0 : 1].x.v -= f * 40 * k;
+      burst(hp.x, hp.y, 14 + (k * 12 | 0), k);
+      popAt(hp.x, hp.y - 24, '−' + o.dmg, o.mult < 1 ? 'half' : 'dmg');
+      freeze += 55 + 55 * k;
+      shake = Math.max(shake, 2.6 + 5.4 * k);
+      for(var q = 0; q < 5 + (k * 6 | 0); q++)
+        parts.push({x:d.J.hip.x + (Math.random() * 18 - 9), y:FLOOR - 1,
+                    vx:(Math.random() * 2 - 1) * 22, vy:-8 - Math.random() * 16,
+                    r:.8 + Math.random() * 1.6, life:0, max:.5 + Math.random() * .5, c:'#5b6579'});
+      if(k >= .6){ slowT = 260; whiten(); }
+    } else {
+      var dd = rec.choices[j] ? rec.choices[j].id : null;
+      if(dd === 'block'){
+        d.hx.v += f * 26; d.hand[0].x.v += f * 55; d.hand[1].x.v += f * 42;
+        a.hand[c.id === 'jab' ? 0 : 1].x.v -= f * 90;
+        burst(hp.x, hp.y, 8, .25, '#cfe6ff');
+        freeze += 45; shake = Math.max(shake, 1.8);
+      }
+      popAt(d.J.head.x, d.J.head.y - 22,
+            dd === 'step' ? 'МИМО' : (dd === 'slip' ? 'НЫРОК!' : 'БЛОК!'), 'good');
+    }
+  }
+  return heavy;
+}
+
+/* =========================================================================
+   4. РИСОВАНИЕ
+   ========================================================================= */
 var SKIN = [
-  {body:'#2f6fd0', head:'#4a92ff', arm:'#6aa6f5', glove:'#dceaff'},
-  {body:'#d93646', head:'#ff5b6b', arm:'#f57682', glove:'#ffdee2'}
+  {body:'#3b7fe0', bodyD:'#1f4f9e', dark:'#17396f', trunk:'#0d2650', trunkL:'#5a9cf5',
+   glove:'#b5d3ff', gloveD:'#5b90e6', rim:'#b9d6ff', boot:'#0a172c'},
+  {body:'#e04150', bodyD:'#a02531', dark:'#741822', trunk:'#520f17', trunkL:'#f97d89',
+   glove:'#ffbcc3', gloveD:'#dd5866', rim:'#ffc2c8', boot:'#2e080d'}
 ];
 
-function boxerSVG(s){
-  return '<svg class="bx" viewBox="0 0 120 175" preserveAspectRatio="xMaxYMax meet">' +
-    '<g class="nudge" transform="translate(' + NUDGE + ',0)">' +
-    '<ellipse class="shadow" cx="62" cy="169" rx="30" ry="5" fill="#000"></ellipse>' +
-    '<g class="root"><g class="fall"><g class="bob"><g class="stance"><g class="hit">' +
-      '<g class="armR"><rect class="arm" x="48" y="68" width="20" height="12" rx="6" fill="' + s.arm + '"></rect></g>' +
-      '<g class="gR"><circle class="glove r" cx="68" cy="74" r="12.5" fill="' + s.glove + '"></circle></g>' +
-      '<rect class="leg" x="46" y="116" width="13" height="50" rx="6.5" fill="' + s.body + '"></rect>' +
-      '<rect class="leg" x="63" y="116" width="13" height="50" rx="6.5" fill="' + s.body + '"></rect>' +
-      '<rect class="torso" x="40" y="62" width="42" height="58" rx="14" fill="' + s.body + '"></rect>' +
-      '<g class="head"><circle cx="59" cy="40" r="19" fill="' + s.head + '"></circle></g>' +
-      '<g class="armL"><rect class="arm" x="74" y="68" width="20" height="12" rx="6" fill="' + s.arm + '"></rect></g>' +
-      '<g class="gL"><circle class="glove l" cx="94" cy="74" r="12.5" fill="' + s.glove + '"></circle></g>' +
-    '</g></g></g></g></g></g></svg>';
-}
-
 var ring = document.getElementById('ring');
-var fxL  = document.getElementById('fx');
-var flashEl = document.getElementById('flash');
-var BX = [], TAG = [];
+var cv = document.getElementById('cv'), cx = cv.getContext('2d');
+var fxL = document.getElementById('fx'), skipEl = document.getElementById('skip');
+var DPR = 1, VW = 0, VH = 0, SC = 1, OX = 0;
+var shake = 0, shakeX = 0, shakeY = 0, flashA = 0;
+var cam = null;   // пружина слежения, создаётся после Sp
+var parts = [];
 
-function buildRing(){
-  for(var i = 0; i < 2; i++){
-    var slot = document.getElementById('slot' + i);
-    slot.innerHTML = boxerSVG(SKIN[i]);
-    BX[i] = slot.querySelector('.bx');
-    var t = document.createElement('div');
-    t.className = 'tag'; t.textContent = '⚡ ГОТОВИТ КРОСС';
-    t.style.left = (i === 0 ? 26 : 74) + '%';
-    t.style.display = 'none';
-    fxL.appendChild(t); TAG[i] = t;
+function fitCanvas(){
+  var r = ring.getBoundingClientRect();
+  DPR = Math.min(window.devicePixelRatio || 1, 2.5);
+  VW = Math.max(1, r.width); VH = Math.max(1, r.height);
+  cv.width = Math.round(VW * DPR); cv.height = Math.round(VH * DPR);
+  SC = VH / STAGE_H;
+  OX = (VW - STAGE_W * SC) / 2;
+}
+if(window.ResizeObserver) new ResizeObserver(fitCanvas).observe(ring);
+window.addEventListener('resize', fitCanvas);
+
+function burst(x, y, n, k, col){
+  for(var i = 0; i < n; i++){
+    var a = Math.random() * Math.PI * 2, sp = (14 + Math.random() * 46) * (0.5 + k);
+    parts.push({x:x, y:y, vx:Math.cos(a) * sp, vy:Math.sin(a) * sp - 14,
+                r:0.7 + Math.random() * (1.1 + k), life:0, max:0.42 + Math.random() * 0.5,
+                c:col || (Math.random() < .3 ? '#ffd98a' : '#eaf1ff')});
+  }
+}
+function stepParts(dt){
+  for(var i = parts.length - 1; i >= 0; i--){
+    var p = parts[i];
+    p.life += dt; if(p.life > p.max){ parts.splice(i, 1); continue; }
+    p.vy += 190 * dt; p.vx *= 0.985;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    if(p.y > FLOOR){ p.y = FLOOR; p.vy *= -0.28; p.vx *= 0.6; }
   }
 }
 
-/* --- низкоуровневые помощники анимации --- */
-var running = [], timers = [], animating = false;
-function track(a){ running.push(a); return a; }
-function stopAll(){ running.forEach(function(a){ try{ a.cancel(); }catch(e){} }); running = []; }
-function at(ms, fn){ timers.push(setTimeout(fn, ms)); }
-function clearTimers(){ timers.forEach(clearTimeout); timers = []; }
-
-/* рука + перчатка двигаются согласованно: рука тянется, перчатка едет по её оси */
-var EASE_DEF = 'cubic-bezier(.25,.85,.35,1)';
-function swing(i, side, frames, dur){
-  var bx = BX[i];
-  var arm = bx.querySelector(side === 'L' ? '.armL' : '.armR');
-  var gl  = bx.querySelector(side === 'L' ? '.gL'   : '.gR');
-  var ka = [], kg = [];
-  frames.forEach(function(f){
-    var s = (f.s == null) ? 1 : f.s;
-    var e = f.e || EASE_DEF;
-    ka.push({offset:f.t, easing:e, transform:'rotate(' + f.a + 'deg) scaleX(' + s + ')'});
-    kg.push({offset:f.t, easing:e, transform:'rotate(' + f.a + 'deg) translateX(' + ((s - 1) * ARM).toFixed(2) + 'px)'});
-  });
-  var o = {duration:dur, easing:'linear', fill:'none'};
-  track(arm.animate(ka, o)); track(gl.animate(kg, o));
+var INK = '#080b11';
+function line(a, b2, w, col, noInk){
+  cx.lineCap = 'round';
+  cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b2.x, b2.y);
+  if(!noInk){ cx.strokeStyle = INK; cx.lineWidth = w + 2.1; cx.stroke(); }
+  cx.strokeStyle = col; cx.lineWidth = w; cx.stroke();
 }
-function move(i, sel, frames, dur){
-  var el = BX[i].querySelector(sel);
-  track(el.animate(frames.map(function(f){
-    return {offset:f.t, easing:f.e || EASE_DEF,
-            transform:'translate(' + (f.x||0) + 'px,' + (f.y||0) + 'px) rotate(' + (f.r||0) + 'deg) scaleY(' + (f.sy==null?1:f.sy) + ')'};
-  }), {duration:dur, easing:'linear', fill:'none'}));
+function arm(A, w1, w2, col){
+  cx.strokeStyle = INK; cx.lineWidth = w1 + 2.1; cx.lineCap = 'round';
+  cx.beginPath(); cx.moveTo(A.sh.x, A.sh.y); cx.lineTo(A.el.x, A.el.y); cx.lineTo(A.hand.x, A.hand.y); cx.stroke();
+  line(A.sh, A.el, w1, col, 1); line(A.el, A.hand, w2, col, 1);
+}
+function leg(L, w1, w2, col){
+  cx.strokeStyle = INK; cx.lineWidth = w1 + 2.1; cx.lineCap = 'round';
+  cx.beginPath(); cx.moveTo(L.hip.x, L.hip.y); cx.lineTo(L.knee.x, L.knee.y); cx.lineTo(L.foot.x, L.foot.y); cx.stroke();
+  line(L.hip, L.knee, w1, col, 1); line(L.knee, L.foot, w2, col, 1);
 }
 
-/* --- поза по выбранному действию (боец справа зеркалится через CSS) --- */
-var DUR = 900;
-/* смещение цели, если соперник в этот момент ныряет или отшагивает (единицы viewBox) */
-function aim(oc){
-  var d = oc ? oc.id : null;
-  return {down: d === 'slip' ? 26 : 0, far: d === 'step' ? 30 : 0};
-}
-function playAction(i, c, oc){
-  var bx = BX[i], t = aim(oc);
-  switch(c.id){
-    case 'jab': {
-      var a = (c.lvl === 'head') ? -24 : 6;
-      var asc = 2.95;
-      if(c.lvl === 'head' && t.down){ a = 0; }          // соперник нырнул — бьём ниже
-      if(t.far){ asc += 0.9; }                          // отшагнул — тянемся вслед
-      swing(i, 'L', [{t:0,a:GUARD.L},{t:.16,a:GUARD.L-9,s:.85},{t:.44,a:a,s:asc,e:'linear'},{t:.55,a:a,s:asc},{t:1,a:GUARD.L}], DUR);
-      move(i, '.stance', [{t:0},{t:.16,x:-4},{t:.44,x:13},{t:.55,x:13},{t:1}], DUR);
-      break;
+function glove(p, prev, col, colD, r){
+  if(prev){                                     // смаз на быстрой перчатке
+    var d = Math.hypot(p.x - prev.x, p.y - prev.y);
+    if(d > 2.4){
+      cx.globalAlpha = 0.22; cx.fillStyle = col;
+      for(var s = 0.25; s < 1; s += 0.25){
+        cx.beginPath();
+        cx.arc(prev.x + (p.x - prev.x) * s, prev.y + (p.y - prev.y) * s, r * (0.55 + s * 0.4), 0, 6.284);
+        cx.fill();
+      }
+      cx.globalAlpha = 1;
     }
-    case 'uppercut': {
-      var ua = (c.lvl === 'head') ? -24 : -4;
-      var us = (c.lvl === 'head') ? 4.2  : 4.0;
-      if(c.lvl === 'head' && t.down){ ua = -3; }        // апперкот достаёт занырнувшую голову
-      if(t.far){ us += 0.9; }
-      swing(i, 'R', [{t:0,a:GUARD.R,e:'ease-in-out'},{t:.2,a:34,s:.88},{t:.44,a:ua,s:us,e:'linear'},{t:.55,a:ua,s:us},{t:1,a:GUARD.R}], DUR);
-      move(i, '.stance', [{t:0},{t:.2,y:8,x:-4},{t:.44,y:-7,x:21},{t:.55,y:-7,x:21},{t:1}], DUR);
-      break;
-    }
-    case 'cross':                                   // замах: заканчивается позой .windup
-      bx.classList.add('windup');
-      swing(i, 'R', [{t:0,a:GUARD.R},{t:.6,a:-152,s:.9,e:'ease-in-out'},{t:1,a:-140,s:.92}], 720);
-      move(i, '.stance', [{t:0,r:0},{t:.6,r:-12,e:'ease-in-out'},{t:1,r:-9}], 720);
-      break;
-    case 'crossLand':
-      bx.classList.remove('windup');
-      var cs = 3.9 + (t.far ? 0.9 : 0), ca = t.down ? -8 : -26;
-      swing(i, 'R', [{t:0,a:-140,s:.92,e:'ease-in-out'},{t:.14,a:-152,s:.86,e:'cubic-bezier(.15,.95,.3,1)'},{t:.44,a:ca,s:cs,e:'linear'},{t:.55,a:ca,s:cs},{t:1,a:GUARD.R}], DUR);
-      move(i, '.stance', [{t:0,r:-9},{t:.14,r:-14,x:-4},{t:.44,r:14,x:12},{t:.55,r:14,x:12},{t:1,r:0,x:0}], DUR);
-      break;
-    case 'block':
-      swing(i, 'L', [{t:0,a:GUARD.L},{t:.26,a:-86,s:.76},{t:.84,a:-86,s:.76},{t:1,a:GUARD.L}], DUR);
-      swing(i, 'R', [{t:0,a:GUARD.R},{t:.26,a:-97,s:.76},{t:.84,a:-97,s:.76},{t:1,a:GUARD.R}], DUR);
-      move(i, '.stance', [{t:0},{t:.26,y:5},{t:.84,y:5},{t:1}], DUR);
-      break;
-    case 'slip':
-      swing(i, 'L', [{t:0,a:GUARD.L},{t:.3,a:-72,s:.8},{t:.8,a:-72,s:.8},{t:1,a:GUARD.L}], DUR);
-      swing(i, 'R', [{t:0,a:GUARD.R},{t:.3,a:-90,s:.8},{t:.8,a:-90,s:.8},{t:1,a:GUARD.R}], DUR);
-      move(i, '.stance', [{t:0},{t:.3,sy:.79,r:6},{t:.8,sy:.79,r:6},{t:1}], DUR);
-      break;
-    case 'step':
-      move(i, '.root', [{t:0},{t:.3,x:-34},{t:.8,x:-34},{t:1}], DUR);
-      break;
   }
+  var g = cx.createLinearGradient(p.x, p.y - r, p.x, p.y + r);
+  g.addColorStop(0, col); g.addColorStop(1, colD);
+  cx.fillStyle = g; cx.strokeStyle = INK; cx.lineWidth = 1.6;
+  cx.beginPath(); cx.arc(p.x, p.y, r, 0, 6.284); cx.fill(); cx.stroke();
+  cx.fillStyle = 'rgba(255,255,255,.5)';
+  cx.beginPath(); cx.arc(p.x - r * .3, p.y - r * .34, r * .28, 0, 6.284); cx.fill();
 }
 
-/* --- реакция на попадание --- */
-function reactHit(j, lvl, heavy){
-  var k = heavy ? 1 : .62;
-  if(lvl === 'head'){
-    move(j, '.head', [{t:0,e:'cubic-bezier(.08,.9,.3,1)'},{t:.18,x:-13*k,y:-5*k,r:-15*k},{t:.55,x:2*k},{t:1}], 660);
-    move(j, '.hit',  [{t:0,e:'cubic-bezier(.08,.9,.3,1)'},{t:.2,x:-9*k,r:-4*k},{t:1}], 660);
-  } else {
-    move(j, '.hit',  [{t:0,e:'cubic-bezier(.08,.9,.3,1)'},{t:.2,x:-8*k,y:5*k,sy:.92},{t:.6,x:2*k},{t:1}], 660);
-    move(j, '.head', [{t:0,e:'cubic-bezier(.08,.9,.3,1)'},{t:.22,y:4*k,r:6*k},{t:1}], 660);
-  }
+function drawBoxer(b){
+  var s = SKIN[b.i], J = b.J, f = b.face, fw = J.fw, up = J.up;
+  var dim = b.down ? 0.55 : 1;
+  function mix(c){ return dim < 1 ? shadeHex(c, dim) : c; }
+
+  // тень на настиле
+  var lift = Math.max(0, (HIP_Y - J.hip.y)) / 20;
+  cx.fillStyle = 'rgba(0,0,0,.42)'; cx.globalAlpha = Math.max(.12, .42 - lift * .18);
+  cx.beginPath(); cx.ellipse(J.hip.x, FLOOR + 1.2, 15 + lift * 3, 2.9, 0, 0, 6.284); cx.fill();
+  cx.globalAlpha = 1;
+
+  // дальние конечности
+  leg(J.legs[1], 8.4, 6.6, mix(s.dark));
+  cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
+  cx.beginPath(); cx.ellipse(J.legs[1].foot.x + 1.5 * f, FLOOR - 1.5, 5, 2.7, 0, 0, 6.284); cx.fill(); cx.stroke();
+  var rearOut = (J.arms[1].hand.x - J.neck.x) * f > 7;      // задняя рука вылетела вперёд
+  if(!rearOut){ arm(J.arms[1], 7.4, 5.9, mix(s.dark)); glove(J.arms[1].hand, b.trail[1][0], mix(s.gloveD), mix(s.dark), GLOVE * .94); }
+
+  // корпус
+  var p = function(t, n){ return {x:J.hip.x + up.x * t + fw.x * n, y:J.hip.y + up.y * t + fw.y * n}; };
+  var g = cx.createLinearGradient(J.neck.x, J.neck.y, J.hip.x, J.hip.y + 6);
+  g.addColorStop(0, mix(s.body)); g.addColorStop(1, mix(s.bodyD));
+  cx.lineJoin = 'round';
+  cx.beginPath();
+  var a1 = p(1, 6.8), a2 = p(10, 8.8), a3 = p(20.5, 9.6), a4 = p(20.5, -8.8), a5 = p(10, -7.8), a6 = p(1, -6.2);
+  cx.moveTo(a1.x, a1.y);
+  cx.quadraticCurveTo(a2.x, a2.y, a3.x, a3.y);
+  cx.lineTo(a4.x, a4.y);
+  cx.quadraticCurveTo(a5.x, a5.y, a6.x, a6.y);
+  cx.closePath();
+  cx.strokeStyle = INK; cx.lineWidth = 4.2; cx.stroke();
+  cx.fillStyle = g; cx.fill();
+
+  // шорты и пояс
+  var t1 = p(-2.5, 7.4), t2 = p(6, 7.9), t3 = p(6, -7.2), t4 = p(-2.5, -6.9);
+  cx.beginPath(); cx.moveTo(t1.x, t1.y); cx.lineTo(t2.x, t2.y); cx.lineTo(t3.x, t3.y); cx.lineTo(t4.x, t4.y);
+  cx.closePath();
+  cx.strokeStyle = INK; cx.lineWidth = 3.4; cx.stroke();
+  cx.fillStyle = mix(s.trunk); cx.fill();
+  line(p(6, 7.5), p(6, -6.8), 1.8, mix(s.trunkL), 1);
+
+  // ближняя нога
+  leg(J.legs[0], 8.8, 6.9, mix(s.bodyD));
+  cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
+  cx.beginPath(); cx.ellipse(J.legs[0].foot.x + 1.5 * f, FLOOR - 1.5, 5.2, 2.8, 0, 0, 6.284); cx.fill(); cx.stroke();
+
+  // шея и голова одним силуэтом: череп + челюсть вперёд
+  line(J.neck, {x:J.head.x, y:J.head.y + HEAD_R * .6}, 6.2, mix(s.bodyD));
+  cx.strokeStyle = INK; cx.lineWidth = 3.2; cx.fillStyle = mix(s.body);
+  cx.beginPath(); cx.ellipse(J.head.x + fw.x * 2.1, J.head.y + fw.y * 2.1 + 2.9, 4.3, 3.7, 0, 0, 6.284);
+  cx.stroke(); cx.fill();
+  cx.beginPath(); cx.ellipse(J.head.x, J.head.y, HEAD_R * 1.02, HEAD_R * .96, J.ha * f, 0, 6.284);
+  cx.stroke(); cx.fill();
+  cx.fillStyle = 'rgba(255,255,255,.13)';                       // мягкий блик от софита
+  cx.beginPath(); cx.ellipse(J.head.x - fw.x * 1.4, J.head.y - 2.3, HEAD_R * .6, HEAD_R * .46, 0, 0, 6.284); cx.fill();
+  cx.fillStyle = mix(s.dark);                                   // затенение под челюстью
+  cx.beginPath(); cx.ellipse(J.head.x + fw.x * 1.2, J.head.y + HEAD_R * .82, 3.4, 1.5, 0, 0, 6.284); cx.fill();
+
+  // ближняя рука и вылетевшая задняя
+  if(rearOut){ arm(J.arms[1], 7.6, 6.1, mix(s.bodyD)); }
+  arm(J.arms[0], 7.8, 6.3, mix(s.body));
+  glove(J.arms[0].hand, b.trail[0][0], mix(s.glove), mix(s.gloveD), GLOVE);
+  if(rearOut) glove(J.arms[1].hand, b.trail[1][0], mix(s.glove), mix(s.gloveD), GLOVE);
 }
 
-/* --- эффекты поверх ринга --- */
-function ptOf(i, lvl, act){
-  var rr = ring.getBoundingClientRect();
-  var sr = document.getElementById('slot' + i).getBoundingClientRect();
-  var h = sr.height, w = h * 120 / 175;
-  var t = aim(act);
-  var ux = 62 + NUDGE - t.far, uy = ((lvl === 'body') ? 92 : 40) + t.down;
-  var x = (i === 0) ? (sr.right - w) + ux / 120 * w : sr.left + (120 - ux) / 120 * w;
-  return {x: x - rr.left, y: sr.top + uy / 175 * h - rr.top};
+function shadeHex(h, m){
+  var n = parseInt(h.slice(1), 16);
+  return 'rgb(' + ((n >> 16 & 255) * m | 0) + ',' + ((n >> 8 & 255) * m | 0) + ',' + ((n & 255) * m | 0) + ')';
 }
-function spawn(cls, i, lvl, text, act, dy){
-  var p = ptOf(i, lvl, act), el = document.createElement('div');
-  el.className = cls; el.style.left = p.x + 'px';
-  el.style.top = Math.max(26, p.y + (dy || 0)) + 'px';   // не выпускаем цифру за верх ринга
-  if(text) el.textContent = text;
-  fxL.appendChild(el);
-  setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 1200);
+
+function drawStage(){
+  cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  cx.clearRect(0, 0, VW, VH);
+  cx.save();
+  cx.translate(OX + shakeX * SC, shakeY * SC);
+  cx.scale(SC, SC);
+  cx.translate(-(cam ? cam.x : 0), 0);
+  drawArena();
+
+  var order = drawOrder;
+  drawBoxer(B[order[0]]); drawBoxer(B[order[1]]);
+
+  for(var i = 0; i < parts.length; i++){
+    var p = parts[i], al = 1 - p.life / p.max;
+    cx.globalAlpha = al * al; cx.fillStyle = p.c;
+    cx.beginPath(); cx.arc(p.x, p.y, p.r, 0, 6.284); cx.fill();
+  }
+  cx.globalAlpha = 1;
+  cx.restore();
+  if(flashA > 0){ cx.fillStyle = 'rgba(255,255,255,' + flashA + ')'; cx.fillRect(0, 0, VW, VH); }
 }
-function clearFx(){
-  [].slice.call(fxL.querySelectorAll('.pop,.burst,.guardSpark')).forEach(function(e){ e.remove(); });
+var drawOrder = [0, 1];
+
+/* задник ринга: канаты с провисом, угловые стойки, пятно софита на настиле.
+   Канаты идут с параллаксом — на движении камеры видно глубину. */
+function drawArena(){
+  var vis = VW / SC, left = -OX / SC + (cam ? cam.x : 0);   // видимая полоса сцены
+  var bg = cx.createLinearGradient(0, 0, 0, STAGE_H);
+  bg.addColorStop(0, '#0f1622'); bg.addColorStop(.5, '#080c13'); bg.addColorStop(1, '#04060a');
+  cx.fillStyle = bg; cx.fillRect(left - 20, -40, vis + 40, STAGE_H + 60);
+  var mid0 = (B[0].J.hip.x + B[1].J.hip.x) / 2;
+  var sp = cx.createRadialGradient(mid0, -26, 4, mid0, -26, 96);
+  sp.addColorStop(0, 'rgba(198,220,255,.10)'); sp.addColorStop(.6, 'rgba(198,220,255,.035)');
+  sp.addColorStop(1, 'rgba(198,220,255,0)');
+  cx.fillStyle = sp; cx.fillRect(left - 20, -40, vis + 40, STAGE_H + 60);
+
+  var px = (cam ? cam.x : 0) * 0.55;                 // канаты сдвигаются меньше бойцов
+  cx.save(); cx.translate(px, 0);
+  var L = -170, R = STAGE_W + 170;
+  var ropes = [[36, '#5f2730', '#8d3a46'], [52, '#243044', '#33445f'], [68, '#243044', '#33445f']];
+  for(var i = 0; i < ropes.length; i++){
+    var y = ropes[i][0];
+    cx.strokeStyle = ropes[i][1]; cx.lineWidth = 2.4; cx.lineCap = 'round';
+    cx.beginPath(); cx.moveTo(L, y); cx.quadraticCurveTo((L + R) / 2, y + 3.2, R, y); cx.stroke();
+    cx.strokeStyle = ropes[i][2]; cx.lineWidth = .9;
+    cx.beginPath(); cx.moveTo(L, y - .8); cx.quadraticCurveTo((L + R) / 2, y + 2.4, R, y - .8); cx.stroke();
+  }
+  var posts = [-46, STAGE_W + 46];
+  for(i = 0; i < posts.length; i++){
+    var g = cx.createLinearGradient(posts[i] - 5, 0, posts[i] + 5, 0);
+    g.addColorStop(0, '#1a2333'); g.addColorStop(.5, '#2c3a52'); g.addColorStop(1, '#141c29');
+    cx.fillStyle = g; cx.fillRect(posts[i] - 4.5, 22, 9, FLOOR - 22);
+    cx.fillStyle = '#8d3a46'; cx.fillRect(posts[i] - 5.5, 30, 11, 12);
+  }
+  cx.restore();
+
+  var fg = cx.createLinearGradient(0, FLOOR - 3, 0, STAGE_H);
+  fg.addColorStop(0, '#18202e'); fg.addColorStop(1, '#070a10');
+  cx.fillStyle = fg; cx.fillRect(-260, FLOOR, STAGE_W + 520, STAGE_H - FLOOR);
+
+  var mid = (B[0].J.hip.x + B[1].J.hip.x) / 2;       // пятно софита едет за бойцами
+  var lp = cx.createRadialGradient(mid, FLOOR + 2, 2, mid, FLOOR + 2, 74);
+  lp.addColorStop(0, 'rgba(255,214,140,.13)'); lp.addColorStop(1, 'rgba(255,214,140,0)');
+  cx.fillStyle = lp; cx.fillRect(mid - 80, FLOOR - 4, 160, STAGE_H - FLOOR + 6);
+
+  cx.strokeStyle = 'rgba(255,196,77,.3)'; cx.lineWidth = 1;
+  cx.beginPath(); cx.moveTo(-260, FLOOR); cx.lineTo(STAGE_W + 260, FLOOR); cx.stroke();
 }
-function shake(){
-  track(ring.animate([{transform:'translateX(0)'},{transform:'translateX(-8px)'},{transform:'translateX(7px)'},
-    {transform:'translateX(-4px)'},{transform:'translateX(0)'}], {duration:280, easing:'ease-out'}));
-}
-function whiten(){
-  track(flashEl.animate([{opacity:0},{opacity:.2},{opacity:0}], {duration:230, easing:'ease-out'}));
-}
+function whiten(){ flashA = 0.24; }
 
 /* =========================================================================
-   СЦЕНА ВСКРЫТИЯ РАУНДА
+   5. ЦИКЛ КАДРОВ И ПРОКРУТКА РАУНДА
    ========================================================================= */
-var TL = {act:130, impact:530, text:880, ko:1120, end:1200};
+var freeze = 0, slowT = 0, seq = null, lastT = 0, animating = false, paused = false;
 
-function impactMoment(rep){
-  syncDisp(); paintHud(true);
-  var heavy = false;
+function driveIdle(){
   for(var i = 0; i < 2; i++){
-    var o = rep.out[i], j = 1 - i, c = rep.choices[i];
-    var dc = rep.choices[j];
-    if(o.type === 'windup'){ spawn('pop info', i, 'head', 'ЗАМАХ', c, -30); continue; }
-    if(o.type !== 'atk') continue;
-    var lvl = c.lvl || 'head';
-    if(o.dmg > 0){
-      reactHit(j, lvl, o.dmg >= 30);
-      spawn('burst', j, lvl, null, dc);
-      spawn('pop ' + (o.mult < 1 ? 'half' : 'dmg'), j, lvl, '−' + o.dmg, dc, -34);
-      if(o.dmg >= 30) heavy = true;
-    } else {
-      var d = dc ? dc.id : null;
-      spawn('guardSpark', j, lvl, null, dc);
-      spawn('pop good', j, lvl, d === 'step' ? 'МИМО' : (d === 'slip' ? 'НЫРОК!' : 'БЛОК!'), dc, -34);
-    }
+    var b = B[i];
+    if(b.down){ driveDown(b); continue; }
+    driveGuard(b);
+    if(b.charge) applyCharge(b);
   }
-  if(heavy){ shake(); whiten(); }
 }
 
-function playReveal(rep){
-  clearFx();
-  ring.classList.add('full');
-  if(RM){ finishReveal(); return; }
-  animating = true;
-  at(TL.act,    function(){ playAction(0, rep.choices[0], rep.choices[1]); playAction(1, rep.choices[1], rep.choices[0]); });
-  at(TL.impact, function(){ impactMoment(rep); });
-  at(TL.text,   function(){ revealDone = true; render(); });
-  at(TL.ko,     function(){
-    for(var i = 0; i < 2; i++) if(F[i].ko){
-      BX[i].classList.add('ko');
-      spawn('pop info', i, 'head', 'НОКАУТ', null, -18);
+function frame(now){
+  requestAnimationFrame(frame);
+  var raw = lastT ? Math.min(64, now - lastT) : 16; lastT = now;
+  if(paused) raw = 0;
+  var ms = raw;
+  if(freeze > 0){ freeze -= raw; ms = 0; }
+  else if(slowT > 0){ slowT -= raw; ms = raw * 0.34; }
+
+  if(seq){
+    seq.t += ms;
+    if(!seq.hit && seq.t >= T_IMPACT){
+      seq.hit = true;
+      applyImpact(seq.rec);
+      for(var q = 0; q < 2; q++){ disp[q].hp = seq.rec.hp[q]; disp[q].fat = seq.rec.fat[q]; }
+      paintHud(true);
     }
-    if(F[0].ko || F[1].ko) shake();
-  });
-  at(TL.end,    function(){ animating = false; });
+    if(!seq.koDone && seq.t >= T_IMPACT + 240){
+      seq.koDone = true;
+      for(var z = 0; z < 2; z++) if(seq.rec.ko[z] && !B[z].down){
+        B[z].down = true; B[z].lean.v -= 3.6; B[z].hy.v += 30;
+        popAt(B[z].J.head.x, B[z].J.head.y - 20, 'НОКАУТ', 'info');
+        shake = Math.max(shake, 6);
+      }
+    }
+    driveActor(0, seq.t, seq.rec); driveActor(1, seq.t, seq.rec);
+    if(seq.t >= SEQ_END){ var d = seq.done; seq = null; animating = false; skipEl.classList.add('off'); if(d) d(); }
+  } else driveIdle();
+
+  var dt = ms / 1000;
+  for(var i = 0; i < 2; i++){
+    var b = B[i], k;
+    b.breath += dt * (b.tired ? 3.2 : 1.9);
+    b.hx.step(dt); b.hy.step(dt); b.lean.step(dt); b.head.step(dt);
+    for(k = 0; k < 2; k++){ b.hand[k].x.step(dt); b.hand[k].y.step(dt); b.foot[k].step(dt); }
+    for(k = 0; k < 2; k++){
+      b.trail[k].unshift({x:b.J.arms[k].hand.x, y:b.J.arms[k].hand.y});
+      if(b.trail[k].length > 2) b.trail[k].pop();
+    }
+    b.solve();
+  }
+  stepParts(dt);
+  if(!cam) cam = new Sp(0, 110, 20);
+  cam.set((B[0].J.hip.x + B[1].J.hip.x) / 2 - (POS[0] + POS[1]) / 2);
+  cam.step(dt);
+  shake = Math.max(0, shake - 30 * dt);
+  shakeX = (Math.random() * 2 - 1) * shake; shakeY = (Math.random() * 2 - 1) * shake * .55;
+  flashA = Math.max(0, flashA - 1.7 * dt);
+  syncTags();
+  drawStage();
 }
 
-function finishReveal(){
-  clearTimers(); stopAll(); clearFx();
-  syncDisp();
-  for(var i = 0; i < 2; i++) if(F[i].pending) BX[i].classList.add('windup');
-  paintHud(false);
-  for(var k = 0; k < 2; k++) if(F[k].ko) BX[k].classList.add('ko');
-  animating = false; revealDone = true; render();
+function clearPops(){
+  var n = fxL.querySelectorAll('.pop');
+  for(var i = 0; i < n.length; i++) n[i].remove();
 }
+function popAt(sx, sy, text, cls){
+  var el = document.createElement('div');
+  el.className = 'pop ' + cls; el.textContent = text;
+  el.style.left = (OX + (sx - (cam ? cam.x : 0)) * SC) + 'px';
+  el.style.top = Math.max(2, sy * SC) + 'px';
+  fxL.appendChild(el);
+  setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 1250);
+}
+function airPoint(i, rec){
+  var o = B[1 - i], c = rec.choices[i];
+  return (c.lvl === 'body') ? bodyPt(o) : headPt(o);
+}
+
+function playRound(rec, done){
+  clearPops(); parts.length = 0; freeze = 0; slowT = 0;
+  rec._air = [airPoint(0, rec), airPoint(1, rec)];
+  drawOrder = (rec.out[0].dmg || 0) >= (rec.out[1].dmg || 0) ? [1, 0] : [0, 1];
+  seq = {t:0, rec:rec, hit:false, koDone:false, done:done};
+  animating = true; skipEl.classList.remove('off');
+}
+
+/* мгновенно доиграть раунд до конца — по тапу или при «меньше движения» */
+function snapEnd(rec){
+  var i;
+  freeze = 0; slowT = 0; parts.length = 0; clearPops();
+  for(i = 0; i < 2; i++){
+    disp[i].hp = rec.hp[i]; disp[i].fat = rec.fat[i];
+    B[i].charge = (rec.choices[i].id === 'cross');
+    B[i].down = !!rec.ko[i];
+    B[i].tired = rec.fat[i] > TIRED_AT;
+  }
+  for(var n = 0; n < 40; n++){ driveIdle(); settle(1 / 60); }
+  paintHud(false);
+}
+function settle(dt){
+  for(var i = 0; i < 2; i++){
+    var b = B[i], k;
+    b.hx.step(dt); b.hy.step(dt); b.lean.step(dt); b.head.step(dt);
+    for(k = 0; k < 2; k++){ b.hand[k].x.step(dt); b.hand[k].y.step(dt); b.foot[k].step(dt); }
+    b.solve();
+  }
+}
+function skipSeq(){
+  if(!seq) return;
+  var rec = seq.rec, done = seq.done;
+  seq = null; animating = false; skipEl.classList.add('off');
+  snapEnd(rec);
+  if(done) done();
+}
+ring.addEventListener('click', function(){ if(animating) skipSeq(); });
 
 /* =========================================================================
-   ОТРИСОВКА ШАПКИ И РИНГА
+   6. ШАПКА
    ========================================================================= */
 function hpColor(p){ return p > 50 ? '#37d178' : (p > 25 ? '#ffb020' : '#ff4d5e'); }
 function faColor(v){ return v > TIRED_AT ? '#ff7a1a' : (v > 55 ? '#ffb020' : '#35b6dd'); }
@@ -634,76 +1016,62 @@ function paintHud(withFlash){
     document.getElementById('hp' + i + 'v').textContent = hp;
     var fv = document.getElementById('fa' + i + 'v');
     fv.textContent = fa; fv.style.color = fa > TIRED_AT ? '#ff7a1a' : '';
-    if(withFlash && was !== hb.style.width) flashBar(hb.parentNode);
+    if(withFlash && was !== hb.style.width){
+      var bar = hb.parentNode;
+      bar.classList.remove('flash'); void bar.offsetWidth; bar.classList.add('flash');
+    }
   }
-  paintRing();
   paintRounds();
-}
-function flashBar(el){
-  el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
-  setTimeout(function(){ el.classList.remove('flash'); }, 450);
-}
-function paintRing(){
-  for(var i = 0; i < 2; i++){
-    BX[i].classList.toggle('tired', F[i].fat > TIRED_AT && !F[i].ko);
-    BX[i].classList.toggle('ko', !!F[i].ko && (phase === 'over' || revealDone));
-    if(!animating) BX[i].classList.toggle('windup', !!F[i].pending);
-    TAG[i].style.display = F[i].pending ? '' : 'none';
-  }
-  ring.classList.toggle('full', phase === 'reveal' || phase === 'over');
-  ring.classList.toggle('slim', phase === 'choose');
 }
 function paintRounds(){
   var el = document.getElementById('rbar');
+  if(phase === 'replay'){ el.innerHTML = 'ПОВТОР БОЯ'; return; }
   if(phase === 'over'){ el.innerHTML = 'БОЙ ОКОНЧЕН'; return; }
   var h = 'РАУНД ' + round + ' / ' + MAX_ROUNDS + ' ';
   for(var r = 1; r <= MAX_ROUNDS; r++)
     h += '<span class="' + (r < round ? 'on' : (r === round ? 'now' : '')) + '"></span>';
   el.innerHTML = h;
 }
-
-/* =========================================================================
-   ТЕКСТ РАЗБОРА И ЖУРНАЛ
-   ========================================================================= */
-function resultLine(i, rep){
-  var o = rep.out[i], c = rep.choices[i];
-  if(o.type === 'def')    return '<div class="res miss">Уходит в защиту — ' + ACT[c.id].hint + '.</div>';
-  if(o.type === 'windup') return '<div class="res">⚡ Замахивается кроссом. Удар прилетит в следующем раунде.</div>';
-  var tail = o.tired ? '<div class="warnline">😮‍💨 Выдохся (усталость выше ' + TIRED_AT + ') — урон снижен на треть.</div>' : '';
-  if(o.dmg === 0)
-    return '<div class="res miss">✖ Мимо: ' + o.why + '.<span class="zero">0</span></div>' + tail;
-  var half = o.mult < 1;
-  return '<div class="res">' + (half ? '➖ Частично: ' : '✔ Попал: ') + o.why +
-         '.<span class="dmg' + (half ? ' half' : '') + '">−' + o.dmg + '</span></div>' + tail;
+function paintRing(){
+  if(phase !== 'replay') for(var i = 0; i < 2; i++) B[i].tired = F[i].fat > TIRED_AT && !F[i].ko;
+  ring.classList.toggle('full', phase === 'reveal' || phase === 'over');
+  ring.classList.toggle('cinema', phase === 'replay');
+  ring.classList.toggle('slim', phase === 'choose');
+  var lw = document.getElementById('logWrap');
+  lw.classList.toggle('off', phase === 'replay');
+  lw.classList.toggle('rev', phase === 'reveal');
 }
 
-function pushLog(rep){
+/* =========================================================================
+   7. ЖУРНАЛ
+   ========================================================================= */
+function pushLog(rec){
   var log = document.getElementById('log');
   var e = log.querySelector('.empty'); if(e) e.remove();
   var d = document.createElement('div'); d.className = 'ent';
-  var txt = '<div class="rn">РАУНД ' + rep.round + '</div>';
+  var txt = '<div class="rn">РАУНД ' + rec.round + '</div>';
   for(var i = 0; i < 2; i++){
-    var o = rep.out[i], tag;
+    var o = rec.out[i], tag;
     if(o.type === 'def')         tag = 'защита';
-    else if(o.type === 'windup') tag = '⚡ замах кроссом — сработает в раунде ' + (rep.round + 1);
+    else if(o.type === 'windup') tag = '⚡ замах кроссом — сработает в раунде ' + (rec.round + 1);
     else if(o.dmg === 0)         tag = 'мимо (' + o.why + ')';
     else                         tag = '−' + o.dmg + ' (' + o.why + ')' + (o.tired ? ' [выдохся]' : '');
     txt += '<div class="l"><b class="' + F[i].cls + '">' + F[i].ico + ' ' + F[i].name + '</b>: ' +
-           label(rep.choices[i]) + ' → ' + tag + '</div>';
+           label(rec.choices[i]) + ' → ' + tag + '</div>';
   }
-  txt += '<div class="l sm">итог: 🔵 ' + rep.hp[0] + ' hp / ' + rep.fat[0] +
-         ' уст.  ·  🔴 ' + rep.hp[1] + ' hp / ' + rep.fat[1] + ' уст.</div>';
+  txt += '<div class="l sm">итог: 🔵 ' + rec.hp[0] + ' hp / ' + rec.fat[0] +
+         ' уст.  ·  🔴 ' + rec.hp[1] + ' hp / ' + rec.fat[1] + ' уст.</div>';
   d.innerHTML = txt; log.appendChild(d); log.scrollTop = log.scrollHeight;
 }
 
 /* =========================================================================
-   ЭКРАНЫ
+   8. ЭКРАНЫ
    ========================================================================= */
 var P = document.getElementById('panel');
 
 function screenStart(){
   return '<h1>КЛИНЧ</h1>' +
-    '<div class="sub">Пошаговый бокс на двоих с одного телефона. Оба выбирают ход втайне, ходы вскрываются одновременно.</div>' +
+    '<div class="sub">Пошаговый бокс на двоих с одного телефона. Оба выбирают ход втайне, ходы вскрываются одновременно и разыгрываются на ринге.</div>' +
     '<button class="btn gold big" data-go="begin">НАЧАТЬ БОЙ</button>' +
     '<details><summary>Правила</summary><div class="body">' +
       '<div><b>Атаки</b><br>' +
@@ -716,7 +1084,7 @@ function screenStart(){
       '👣 <span class="k">Шаг назад</span> — уводит от любого мгновенного удара и хорошо снимает усталость, но не спасает от объявленного кросса.</div>' +
       '<div><b>Усталость</b><br>Растёт от атак, падает от пассивных действий. Выше <span class="k">' + TIRED_AT +
       '</span> — твоя атака бьёт на треть слабее.</div>' +
-      '<div><b>Конец боя</b><br>Нокаут или ' + MAX_ROUNDS + ' раундов, дальше побеждает тот, у кого больше здоровья.</div>' +
+      '<div><b>Конец боя</b><br>Нокаут или ' + MAX_ROUNDS + ' раундов, дальше побеждает тот, у кого больше здоровья. В конце можно пересмотреть весь бой целиком.</div>' +
     '</div></details>';
 }
 
@@ -772,34 +1140,74 @@ function screenConfirm(){
     '<button class="btn ghost" data-go="choose">← Изменить выбор</button>';
 }
 
+function resRow(i, rec, full){
+  var o = rec.out[i], c = rec.choices[i], badge = '', why = '';
+  if(o.type === 'def'){ why = 'Уходит в защиту — ' + ACT[c.id].hint + '.'; }
+  else if(o.type === 'windup'){ why = 'Замах. Удар прилетит в следующем раунде.'; badge = '<span class="hit half">⚡</span>'; }
+  else if(o.dmg === 0){ why = 'Мимо: ' + o.why + '.'; badge = '<span class="hit zero">0</span>'; }
+  else { why = (o.mult < 1 ? 'Частично: ' : 'Попал: ') + o.why + '.';
+         badge = '<span class="hit' + (o.mult < 1 ? ' half' : '') + '">−' + o.dmg + '</span>'; }
+  if(o.tired) why += ' <span style="color:var(--warn)">Выдохся — урон на треть меньше.</span>';
+  return '<div class="res ' + F[i].cls + '"><div class="top"><span class="who">' + F[i].ico + ' ' +
+    F[i].name + ' — ' + label(c) + '</span>' + (full ? badge : '') + '</div>' +
+    (full ? '<div class="why">' + why + '</div>' : '') + '</div>';
+}
+
 function isOver(){ return F[0].hp <= 0 || F[1].hp <= 0 || round >= MAX_ROUNDS; }
 
 function screenReveal(){
-  var h = '<h2>РАУНД ' + lastReport.round + ' — ВСКРЫТИЕ</h2>';
-  for(var i = 0; i < 2; i++)
-    h += '<div class="card ' + F[i].cls + '"><div class="rw"><div class="who">' + F[i].ico + ' ' + F[i].name +
-         ' — ' + label(lastReport.choices[i]) + '</div>' + (revealDone ? resultLine(i, lastReport) : '') + '</div></div>';
+  var h = '<h2>РАУНД ' + lastRec.round + ' — ВСКРЫТИЕ</h2>' +
+    '<div class="card">' + resRow(0, lastRec, revealDone) + resRow(1, lastRec, revealDone) + '</div>';
   h += revealDone
     ? '<button class="btn gold big" data-go="' + (isOver() ? 'over' : 'next') + '">' + (isOver() ? 'ИТОГ БОЯ →' : 'СЛЕДУЮЩИЙ РАУНД →') + '</button>'
-    : '<div class="sub">Нажми в любом месте, чтобы пропустить</div>';
+    : '<div class="sub">Идёт размен…</div>';
   return h;
 }
 
+function verdict(){
+  var a = F[0].hp, b = F[1].hp;
+  if(a <= 0 && b <= 0) return {t:'ДВОЙНОЙ НОКАУТ', s:'Оба на настиле. Ничья.'};
+  if(a <= 0) return {t:'🔴 КРАСНЫЙ ПОБЕДИЛ', s:'Нокаут в раунде ' + round + '.'};
+  if(b <= 0) return {t:'🔵 СИНИЙ ПОБЕДИЛ',   s:'Нокаут в раунде ' + round + '.'};
+  if(a > b)  return {t:'🔵 СИНИЙ ПОБЕДИЛ',   s:'По очкам после ' + MAX_ROUNDS + ' раундов: ' + a + ' против ' + b + '.'};
+  if(b > a)  return {t:'🔴 КРАСНЫЙ ПОБЕДИЛ', s:'По очкам после ' + MAX_ROUNDS + ' раундов: ' + b + ' против ' + a + '.'};
+  return {t:'НИЧЬЯ', s:'После ' + MAX_ROUNDS + ' раундов у обоих по ' + a + ' здоровья.'};
+}
+
 function screenOver(){
-  var a = F[0].hp, b = F[1].hp, title, sub;
-  if(a <= 0 && b <= 0){ title = 'ДВОЙНОЙ НОКАУТ'; sub = 'Оба на настиле. Ничья.'; }
-  else if(a <= 0){ title = '🔴 КРАСНЫЙ ПОБЕДИЛ'; sub = 'Нокаут в раунде ' + round + '.'; }
-  else if(b <= 0){ title = '🔵 СИНИЙ ПОБЕДИЛ';   sub = 'Нокаут в раунде ' + round + '.'; }
-  else if(a > b) { title = '🔵 СИНИЙ ПОБЕДИЛ';   sub = 'По очкам после ' + MAX_ROUNDS + ' раундов: ' + a + ' против ' + b + '.'; }
-  else if(b > a) { title = '🔴 КРАСНЫЙ ПОБЕДИЛ'; sub = 'По очкам после ' + MAX_ROUNDS + ' раундов: ' + b + ' против ' + a + '.'; }
-  else           { title = 'НИЧЬЯ'; sub = 'После ' + MAX_ROUNDS + ' раундов у обоих по ' + a + ' здоровья.'; }
-  return '<h1>' + title + '</h1><div class="sub">' + sub + '</div><div class="spacer"></div>' +
-         '<button class="btn gold big" data-go="restart">ИГРАТЬ ЗАНОВО</button>';
+  var v = verdict();
+  return '<h1>' + v.t + '</h1><div class="sub">' + v.s + '</div><div class="spacer"></div>' +
+    '<button class="btn gold big" data-go="replay">▶ СМОТРЕТЬ ВЕСЬ БОЙ</button>' +
+    '<button class="btn" data-go="restart">ИГРАТЬ ЗАНОВО</button>';
+}
+
+function screenReplay(){
+  var done = replay.idx >= bouts.length;
+  var rec = done ? bouts[bouts.length - 1] : bouts[replay.idx];
+  var cap = done ? 'Повтор окончен · ' + verdict().t
+    : 'РАУНД ' + rec.round + ' из ' + bouts.length + '<br>' +
+      '🔵 ' + label(rec.choices[0]) + '   ·   🔴 ' + label(rec.choices[1]);
+  var prog = Math.round((done ? bouts.length : replay.idx) / bouts.length * 100);
+  return '<div id="rp">' +
+    '<div class="rpcap">' + cap + '</div>' +
+    '<div class="rpbar"><i style="width:' + prog + '%"></i></div>' +
+    (done
+      ? '<div class="row"><button class="btn gold" data-go="rpAgain">▶ ЕЩЁ РАЗ</button>' +
+        '<button class="btn" data-go="rpClose">ЗАКРЫТЬ</button></div>'
+      : '<div class="row"><button class="btn" data-go="rpPause">' + (paused ? '▶ ДАЛЬШЕ' : '❚❚ ПАУЗА') + '</button>' +
+        '<button class="btn" data-go="rpAgain">↺ СНАЧАЛА</button>' +
+        '<button class="btn ghost" data-go="rpClose">ЗАКРЫТЬ</button></div>' +
+        '<div class="card">' + resRow(0, rec, true) + resRow(1, rec, true) + '</div>') +
+    '</div>';
 }
 
 /* =========================================================================
-   МАШИНА СОСТОЯНИЙ
+   9. МАШИНА СОСТОЯНИЙ И ПОВТОР
    ========================================================================= */
+var RM = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+var replay = null, rpTimer = null;
+var TAG = [];
+
 function render(){
   var h = '';
   if(phase === 'start')        h = screenStart();
@@ -809,8 +1217,9 @@ function render(){
   else if(phase === 'confirm') h = screenConfirm();
   else if(phase === 'reveal')  h = screenReveal();
   else if(phase === 'over')    h = screenOver();
+  else if(phase === 'replay')  h = screenReplay();
   P.innerHTML = h; P.scrollTop = 0;
-  paintHud(false);
+  paintRing(); paintHud(false);
 }
 
 function startRound(){
@@ -823,14 +1232,48 @@ function nextChooser(from){
     if(!choices[i]){ active = i; phase = 'handoff'; render(); return; }
   resolveRound();
   phase = 'reveal'; render();
-  playReveal(lastReport);
+  runRound(lastRec, function(){ revealDone = true; render(); });
+}
+function runRound(rec, done){
+  if(RM){ snapEnd(rec); done(); return; }
+  playRound(rec, done);
 }
 
-/* тап в любом месте во время анимации — пропустить */
-document.addEventListener('click', function(ev){
-  if(!animating) return;
-  ev.stopPropagation(); ev.preventDefault(); finishReveal();
-}, true);
+/* --- повтор боя --- */
+function replayStart(){
+  clearTimeout(rpTimer); paused = false;
+  replay = {idx:0};
+  for(var i = 0; i < 2; i++) B[i].reset();
+  phase = 'replay'; render();
+  rpTimer = setTimeout(replayNext, 420);
+}
+function replayNext(){
+  if(!replay || phase !== 'replay') return;
+  if(paused){ rpTimer = setTimeout(replayNext, 200); return; }
+  if(replay.idx >= bouts.length){ render(); return; }
+  var rec = bouts[replay.idx], i;
+  for(i = 0; i < 2; i++){
+    B[i].charge = rec.before.pending[i];
+    B[i].down = false;
+    B[i].tired = rec.before.fat[i] > TIRED_AT;
+    disp[i].hp = rec.before.hp[i]; disp[i].fat = rec.before.fat[i];
+  }
+  for(i = 0; i < 14; i++) { driveIdle(); settle(1/60); }
+  paintHud(false); render();
+  playRound(rec, function(){
+    replay.idx++;
+    render();
+    rpTimer = setTimeout(replayNext, 620);
+  });
+}
+function replayStop(){
+  clearTimeout(rpTimer); rpTimer = null; replay = null; paused = false;
+  seq = null; animating = false; skipEl.classList.add('off'); clearPops(); parts.length = 0;
+  for(var i = 0; i < 2; i++){ B[i].down = !!F[i].ko; B[i].charge = false; B[i].tired = F[i].fat > TIRED_AT; }
+  syncDisp();
+  for(var n = 0; n < 40; n++){ driveIdle(); settle(1/60); }
+  phase = 'over'; render();
+}
 
 P.addEventListener('click', function(ev){
   var t = ev.target.closest('[data-go],[data-pick],[data-lvl]');
@@ -848,19 +1291,43 @@ P.addEventListener('click', function(ev){
   else if(go === 'done'){ nextChooser(active + 1); }
   else if(go === 'next'){ round++; startRound(); }
   else if(go === 'over'){ phase = 'over'; render(); }
-  else if(go === 'restart'){ newFight(); resetRing(); phase = 'start'; render(); }
+  else if(go === 'restart'){ replayStop(); newFight(); resetRing(); phase = 'start'; render(); }
+  else if(go === 'replay'){ replayStart(); }
+  else if(go === 'rpPause'){ paused = !paused; render(); }
+  else if(go === 'rpAgain'){ replayStart(); }
+  else if(go === 'rpClose'){ replayStop(); }
 });
 
 function resetRing(){
-  stopAll(); clearTimers(); clearFx(); animating = false;
-  for(var i = 0; i < 2; i++) BX[i].classList.remove('ko', 'windup', 'tired');
+  clearTimeout(rpTimer); replay = null; paused = false;
+  seq = null; animating = false; skipEl.classList.add('off');
+  clearPops(); parts.length = 0; freeze = 0; slowT = 0; shake = 0; flashA = 0;
+  for(var i = 0; i < 2; i++) B[i].reset();
 }
 
-/* старт */
-buildRing();
+/* значок заряженного кросса держится над бойцом */
+function syncTags(){
+  for(var i = 0; i < 2; i++){
+    var on = B[i].charge && !B[i].down;
+    if(TAG[i]._on !== on){ TAG[i]._on = on; TAG[i].style.display = on ? '' : 'none'; }
+    if(on) TAG[i].style.left = (OX + (B[i].J.hip.x - (cam ? cam.x : 0)) * SC) + 'px';
+  }
+}
+
+/* =========================================================================
+   10. СТАРТ
+   ========================================================================= */
+for(var ti = 0; ti < 2; ti++){
+  var tg = document.createElement('div');
+  tg.className = 'tag'; tg.textContent = '⚡ ЗАРЯЖЕН КРОСС';
+  tg.style.display = 'none'; tg._on = false;
+  fxL.appendChild(tg); TAG.push(tg);
+}
+fitCanvas();
 newFight();
 phase = 'start';
 render();
+requestAnimationFrame(frame);
 </script>
 </body>
 </html>
