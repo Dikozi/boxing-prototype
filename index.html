@@ -93,9 +93,15 @@ body{
 #rbar{flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:9px;
   font-family:var(--disp);font-size:13px;font-weight:700;letter-spacing:.2em;color:var(--gold);
   padding:5px 0 6px;background:var(--panel);border-bottom:2px solid var(--line)}
-#rbar span{width:6px;height:6px;border-radius:50%;background:var(--line)}
-#rbar span.on{background:var(--gold)}
-#rbar span.now{background:var(--gold);box-shadow:0 0 0 3px #ffc44d2e}
+#rbar{position:relative}
+#rtxt{display:flex;align-items:center;justify-content:center;gap:9px}
+#rtxt span{width:6px;height:6px;border-radius:50%;background:var(--line)}
+#rtxt span.on{background:var(--gold)}
+#rtxt span.now{background:var(--gold);box-shadow:0 0 0 3px #ffc44d2e}
+#snd{position:absolute;right:7px;top:50%;transform:translateY(-50%);font-size:14px;line-height:1;
+  padding:5px 8px;border-radius:10px;background:#1c2230;border:1px solid var(--line);filter:grayscale(1) opacity(.55)}
+#snd.on{filter:none;border-color:#5a4416}
+#snd:active{transform:translateY(-50%) scale(.92)}
 
 /* ===================== ПАНЕЛЬ ===================== */
 #panel{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:11px;display:flex;flex-direction:column;gap:9px}
@@ -247,7 +253,7 @@ details .body b{color:var(--txt)} details .body .k{color:var(--gold);font-weight
   <button id="again" class="off">↺ ПОВТОР</button>
 </div>
 
-<div id="rbar"></div>
+<div id="rbar"><span id="rtxt"></span><button id="snd" aria-label="Звук">🔊</button></div>
 <div id="panel"></div>
 
 <div id="logWrap">
@@ -681,6 +687,8 @@ function applyImpact(rec){
       }
       a.hx.v -= f * 26 * k;                          // отдача бьющему
       a.hand[c.id === 'jab' ? 0 : 1].x.v -= f * 40 * k;
+      sndHit(Math.min(1, .45 + k * .75), lvl === 'body');
+      crowdCheer(k);
       burst(hp.x, hp.y, 16 + (k * 20 | 0), k);
       if(!mode) spawnRays(hp.x, hp.y, 4, f > 0 ? 0 : Math.PI, '#ffd48a');
       popAt(hp.x, hp.y - 24, '−' + o.dmg, o.mult < 1 ? 'half' : 'dmg');
@@ -695,6 +703,7 @@ function applyImpact(rec){
     } else {
       var dd = rec.choices[j] ? rec.choices[j].id : null;
       if(dd === 'block'){
+        sndBlock();
         d.hx.v += f * 26; d.hand[0].x.v += f * 55; d.hand[1].x.v += f * 42;
         a.hand[c.id === 'jab' ? 0 : 1].x.v -= f * 90;
         burst(hp.x, hp.y, 8, .25, '#cfe6ff');
@@ -1335,6 +1344,15 @@ function frame(now){
 
   if(seq){
     seq.t += ms;
+    if(!seq.swung && seq.t >= 330){            // рука пошла — свист рассекаемого воздуха
+      seq.swung = true;
+      for(var sw = 0; sw < 2; sw++){
+        var sc = seq.rec.choices[sw], so = seq.rec.out[sw];
+        if(so.type === 'windup'){ sndCharge(); continue; }
+        if(so.type !== 'atk') continue;
+        sndWhoosh(sc.id === 'jab' ? .8 : (sc.id === 'crossLand' ? 1.25 : 1));
+      }
+    }
     if(!seq.hit && seq.t >= T_IMPACT){
       seq.hit = true;
       applyImpact(seq.rec);
@@ -1346,6 +1364,7 @@ function frame(now){
       seq.koDone = true;
       for(var z = 0; z < 2; z++) if(seq.rec.ko[z] && !B[z].down){
         B[z].down = true; koCardT = 1500;
+        sndDown(); crowdCheer(1.4);
         if(!B[z].rd){ B[z].lean.v -= 3.6; B[z].hy.v += 30; }   // запасной путь без Matter
         shake = Math.max(shake, 6);
       }
@@ -1427,10 +1446,12 @@ function airPoint(i, rec){
 }
 
 function playRound(rec, done){
+  sndBell(.42, true);                               // короткий гонг открывает размен
+  crowdLevel(.022);
   clearPops(); parts.length = 0; rays.length = 0; freeze = 0; slowT = 0;
   rec._air = [airPoint(0, rec), airPoint(1, rec)];
   drawOrder = (rec.out[0].dmg || 0) >= (rec.out[1].dmg || 0) ? [1, 0] : [0, 1];
-  seq = {t:0, rec:rec, hit:false, koDone:false, end:SEQ_END, done:done};
+  seq = {t:0, rec:rec, hit:false, swung:false, koDone:false, end:SEQ_END, done:done};
   animating = true;
 }
 
@@ -1496,7 +1517,7 @@ function paintHud(withFlash){
   paintRounds();
 }
 function paintRounds(){
-  var el = document.getElementById('rbar');
+  var el = document.getElementById('rtxt');
   if(phase === 'replay'){ el.innerHTML = 'ПОВТОР БОЯ'; return; }
   if(phase === 'over'){ el.innerHTML = 'БОЙ ОКОНЧЕН'; return; }
   var h = 'РАУНД ' + round + ' / ' + MAX_ROUNDS + ' ';
@@ -1513,6 +1534,7 @@ function paintRing(){
   lw.classList.toggle('off', phase === 'replay');
   lw.classList.toggle('rev', phase === 'reveal');
   againEl.classList.toggle('off', !(phase === 'reveal' && revealDone && !animating));
+  if(AC) crowdLevel(phase === 'reveal' || phase === 'replay' ? .022 : (phase === 'over' ? .016 : .006));
 }
 
 /* =========================================================================
@@ -1675,6 +1697,164 @@ function screenReplay(){
 }
 
 /* =========================================================================
+   8b. ЗВУК
+   Всё синтезируется на месте через Web Audio: ни одного файла, иначе
+   сломается «один файл, работает офлайн». Функции берут контекст из
+   переменной AC, поэтому их же можно отрендерить в OfflineAudioContext
+   и проверить измерениями.
+   ========================================================================= */
+var AC = null, master = null, noiseBuf = null, crowdGain = null, muted = false;
+
+function audioSetup(ctx){
+  AC = ctx; noiseBuf = null;
+  master = AC.createGain();
+  master.gain.value = muted ? 0 : .85;
+  var comp = AC.createDynamicsCompressor();      // страховка от перегруза на динамике телефона
+  comp.threshold.value = -10; comp.knee.value = 8; comp.ratio.value = 8;
+  comp.attack.value = .003; comp.release.value = .18;
+  master.connect(comp); comp.connect(AC.destination);
+  crowdStart();
+}
+function audioInit(){
+  if(AC) return;
+  var C = window.AudioContext || window.webkitAudioContext;
+  if(!C) return;
+  try { audioSetup(new C()); } catch(e){ AC = null; }
+}
+/* iOS не даёт звучать до касания и усыпляет контекст — будим на каждом тапе */
+function audioTouch(){
+  audioInit();
+  if(AC && AC.state !== 'running' && AC.resume) AC.resume();
+}
+function setMuted(v){
+  muted = v;
+  if(master) master.gain.setTargetAtTime(muted ? 0 : .85, AC.currentTime, .02);
+  try { localStorage.setItem('klinch.muted', muted ? '1' : '0'); } catch(e){}
+  var el = document.getElementById('snd');
+  if(el){ el.textContent = muted ? '🔇' : '🔊'; el.classList.toggle('on', !muted); }
+}
+
+function noise(){
+  if(!noiseBuf){
+    noiseBuf = AC.createBuffer(1, Math.floor(AC.sampleRate * 2), AC.sampleRate);
+    var d = noiseBuf.getChannelData(0);
+    for(var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  var s = AC.createBufferSource(); s.buffer = noiseBuf; return s;
+}
+function tone(type, f0, f1, t, dur, peak, dest){
+  var o = AC.createOscillator(), g = AC.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f0, t);
+  if(f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+  g.gain.setValueAtTime(.0001, t);
+  g.gain.exponentialRampToValueAtTime(Math.max(.0002, peak), t + .006);
+  g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  o.connect(g); g.connect(dest || master);
+  o.start(t); o.stop(t + dur + .05);
+  return o;
+}
+function hiss(fType, f0, f1, t, dur, peak, q, dest){
+  var n = noise(), f = AC.createBiquadFilter(), g = AC.createGain();
+  f.type = fType; f.Q.value = q || 1;
+  f.frequency.setValueAtTime(f0, t);
+  if(f1 !== f0) f.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+  g.gain.setValueAtTime(.0001, t);
+  g.gain.exponentialRampToValueAtTime(Math.max(.0002, peak), t + .004);
+  g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  n.connect(f); f.connect(g); g.connect(dest || master);
+  n.start(t); n.stop(t + dur + .05);
+}
+
+/* гонг: неармонические обертоны с разным затуханием — иначе выходит не колокол, а свисток */
+function sndBell(vol, quick){
+  if(!AC) return;
+  var t = AC.currentTime, base = quick ? 1180 : 1046;
+  var rat = [1, 2.01, 2.98, 4.17, 5.43, 6.79], amp = [1, .6, .42, .28, .18, .1];
+  var len = quick ? .38 : 1.9;
+  for(var i = 0; i < rat.length; i++){
+    var o = AC.createOscillator(), g = AC.createGain();
+    o.type = 'sine'; o.frequency.value = base * rat[i];
+    var d = len * (1 - i * .12);
+    g.gain.setValueAtTime(.0001, t);
+    g.gain.exponentialRampToValueAtTime(.26 * amp[i] * vol, t + .004);
+    g.gain.exponentialRampToValueAtTime(.0001, t + d);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + d + .05);
+  }
+  hiss('bandpass', 3400, 2600, t, .05, .2 * vol, 1.2);   // стук молоточка
+}
+function sndWhoosh(power){                        // рассекание воздуха
+  if(!AC) return;
+  var t = AC.currentTime;
+  hiss('bandpass', 1600, 280, t, .24, .62 * power, 1.1);
+}
+function sndHit(power, body){                     // попадание: низкий толчок + шлепок
+  if(!AC) return;
+  var t = AC.currentTime;
+  tone('sine', (body ? 78 : 108) * (1 + power * .12), body ? 32 : 44, t, body ? .3 : .21, .8 * power);
+  hiss('bandpass', body ? 400 : 950, body ? 220 : 500, t, body ? .15 : .1, .55 * power, .9);
+  if(power > .6) tone('triangle', 210, 90, t, .12, .26 * power);
+}
+function sndBlock(){                              // перчатка о перчатку
+  if(!AC) return;
+  var t = AC.currentTime;
+  hiss('bandpass', 2000, 1400, t, .09, .85, 1.7);
+  tone('triangle', 215, 120, t, .12, .32);
+}
+function sndDown(){                               // тело на настил
+  if(!AC) return;
+  var t = AC.currentTime;
+  tone('sine', 72, 28, t, .6, .85);
+  hiss('lowpass', 950, 170, t, .45, .6, .7);
+}
+function sndCharge(){                             // замах кросса
+  if(!AC) return;
+  var t = AC.currentTime;
+  var o = AC.createOscillator(), g = AC.createGain(), f = AC.createBiquadFilter();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(85, t); o.frequency.exponentialRampToValueAtTime(240, t + .55);
+  f.type = 'lowpass';
+  f.frequency.setValueAtTime(380, t); f.frequency.exponentialRampToValueAtTime(1600, t + .55);
+  g.gain.setValueAtTime(.0001, t);
+  g.gain.exponentialRampToValueAtTime(.17, t + .18);
+  g.gain.exponentialRampToValueAtTime(.0001, t + .62);
+  o.connect(f); f.connect(g); g.connect(master); o.start(t); o.stop(t + .7);
+}
+function sndTap(){
+  if(!AC) return;
+  var t = AC.currentTime;
+  tone('triangle', 320, 160, t, .07, .18);
+}
+
+/* трибуны: шумовая подложка с медленным дыханием и всплеском на попадании */
+function crowdStart(){
+  var src = noise(); src.loop = true;
+  var lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 480; lp.Q.value = .5;
+  var hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 210;
+  crowdGain = AC.createGain(); crowdGain.gain.value = .006;
+  src.connect(lp); lp.connect(hp); hp.connect(crowdGain); crowdGain.connect(master);
+  src.start();
+  var lfo = AC.createOscillator(), lg = AC.createGain();
+  lfo.type = 'sine'; lfo.frequency.value = .13; lg.gain.value = .004;
+  lfo.connect(lg); lg.connect(crowdGain.gain); lfo.start();
+}
+function crowdLevel(v){
+  if(!crowdGain) return;
+  var t = AC.currentTime;
+  crowdGain.gain.cancelScheduledValues(t);
+  crowdGain.gain.setValueAtTime(crowdGain.gain.value, t);
+  crowdGain.gain.linearRampToValueAtTime(v, t + .5);
+}
+function crowdCheer(power){
+  if(!crowdGain) return;
+  var t = AC.currentTime, base = crowdGain.gain.value;
+  crowdGain.gain.cancelScheduledValues(t);
+  crowdGain.gain.setValueAtTime(base, t);
+  crowdGain.gain.linearRampToValueAtTime(base + .075 * power, t + .12);
+  crowdGain.gain.linearRampToValueAtTime(base, t + 1.2);
+}
+
+/* =========================================================================
    9. МАШИНА СОСТОЯНИЙ И ПОВТОР
    ========================================================================= */
 var RM = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1788,9 +1968,16 @@ function replayStop(){
   phase = 'over'; render();
 }
 
+document.addEventListener('pointerdown', audioTouch, true);
+document.getElementById('snd').addEventListener('click', function(ev){
+  ev.stopPropagation(); audioTouch(); setMuted(!muted);
+});
+try { muted = localStorage.getItem('klinch.muted') === '1'; } catch(e){}
+
 P.addEventListener('click', function(ev){
   var t = ev.target.closest('[data-go],[data-pick],[data-lvl]');
   if(!t) return;
+  sndTap();
   if(t.dataset.pick){
     var id = t.dataset.pick;
     if(ACT[id].level){ pendLevel = id; phase = 'level'; }
@@ -1803,7 +1990,7 @@ P.addEventListener('click', function(ev){
   else if(go === 'choose'){ phase = 'choose'; render(); }
   else if(go === 'done'){ nextChooser(active + 1); }
   else if(go === 'next'){ round++; startRound(); }
-  else if(go === 'over'){ phase = 'over'; render(); }
+  else if(go === 'over'){ phase = 'over'; render(); sndBell(.85); crowdCheer(1.6); }
   else if(go === 'restart'){ replayStop(); newFight(); resetRing(); phase = 'start'; render(); }
   else if(go === 'replay'){ replayStart(); }
   else if(go === 'rpPause'){ paused = !paused; render(); }
@@ -1840,6 +2027,7 @@ for(var ti = 0; ti < 2; ti++){
 }
 fitCanvas();
 initPhys();
+setMuted(muted);
 newFight();
 phase = 'start';
 render();
