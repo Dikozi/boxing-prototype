@@ -3,190 +3,257 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#0d0f14">
-<title>Бокс — пошаговый бой на двоих</title>
+<meta name="theme-color" content="#0d1016">
+<title>Клинч</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&display=swap">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
-  --bg:#0d0f14; --panel:#161a22; --panel2:#1e2330; --line:#2d3546;
-  --txt:#eef1f7; --dim:#98a2b8;
-  --blue:#3d8bfd; --blueD:#173f86; --blueL:#7fb4ff;
-  --red:#ff4d5e; --redD:#8d1c28; --redL:#ff9aa4;
-  --ok:#3ad47c; --warn:#ffc44d; --bad:#ff4d5e;
+  --ink:#07090d; --bg:#0d1016; --panel:#151922; --panel2:#1c2230; --line:#2b3344;
+  --txt:#eef2f8; --dim:#93a0b8;
+  --blue:#3d8bfd; --blueL:#8dbcff; --blueD:#1a4a91;
+  --red:#ff4d5e;  --redL:#ffa3ab;  --redD:#96202e;
+  --gold:#ffc44d; --ok:#37d178; --warn:#ffb020;
+  --disp:"Oswald","Haettenschweiler","Arial Narrow",system-ui,sans-serif;
+  --body:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
 }
 html{height:100%}
 body{
-  background:var(--bg); color:var(--txt);
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  background:var(--bg); color:var(--txt); font-family:var(--body);
   display:flex; flex-direction:column;
-  height:100vh; height:100dvh;
-  overscroll-behavior:none;
+  height:100vh; height:100dvh; overscroll-behavior:none;
   -webkit-user-select:none; user-select:none;
   padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
+:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
 
-/* ---------- АРЕНА ---------- */
-#arena{flex:0 0 auto;display:flex;gap:6px;padding:6px 6px 3px;background:var(--panel);border-bottom:1px solid var(--line)}
-.corner{flex:1 1 0;min-width:0;padding:7px;border-radius:14px;background:var(--panel2);border:2px solid var(--line);display:flex;flex-direction:column;gap:5px}
-.corner.b{border-color:var(--blueD)}
-.corner.r{border-color:var(--redD)}
-.cname{font-size:11px;font-weight:800;letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.corner.b .cname{color:var(--blueL)}
-.corner.r .cname{color:var(--redL)}
-.crow{display:flex;align-items:center;gap:7px}
-.fig{flex:0 0 auto;width:34px;height:45px;display:block}
-.corner.r .fig{transform:scaleX(-1)}
-.stats{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:3px}
-.lab{display:flex;justify-content:space-between;align-items:baseline;gap:4px;font-size:10px;font-weight:800;color:var(--dim);letter-spacing:.02em}
-.lab b{color:var(--txt);font-size:13px;font-variant-numeric:tabular-nums}
-.bar{position:relative;height:13px;border-radius:7px;background:#080a0e;border:1px solid #333c4f;overflow:hidden}
-.bar i{position:absolute;inset:0 auto 0 0;display:block;height:100%;width:0;transition:width .3s ease,background .3s ease}
-.bar u{position:absolute;top:0;bottom:0;left:80%;width:2px;background:#ffffff55}
-.tele{display:none;font-size:10.5px;font-weight:900;text-align:center;padding:3px 2px;border-radius:7px;background:#4a2c00;color:#ffc44d;border:1px solid #7a4a00;line-height:1.2;white-space:nowrap}
-.tele.on{display:block}
-#rbar{flex:0 0 auto;text-align:center;font-size:11px;font-weight:800;letter-spacing:.14em;color:var(--dim);padding:3px 0 5px;background:var(--panel);border-bottom:2px solid var(--line)}
+/* ================= ПОЛОСКИ БОЙЦОВ ================= */
+#hud{flex:0 0 auto;display:flex;gap:6px;padding:7px 7px 5px;background:var(--panel);border-bottom:1px solid var(--line)}
+.corner{flex:1 1 0;min-width:0;padding:7px 8px 8px;border-radius:13px;background:var(--panel2);border:1px solid var(--line);display:flex;flex-direction:column;gap:4px;position:relative;overflow:hidden}
+.corner::before{content:"";position:absolute;inset:0 auto 0 0;width:3px}
+.corner.b::before{background:var(--blue)} .corner.r::before{background:var(--red)}
+.corner.b{border-color:#1d3a63} .corner.r{border-color:#5c2129}
+.cname{font-family:var(--disp);font-size:14px;font-weight:700;letter-spacing:.08em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:6px}
+.corner.b .cname{color:var(--blueL)} .corner.r .cname{color:var(--redL)}
+.lab{display:flex;justify-content:space-between;align-items:baseline;gap:4px;font-size:9px;font-weight:700;color:var(--dim);letter-spacing:.1em;padding-left:6px}
+.lab b{font-family:var(--disp);color:var(--txt);font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
+.bar{position:relative;height:11px;border-radius:6px;background:#04060a;border:1px solid #2c3547;overflow:hidden;margin-left:6px}
+.bar i{position:absolute;inset:0 auto 0 0;display:block;height:100%;width:0;transition:width .42s cubic-bezier(.3,0,.2,1),background .42s ease}
+.bar u{position:absolute;top:0;bottom:0;left:80%;width:2px;background:#ffffff4d}
+.bar.flash{animation:barFlash .4s ease-out}
+@keyframes barFlash{0%{box-shadow:0 0 0 0 #fff0}30%{box-shadow:0 0 0 3px #ffffff6b}100%{box-shadow:0 0 0 0 #fff0}}
 
-/* ---------- ПАНЕЛЬ ---------- */
-#panel{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px;display:flex;flex-direction:column;gap:8px}
-h1{font-size:26px;line-height:1.15;font-weight:900;text-align:center}
-h2{font-size:19px;font-weight:900;text-align:center;line-height:1.25}
-.sub{font-size:15px;color:var(--dim);text-align:center;line-height:1.4;font-weight:600}
-.card{background:var(--panel2);border:2px solid var(--line);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:10px}
-.card.b{border-color:var(--blueD);background:#121a2a}
-.card.r{border-color:var(--redD);background:#22151a}
-.spacer{flex:1 1 auto;min-height:4px}
-
-/* ---------- КНОПКИ ---------- */
-button{font-family:inherit;color:inherit;cursor:pointer;touch-action:manipulation}
-.btn{width:100%;border:2px solid var(--line);border-radius:16px;background:var(--panel2);padding:18px 14px;font-size:19px;font-weight:800;text-align:center;line-height:1.2}
-.btn:active{transform:scale(.975);filter:brightness(1.15)}
-.btn.big{padding:24px 14px;font-size:22px}
-.btn.blue{background:linear-gradient(#3d8bfd,#1f5fcf);border-color:#7fb4ff;color:#fff}
-.btn.red{background:linear-gradient(#ff4d5e,#cf2436);border-color:#ff9aa4;color:#fff}
-.btn.gold{background:linear-gradient(#ffc44d,#e09400);border-color:#ffe0a0;color:#2a1c00}
-.btn.ghost{background:transparent;color:var(--dim);font-size:16px;padding:14px;border-style:dashed}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.act{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:3px;min-height:clamp(64px,10.5vh,92px);padding:8px 6px;border-radius:16px;border:2px solid var(--line);background:var(--panel2)}
-.act.wide{grid-column:1/-1;flex-direction:row;justify-content:flex-start;text-align:left;gap:11px;min-height:clamp(52px,8vh,72px);padding:8px 16px}
-.act.wide .col{display:flex;flex-direction:column;align-items:flex-start;gap:1px}
-.act.wide .t,.act.wide .s{text-align:left}
-.act:active{transform:scale(.97);filter:brightness(1.2)}
-.act .em{font-size:22px;line-height:1}
-.act .t{font-size:17px;font-weight:900;line-height:1.1;text-align:center}
-.act .s{font-size:11px;font-weight:700;color:var(--dim);text-align:center;line-height:1.25}
-.act.atk{border-color:#6d3540;background:#251a1d}
-.act.atk .t{color:#ff9aa4}
-.act.def{border-color:#2c4b66;background:#141d28}
-.act.def .t{color:#8ec6ff}
-.hdr{font-size:11px;font-weight:900;letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
-
-/* ---------- РЕЗУЛЬТАТ РАУНДА ---------- */
-.rw{display:flex;flex-direction:column;gap:4px}
-.rw .who{font-size:16px;font-weight:900}
-.rw.b .who{color:var(--blueL)}
-.rw.r .who{color:var(--redL)}
-.rw .res{font-size:15px;font-weight:700;line-height:1.35;color:var(--txt)}
-.rw .res.miss{color:var(--dim)}
-.dmg{display:inline-block;font-weight:900;color:#fff;background:#c0202f;border-radius:8px;padding:1px 8px;margin-left:4px}
-.dmg.half{background:#8a6a00}
-.zero{display:inline-block;font-weight:900;color:#0d0f14;background:var(--ok);border-radius:8px;padding:1px 8px;margin-left:4px}
-.warnline{font-size:13px;font-weight:800;color:var(--warn);line-height:1.3}
-.snap{display:flex;gap:10px;font-size:14px;font-weight:800;justify-content:space-between;border-top:1px solid var(--line);padding-top:8px;flex-wrap:wrap}
-.snap span{white-space:nowrap}
-
-/* ---------- ЖУРНАЛ ---------- */
-#logWrap{flex:0 0 auto;background:var(--panel);border-top:2px solid var(--line)}
-#logHead{display:flex;justify-content:space-between;align-items:center;padding:5px 12px 3px;font-size:10px;font-weight:900;letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
-#log{height:16vh;min-height:70px;max-height:155px;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 12px 9px;font-size:13px;line-height:1.42}
-#log .ent{padding:7px 0;border-top:1px dashed var(--line)}
-#log .ent:first-child{border-top:none}
-#log .rn{font-weight:900;color:var(--warn);font-size:12px;letter-spacing:.08em}
-#log .l{color:#cfd6e4}
-#log b.b{color:var(--blueL)}
-#log b.r{color:var(--redL)}
-#log .empty{color:#5d6679;padding:8px 0;font-style:italic}
-
-/* совсем маленькие экраны — всё должно влезать без прокрутки панели */
-@media (max-height:680px){
-  #panel{gap:6px;padding:8px}
-  h1{font-size:23px}
-  h2{font-size:17px}
-  .sub{font-size:14px}
+/* ================= РИНГ ================= */
+#ring{
+  flex:0 0 auto;position:relative;overflow:hidden;
+  height:clamp(62px,10.5vh,100px);
+  transition:height .48s cubic-bezier(.32,.9,.32,1);
+  background:radial-gradient(125% 90% at 50% -14%,#20293b 0%,#0b0e14 58%,var(--ink) 100%);
+  border-bottom:2px solid var(--line);
+  display:flex;align-items:flex-end;justify-content:center;gap:1%;
 }
-details{background:var(--panel2);border:2px solid var(--line);border-radius:14px;padding:10px 14px}
-summary{font-size:16px;font-weight:800;cursor:pointer;list-style:none}
+#ring.full{height:clamp(156px,27vh,248px)}
+#ring::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,#0000,var(--gold),#0000);opacity:.5}
+.slot{flex:0 0 46%;height:100%;position:relative;display:flex;align-items:flex-end}
+.bx{width:100%;height:100%;display:block;overflow:visible}
+.slot.r .bx{transform:scaleX(-1)}
+
+/* оси вращения частей бойца */
+.bx .root,.bx .fall,.bx .bob,.bx .stance,.bx .hit{transform-box:view-box;transform-origin:60px 166px}
+.bx .head{transform-box:view-box;transform-origin:59px 58px}
+.bx .armL,.bx .gL{transform-box:view-box;transform-origin:74px 74px}
+.bx .armR,.bx .gR{transform-box:view-box;transform-origin:48px 74px}
+.bx .armL,.bx .gL{transform:rotate(-52deg)}
+.bx .armR,.bx .gR{transform:rotate(-72deg)}
+.bx .bob{animation:bob 2.4s ease-in-out infinite}
+.bx.tired .bob{animation-duration:1.1s}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}
+.bx .fall{transition:transform .6s cubic-bezier(.36,.9,.4,1)}
+.bx.ko .fall{transform:rotate(-44deg) scaleY(.62) translateY(4px)}
+.bx.ko .bob{animation:none}
+.bx.ko .torso,.bx.ko .head circle,.bx.ko .leg,.bx.ko .arm,.bx.ko .glove{filter:grayscale(.75) brightness(.62)}
+.bx .shadow{opacity:.34;transition:opacity .6s ease}
+.bx.ko .shadow{opacity:.15}
+/* поза заряженного кросса — держится между раундами */
+.bx.windup .armR,.bx.windup .gR{transform:rotate(-140deg) scaleX(.92)}
+.bx.windup .gR{transform:rotate(-140deg) translateX(-1.6px)}
+.bx.windup .stance{transform:rotate(-9deg)}
+.bx.windup .glove.r{animation:chargeGlow 1.15s ease-in-out infinite}
+@keyframes chargeGlow{0%,100%{filter:drop-shadow(0 0 0 #ffb02000)}50%{filter:drop-shadow(0 0 7px #ffb020)}}
+
+/* эффекты поверх ринга */
+#fx{position:absolute;inset:0;pointer-events:none}
+#flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;mix-blend-mode:screen}
+.pop{position:absolute;transform:translate(-50%,0);font-family:var(--disp);font-weight:700;white-space:nowrap;
+     font-size:clamp(21px,6.4vw,34px);letter-spacing:.02em;animation:popUp 1.05s cubic-bezier(.2,.8,.3,1) forwards}
+.pop.dmg{color:#fff;text-shadow:0 2px 0 #8e0d19,0 0 16px #ff2f45cc}
+.pop.half{color:#ffdd8a;text-shadow:0 2px 0 #6b4a00,0 0 14px #ffb020aa}
+.pop.info{font-size:clamp(15px,4.4vw,22px);color:var(--txt);text-shadow:0 2px 6px #000d,0 0 12px #0009;letter-spacing:.12em}
+.pop.good{color:#7dffb4;text-shadow:0 2px 0 #06482a,0 0 14px #37d17899}
+@keyframes popUp{0%{opacity:0;transform:translate(-50%,10px) scale(.5)}
+  16%{opacity:1;transform:translate(-50%,-6px) scale(1.22)}
+  30%{transform:translate(-50%,-11px) scale(1)}
+  70%{opacity:1}
+  100%{opacity:0;transform:translate(-50%,-46px) scale(.98)}}
+.burst{position:absolute;width:clamp(64px,19vw,108px);aspect-ratio:1;transform:translate(-50%,-50%);
+       background:radial-gradient(circle,#fff 0%,#ffe9a8 22%,#ff8a3c 46%,#ff2f4500 72%);
+       animation:burstOut .42s ease-out forwards}
+@keyframes burstOut{0%{opacity:0;transform:translate(-50%,-50%) scale(.25)}
+  20%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(1.9)}}
+.guardSpark{position:absolute;width:clamp(46px,13vw,74px);aspect-ratio:1;transform:translate(-50%,-50%);
+       background:radial-gradient(circle,#eaf4ff 0%,#8dbcff 38%,#3d8bfd00 70%);
+       animation:burstOut .38s ease-out forwards}
+.tag{position:absolute;transform:translateX(-50%);top:5px;font-family:var(--disp);font-weight:700;
+     font-size:11px;letter-spacing:.12em;color:#2a1c00;background:var(--gold);
+     padding:2px 9px;border-radius:20px;white-space:nowrap;animation:tagIn .3s ease-out both,tagPulse 1.3s ease-in-out .3s infinite}
+@keyframes tagIn{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+@keyframes tagPulse{0%,100%{box-shadow:0 0 0 0 #ffc44d00}50%{box-shadow:0 0 0 5px #ffc44d33}}
+
+/* ================= ТАБЛО РАУНДА ================= */
+#rbar{flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:9px;
+  font-family:var(--disp);font-size:13px;font-weight:700;letter-spacing:.2em;color:var(--gold);
+  padding:5px 0 6px;background:var(--panel);border-bottom:2px solid var(--line)}
+#rbar span{width:6px;height:6px;border-radius:50%;background:var(--line)}
+#rbar span.on{background:var(--gold)}
+#rbar span.now{background:var(--gold);box-shadow:0 0 0 3px #ffc44d2e}
+
+/* ================= ПАНЕЛЬ ================= */
+#panel{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:11px;display:flex;flex-direction:column;gap:9px}
+#panel>*{animation:rise .3s cubic-bezier(.2,.8,.3,1) both}
+#panel>*:nth-child(2){animation-delay:.05s}
+#panel>*:nth-child(3){animation-delay:.1s}
+#panel>*:nth-child(4){animation-delay:.15s}
+#panel>*:nth-child(5){animation-delay:.2s}
+@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+h1{font-family:var(--disp);font-size:clamp(28px,8.6vw,38px);font-weight:700;line-height:1.02;text-align:center;letter-spacing:.03em;text-wrap:balance}
+h2{font-family:var(--disp);font-size:clamp(20px,5.8vw,25px);font-weight:700;text-align:center;line-height:1.15;letter-spacing:.04em;text-wrap:balance}
+.sub{font-size:14.5px;color:var(--dim);text-align:center;line-height:1.45;max-width:34em;margin-inline:auto}
+.card{background:var(--panel2);border:1px solid var(--line);border-radius:15px;padding:12px 14px;display:flex;flex-direction:column;gap:7px}
+.card.b{border-color:#1d3a63;background:linear-gradient(#141d2e,#111825)}
+.card.r{border-color:#5c2129;background:linear-gradient(#241519,#1d1216)}
+.spacer{flex:1 1 auto;min-height:2px}
+
+/* ================= КНОПКИ ================= */
+button{font-family:inherit;color:inherit;cursor:pointer;touch-action:manipulation;border:none;background:none}
+.btn{width:100%;border:1px solid var(--line);border-radius:15px;background:var(--panel2);
+  padding:17px 14px;font-family:var(--disp);font-size:20px;font-weight:700;letter-spacing:.05em;line-height:1.1;transition:transform .09s ease,filter .12s ease}
+.btn:active{transform:scale(.972);filter:brightness(1.16)}
+.btn.big{padding:21px 14px;font-size:23px}
+.btn.blue{background:linear-gradient(#3d8bfd,#2160cd);border-color:#8dbcff;color:#fff}
+.btn.red{background:linear-gradient(#ff4d5e,#d02536);border-color:#ffa3ab;color:#fff}
+.btn.gold{background:linear-gradient(#ffcf6b,#e19100);border-color:#ffe3a6;color:#2a1c00}
+.btn.gold::after{content:"";position:absolute}
+.btn.ghost{background:none;color:var(--dim);font-size:16px;padding:13px;border-style:dashed}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.act{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:2px;
+  min-height:clamp(60px,10vh,90px);padding:8px 6px;border-radius:15px;border:1px solid var(--line);
+  background:var(--panel2);transition:transform .09s ease,filter .12s ease}
+.act:active{transform:scale(.968);filter:brightness(1.22)}
+.act.wide{grid-column:1/-1;flex-direction:row;justify-content:flex-start;gap:11px;min-height:clamp(50px,7.6vh,70px);padding:8px 15px}
+.act.wide .col{display:flex;flex-direction:column;align-items:flex-start;gap:0}
+.act .em{font-size:21px;line-height:1}
+.act .t{font-family:var(--disp);font-size:18px;font-weight:700;letter-spacing:.03em;line-height:1.1;text-align:center}
+.act .s{font-size:10.5px;font-weight:600;color:var(--dim);text-align:center;line-height:1.25}
+.act.wide .t,.act.wide .s{text-align:left}
+.act.atk{border-color:#6a3038;background:linear-gradient(#251a1e,#1d1417)}
+.act.atk .t{color:var(--redL)}
+.act.def{border-color:#26445f;background:linear-gradient(#141d29,#101720)}
+.act.def .t{color:var(--blueL)}
+.hdr{font-size:10px;font-weight:800;letter-spacing:.22em;color:var(--dim);text-transform:uppercase}
+
+/* ================= РАЗБОР РАУНДА ================= */
+.rw .who{font-family:var(--disp);font-size:17px;font-weight:700;letter-spacing:.04em}
+.card.b .who{color:var(--blueL)} .card.r .who{color:var(--redL)}
+.res{font-size:14.5px;font-weight:500;line-height:1.4}
+.res.miss{color:var(--dim)}
+.dmg{display:inline-block;font-family:var(--disp);font-weight:700;color:#fff;background:#b81f2e;border-radius:7px;padding:0 8px;margin-left:5px}
+.dmg.half{background:#8a6300}
+.zero{display:inline-block;font-family:var(--disp);font-weight:700;color:#06210f;background:var(--ok);border-radius:7px;padding:0 8px;margin-left:5px}
+.warnline{font-size:12.5px;font-weight:700;color:var(--warn);line-height:1.3}
+
+/* ================= ЖУРНАЛ ================= */
+#logWrap{flex:0 0 auto;background:var(--panel);border-top:2px solid var(--line)}
+#logHead{display:flex;justify-content:space-between;align-items:center;padding:5px 12px 3px;
+  font-size:9px;font-weight:800;letter-spacing:.22em;color:var(--dim);text-transform:uppercase}
+#log{height:15vh;min-height:66px;max-height:150px;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 12px 9px;font-size:12.5px;line-height:1.4}
+#log .ent{padding:6px 0;border-top:1px solid #1f2634;animation:rise .3s ease-out both}
+#log .ent:first-child{border-top:none}
+#log .rn{font-family:var(--disp);font-weight:700;color:var(--gold);font-size:12px;letter-spacing:.14em}
+#log .l{color:#c6cfdf}
+#log b.b{color:var(--blueL)} #log b.r{color:var(--redL)}
+#log .sm{color:#77839a}
+#log .empty{color:#5b657a;padding:7px 0;font-style:italic}
+
+details{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:11px 14px}
+summary{font-family:var(--disp);font-size:17px;font-weight:700;letter-spacing:.05em;cursor:pointer;list-style:none}
 summary::-webkit-details-marker{display:none}
-summary::before{content:"▸ ";color:var(--warn)}
+summary::before{content:"▸ ";color:var(--gold)}
 details[open] summary::before{content:"▾ "}
-details .body{font-size:14px;line-height:1.5;color:#c3cbdb;padding-top:10px;display:flex;flex-direction:column;gap:8px}
-details .body b{color:var(--txt)}
-details .body .k{color:var(--warn);font-weight:800}
+details .body{font-size:13.5px;line-height:1.55;color:#bcc6d8;padding-top:10px;display:flex;flex-direction:column;gap:9px}
+details .body b{color:var(--txt)} details .body .k{color:var(--gold);font-weight:700}
+
+/* низкие экраны: всё должно доставаться пальцем без прокрутки */
+@media (max-height:730px){
+  #hud{padding:5px 5px 4px;gap:5px}
+  .corner{padding:5px 7px 6px;gap:3px}
+  .cname{font-size:12px}
+  .lab{font-size:8.5px} .lab b{font-size:13px}
+  .bar{height:9px}
+  #rbar{padding:3px 0 4px;font-size:11px;gap:7px}
+  #ring{height:clamp(50px,8vh,100px)}
+  #ring.slim{height:0;border-bottom-width:0}   /* на экране выбора ринг уступает место кнопкам */
+  #log{height:13vh;min-height:54px}
+  #panel{gap:6px;padding:8px}
+  .act{min-height:clamp(52px,9vh,84px)}
+  .act.wide{min-height:clamp(46px,7vh,66px)}
+  .sub{font-size:13.5px}
+  details{padding:9px 12px}
+}
+@media (max-height:600px){
+  #ring{height:44px}
+  #log{height:48px;min-height:48px}
+  .act{min-height:48px} .act.wide{min-height:44px}
+  .btn.big{padding:16px 12px;font-size:19px}
+  h1{font-size:24px} h2{font-size:17px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
 </style>
 </head>
 <body>
 
-<div id="arena">
-  <div class="corner b" id="c0">
-    <div class="cname">🔵 СИНИЙ УГОЛ</div>
-    <div class="crow">
-      <svg class="fig" viewBox="0 0 100 130" aria-hidden="true">
-        <g fill="#3d8bfd">
-          <circle cx="50" cy="22" r="16"/>
-          <rect x="30" y="42" width="40" height="46" rx="10"/>
-          <rect x="36" y="88" width="12" height="34" rx="6"/>
-          <rect x="52" y="88" width="12" height="34" rx="6"/>
-          <rect x="16" y="46" width="14" height="26" rx="7"/>
-          <rect x="70" y="46" width="14" height="26" rx="7"/>
-        </g>
-        <g fill="#ff4d5e">
-          <circle cx="24" cy="30" r="12"/>
-          <circle cx="76" cy="30" r="12"/>
-        </g>
-      </svg>
-      <div class="stats">
-        <div class="lab"><span>ЗДОРОВЬЕ</span><b id="hp0v">100</b></div>
-        <div class="bar"><i id="hp0"></i></div>
-        <div class="lab"><span>УСТАЛОСТЬ</span><b id="fa0v">0</b></div>
-        <div class="bar"><i id="fa0"></i><u></u></div>
-      </div>
-    </div>
-    <div class="tele" id="te0">⚡ ТЯЖЁЛЫЙ УДАР</div>
+<div id="hud">
+  <div class="corner b">
+    <div class="cname">СИНИЙ УГОЛ</div>
+    <div class="lab"><span>ЗДОРОВЬЕ</span><b id="hp0v">100</b></div>
+    <div class="bar"><i id="hp0"></i></div>
+    <div class="lab"><span>УСТАЛОСТЬ</span><b id="fa0v">0</b></div>
+    <div class="bar"><i id="fa0"></i><u></u></div>
   </div>
-
-  <div class="corner r" id="c1">
-    <div class="cname">🔴 КРАСНЫЙ УГОЛ</div>
-    <div class="crow">
-      <svg class="fig" viewBox="0 0 100 130" aria-hidden="true">
-        <g fill="#ff4d5e">
-          <circle cx="50" cy="22" r="16"/>
-          <rect x="30" y="42" width="40" height="46" rx="10"/>
-          <rect x="36" y="88" width="12" height="34" rx="6"/>
-          <rect x="52" y="88" width="12" height="34" rx="6"/>
-          <rect x="16" y="46" width="14" height="26" rx="7"/>
-          <rect x="70" y="46" width="14" height="26" rx="7"/>
-        </g>
-        <g fill="#3d8bfd">
-          <circle cx="24" cy="30" r="12"/>
-          <circle cx="76" cy="30" r="12"/>
-        </g>
-      </svg>
-      <div class="stats">
-        <div class="lab"><span>ЗДОРОВЬЕ</span><b id="hp1v">100</b></div>
-        <div class="bar"><i id="hp1"></i></div>
-        <div class="lab"><span>УСТАЛОСТЬ</span><b id="fa1v">0</b></div>
-        <div class="bar"><i id="fa1"></i><u></u></div>
-      </div>
-    </div>
-    <div class="tele" id="te1">⚡ ТЯЖЁЛЫЙ УДАР</div>
+  <div class="corner r">
+    <div class="cname">КРАСНЫЙ УГОЛ</div>
+    <div class="lab"><span>ЗДОРОВЬЕ</span><b id="hp1v">100</b></div>
+    <div class="bar"><i id="hp1"></i></div>
+    <div class="lab"><span>УСТАЛОСТЬ</span><b id="fa1v">0</b></div>
+    <div class="bar"><i id="fa1"></i><u></u></div>
   </div>
 </div>
 
-<div id="rbar">РАУНД 1 ИЗ 10</div>
+<div id="ring">
+  <div class="slot b" id="slot0"></div>
+  <div class="slot r" id="slot1"></div>
+  <div id="flash"></div>
+  <div id="fx"></div>
+</div>
 
+<div id="rbar"></div>
 <div id="panel"></div>
 
 <div id="logWrap">
-  <div id="logHead"><span>Журнал боя</span><span id="logHint">листается ↕</span></div>
+  <div id="logHead"><span>Журнал боя</span><span>листается</span></div>
   <div id="log"><div class="empty">Бой ещё не начался.</div></div>
 </div>
 
@@ -196,69 +263,62 @@ details .body .k{color:var(--warn);font-weight:800}
 /* =========================================================================
    БАЛАНС
    ========================================================================= */
-var MAX_HP      = 100;
-var MAX_FAT     = 100;
-var MAX_ROUNDS  = 10;
-var TIRED_AT    = 80;    // усталость ВЫШЕ этого значения -> штраф к урону
-var TIRED_MULT  = 2/3;   // "на треть меньше"
-var REST        = 8;     // пассивное восстановление усталости каждый раунд
+var MAX_HP = 100, MAX_FAT = 100, MAX_ROUNDS = 10;
+var TIRED_AT = 80;      // усталость ВЫШЕ этого значения — штраф к урону
+var TIRED_MULT = 2/3;   // «на треть меньше»
+var REST = 8;           // пассивное восстановление за раунд
 
-/* Спорные места в правилах вынесены сюда — меняются одной строкой.
-   1) В ТЗ есть две взаимоисключающие фразы про апперкот в голову против
-      высокого блока. Взят вариант "блок гасит апперкот в голову" — иначе
-      апперкот бьёт вообще всё, кроме шага назад, и джеб теряет смысл.
-   2) Если бы нырок пробивался апперкотом в корпус тоже, то апперкот в голову
-      стал бы строго хуже апперкота в корпус (мёртвая кнопка). Поэтому нырок
-      пробивает только апперкот в ГОЛОВУ — боксёр ныряет прямо под удар. */
-var BLOCK_STOPS_HEAD_UPPERCUT   = true;
+/* Спорные места правил вынесены сюда — переключаются одной строкой.
+   1) В ТЗ две взаимоисключающие фразы про апперкот в голову против высокого
+      блока. Взят вариант «блок гасит»: иначе апперкот бьёт вообще всё, кроме
+      шага назад, и прямой удар теряет смысл.
+   2) Если бы нырок пробивался и апперкотом в корпус, апперкот в голову стал бы
+      строго хуже апперкота в корпус — мёртвая кнопка. Поэтому нырок пробивает
+      только апперкот в ГОЛОВУ: боксёр ныряет прямо под удар. */
+var BLOCK_STOPS_HEAD_UPPERCUT = true;
 var UPPERCUT_PIERCES_SLIP_HEAD_ONLY = true;
 var CROSS_BLOCK_MULT = 0.5;   // высокий блок гасит половину кросса
 
 var ACT = {
-  jab:      {id:'jab',      kind:'attack', name:'Прямой',      em:'👊', dmg:20, fat:14,  level:true,  hint:'20 урона · сразу'},
-  uppercut: {id:'uppercut', kind:'attack', name:'Апперкот',    em:'🥊', dmg:35, fat:22,  level:true,  hint:'35 урона · пробивает нырок'},
-  cross:    {id:'cross',    kind:'attack', name:'Кросс',       em:'💥', dmg:50, fat:32,  level:false, hint:'50 урона · замах на раунд'},
-  block:    {id:'block',    kind:'defense',name:'Высокий блок',em:'🛡️', dmg:0,  fat:6,   level:false, hint:'закрывает голову'},
-  slip:     {id:'slip',     kind:'defense',name:'Нырок',       em:'🌀', dmg:0,  fat:8,   level:false, hint:'закрывает корпус'},
-  step:     {id:'step',     kind:'defense',name:'Шаг назад',   em:'👣', dmg:0,  fat:-10, level:false, hint:'уход + отдых'},
-  crossLand:{id:'crossLand',kind:'attack', name:'Кросс',       em:'💥', dmg:50, fat:6,   level:false, hint:''}
+  jab:      {id:'jab',      kind:'attack', name:'Прямой',       em:'👊', dmg:20, fat:14,  level:true,  hint:'20 урона · сразу'},
+  uppercut: {id:'uppercut', kind:'attack', name:'Апперкот',     em:'🥊', dmg:35, fat:22,  level:true,  hint:'35 урона · пробивает нырок'},
+  cross:    {id:'cross',    kind:'attack', name:'Кросс',        em:'💥', dmg:50, fat:32,  level:false, hint:'50 урона · замах на раунд'},
+  block:    {id:'block',    kind:'defense',name:'Высокий блок', em:'🛡️', dmg:0,  fat:6,   level:false, hint:'закрывает голову'},
+  slip:     {id:'slip',     kind:'defense',name:'Нырок',        em:'🌀', dmg:0,  fat:8,   level:false, hint:'закрывает корпус'},
+  step:     {id:'step',     kind:'defense',name:'Шаг назад',    em:'👣', dmg:0,  fat:-10, level:false, hint:'уход + отдых'},
+  crossLand:{id:'crossLand',kind:'attack', name:'Кросс',        em:'💥', dmg:50, fat:6,   level:false, hint:''}
 };
 
 /* =========================================================================
    СОСТОЯНИЕ
    ========================================================================= */
-var F, round, phase, active, choices, pendLevel, lastReport;
+var F, round, phase, active, choices, pendLevel, lastReport, revealDone;
+var disp = [{hp:MAX_HP,fat:0},{hp:MAX_HP,fat:0}];   // то, что сейчас нарисовано на полосках
 
 function newFight(){
   F = [
-    {i:0, name:'СИНИЙ',  cls:'b', ico:'🔵', hp:MAX_HP, fat:0, pending:false},
-    {i:1, name:'КРАСНЫЙ',cls:'r', ico:'🔴', hp:MAX_HP, fat:0, pending:false}
+    {i:0, name:'СИНИЙ',   cls:'b', ico:'🔵', hp:MAX_HP, fat:0, pending:false, ko:false},
+    {i:1, name:'КРАСНЫЙ', cls:'r', ico:'🔴', hp:MAX_HP, fat:0, pending:false, ko:false}
   ];
-  round = 1;
-  choices = [null,null];
-  pendLevel = null;
-  lastReport = null;
+  round = 1; choices = [null,null]; pendLevel = null; lastReport = null; revealDone = false;
+  syncDisp();
   document.getElementById('log').innerHTML = '<div class="empty">Бой ещё не начался.</div>';
 }
+function syncDisp(){ for(var i=0;i<2;i++){ disp[i].hp = F[i].hp; disp[i].fat = F[i].fat; } }
 
 /* =========================================================================
-   РАЗБОР УДАРА:  чем закончилась атака atk против действия защитника def
+   РАЗБОР УДАРА: что стало с атакой atk против действия защитника def
    ========================================================================= */
 function resolve(atk, def){
   var d = def ? def.id : null;
 
-  /* Кросс, объявленный в прошлом раунде, прилетает СЕЙЧАС */
   if(atk.id === 'crossLand'){
     if(d === 'block') return {mult:CROSS_BLOCK_MULT, why:'высокий блок принял кросс — урон вдвое меньше'};
     if(d === 'step')  return {mult:1, why:'шаг назад НЕ спасает от объявленного кросса'};
     if(d === 'slip')  return {mult:1, why:'нырок не помогает против кросса'};
     return {mult:1, why:'кросс дошёл без помех'};
   }
-
-  /* Замах: в этом раунде урона нет */
-  if(atk.id === 'cross') return null;
-
-  /* Шаг назад разрывает дистанцию и уводит от любого мгновенного удара */
+  if(atk.id === 'cross') return null;                    // замах, урона нет
   if(d === 'step') return {mult:0, why:'шаг назад разорвал дистанцию — удар не достал'};
 
   if(atk.id === 'jab'){
@@ -277,24 +337,23 @@ function resolve(atk, def){
       if(d === 'block') return BLOCK_STOPS_HEAD_UPPERCUT
         ? {mult:0, why:'высокий блок погасил апперкот в голову'}
         : {mult:1, why:'апперкот прошёл под блоком'};
-      if(d === 'slip')  return {mult:1, why:'АППЕРКОТ ПРОБИЛ НЫРОК НАСКВОЗЬ — соперник нырнул прямо под удар'};
+      if(d === 'slip')  return {mult:1, why:'апперкот пробил нырок насквозь — соперник нырнул прямо под удар'};
       return {mult:1, why:'соперник не защищался'};
     }
     if(d === 'slip')  return UPPERCUT_PIERCES_SLIP_HEAD_ONLY
       ? {mult:0, why:'нырок ушёл вниз и закрыл корпус'}
-      : {mult:1, why:'АППЕРКОТ ПРОБИЛ НЫРОК НАСКВОЗЬ'};
+      : {mult:1, why:'апперкот пробил нырок насквозь'};
     if(d === 'block') return {mult:1, why:'высокий блок держал голову — корпус открыт'};
     return {mult:1, why:'соперник не защищался'};
   }
-
   return {mult:1, why:''};
 }
 
 function label(c){
   if(!c) return '—';
+  if(c.id === 'crossLand') return 'КРОСС ПРИЛЕТАЕТ';
+  if(c.id === 'cross')     return 'Кросс — замах';
   var a = ACT[c.id];
-  if(c.id === 'crossLand') return 'КРОСС прилетает';
-  if(c.id === 'cross')     return 'Кросс (замах)';
   if(c.lvl) return a.name + (c.lvl === 'head' ? ' в голову' : ' в корпус');
   return a.name;
 }
@@ -304,27 +363,26 @@ function label(c){
    ========================================================================= */
 function resolveRound(){
   var startFat = [F[0].fat, F[1].fat];
-  var tired    = [startFat[0] > TIRED_AT, startFat[1] > TIRED_AT];
-  var out = [null,null];
-  var i;
+  var tired = [startFat[0] > TIRED_AT, startFat[1] > TIRED_AT];
+  var out = [null,null], i;
 
   for(i = 0; i < 2; i++){
     var mine = choices[i], A = ACT[mine.id];
-    if(A.kind !== 'attack'){ out[i] = {type:'def'}; continue; }
-    if(mine.id === 'cross'){ out[i] = {type:'windup'}; continue; }
+    if(A.kind !== 'attack'){ out[i] = {type:'def', dmg:0}; continue; }
+    if(mine.id === 'cross'){ out[i] = {type:'windup', dmg:0}; continue; }
     var r = resolve(mine, choices[1-i]);
-    var dmg = Math.round(A.dmg * (tired[i] ? TIRED_MULT : 1) * r.mult);
-    out[i] = {type:'atk', dmg:dmg, mult:r.mult, why:r.why, tired:tired[i], base:A.dmg};
+    out[i] = {type:'atk', dmg:Math.round(A.dmg * (tired[i] ? TIRED_MULT : 1) * r.mult),
+              mult:r.mult, why:r.why, tired:tired[i]};
   }
 
-  /* урон применяется одновременно — возможен двойной нокаут */
-  F[1].hp = Math.max(0, F[1].hp - (out[0].dmg || 0));
-  F[0].hp = Math.max(0, F[0].hp - (out[1].dmg || 0));
+  F[1].hp = Math.max(0, F[1].hp - out[0].dmg);   // урон применяется одновременно
+  F[0].hp = Math.max(0, F[0].hp - out[1].dmg);
 
   for(i = 0; i < 2; i++){
     F[i].fat = Math.max(0, Math.min(MAX_FAT, F[i].fat + ACT[choices[i].id].fat - REST));
     if(choices[i].id === 'cross')          F[i].pending = true;
     else if(choices[i].id === 'crossLand') F[i].pending = false;
+    if(F[i].hp <= 0) F[i].ko = true;
   }
 
   lastReport = {round:round, choices:[choices[0], choices[1]], out:out,
@@ -333,78 +391,309 @@ function resolveRound(){
 }
 
 /* =========================================================================
-   ТЕКСТ РЕЗУЛЬТАТА
+   БОЙЦЫ: СИЛУЭТЫ И АНИМАЦИЯ
+   ========================================================================= */
+var ARM = 20;                       // длина руки в единицах viewBox
+var NUDGE = 17;                     // сдвиг бойца к центру ринга, единицы viewBox
+var GUARD = {L:-52, R:-72};         // углы рук в стойке
+var RM = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+var SKIN = [
+  {body:'#2f6fd0', head:'#4a92ff', arm:'#6aa6f5', glove:'#dceaff'},
+  {body:'#d93646', head:'#ff5b6b', arm:'#f57682', glove:'#ffdee2'}
+];
+
+function boxerSVG(s){
+  return '<svg class="bx" viewBox="0 0 120 175" preserveAspectRatio="xMaxYMax meet">' +
+    '<g class="nudge" transform="translate(' + NUDGE + ',0)">' +
+    '<ellipse class="shadow" cx="62" cy="169" rx="30" ry="5" fill="#000"></ellipse>' +
+    '<g class="root"><g class="fall"><g class="bob"><g class="stance"><g class="hit">' +
+      '<g class="armR"><rect class="arm" x="48" y="68" width="20" height="12" rx="6" fill="' + s.arm + '"></rect></g>' +
+      '<g class="gR"><circle class="glove r" cx="68" cy="74" r="12.5" fill="' + s.glove + '"></circle></g>' +
+      '<rect class="leg" x="46" y="116" width="13" height="50" rx="6.5" fill="' + s.body + '"></rect>' +
+      '<rect class="leg" x="63" y="116" width="13" height="50" rx="6.5" fill="' + s.body + '"></rect>' +
+      '<rect class="torso" x="40" y="62" width="42" height="58" rx="14" fill="' + s.body + '"></rect>' +
+      '<g class="head"><circle cx="59" cy="40" r="19" fill="' + s.head + '"></circle></g>' +
+      '<g class="armL"><rect class="arm" x="74" y="68" width="20" height="12" rx="6" fill="' + s.arm + '"></rect></g>' +
+      '<g class="gL"><circle class="glove l" cx="94" cy="74" r="12.5" fill="' + s.glove + '"></circle></g>' +
+    '</g></g></g></g></g></g></svg>';
+}
+
+var ring = document.getElementById('ring');
+var fxL  = document.getElementById('fx');
+var flashEl = document.getElementById('flash');
+var BX = [], TAG = [];
+
+function buildRing(){
+  for(var i = 0; i < 2; i++){
+    var slot = document.getElementById('slot' + i);
+    slot.innerHTML = boxerSVG(SKIN[i]);
+    BX[i] = slot.querySelector('.bx');
+    var t = document.createElement('div');
+    t.className = 'tag'; t.textContent = '⚡ ГОТОВИТ КРОСС';
+    t.style.left = (i === 0 ? 26 : 74) + '%';
+    t.style.display = 'none';
+    fxL.appendChild(t); TAG[i] = t;
+  }
+}
+
+/* --- низкоуровневые помощники анимации --- */
+var running = [], timers = [], animating = false;
+function track(a){ running.push(a); return a; }
+function stopAll(){ running.forEach(function(a){ try{ a.cancel(); }catch(e){} }); running = []; }
+function at(ms, fn){ timers.push(setTimeout(fn, ms)); }
+function clearTimers(){ timers.forEach(clearTimeout); timers = []; }
+
+/* рука + перчатка двигаются согласованно: рука тянется, перчатка едет по её оси */
+var EASE_DEF = 'cubic-bezier(.25,.85,.35,1)';
+function swing(i, side, frames, dur){
+  var bx = BX[i];
+  var arm = bx.querySelector(side === 'L' ? '.armL' : '.armR');
+  var gl  = bx.querySelector(side === 'L' ? '.gL'   : '.gR');
+  var ka = [], kg = [];
+  frames.forEach(function(f){
+    var s = (f.s == null) ? 1 : f.s;
+    var e = f.e || EASE_DEF;
+    ka.push({offset:f.t, easing:e, transform:'rotate(' + f.a + 'deg) scaleX(' + s + ')'});
+    kg.push({offset:f.t, easing:e, transform:'rotate(' + f.a + 'deg) translateX(' + ((s - 1) * ARM).toFixed(2) + 'px)'});
+  });
+  var o = {duration:dur, easing:'linear', fill:'none'};
+  track(arm.animate(ka, o)); track(gl.animate(kg, o));
+}
+function move(i, sel, frames, dur){
+  var el = BX[i].querySelector(sel);
+  track(el.animate(frames.map(function(f){
+    return {offset:f.t, easing:f.e || EASE_DEF,
+            transform:'translate(' + (f.x||0) + 'px,' + (f.y||0) + 'px) rotate(' + (f.r||0) + 'deg) scaleY(' + (f.sy==null?1:f.sy) + ')'};
+  }), {duration:dur, easing:'linear', fill:'none'}));
+}
+
+/* --- поза по выбранному действию (боец справа зеркалится через CSS) --- */
+var DUR = 900;
+/* смещение цели, если соперник в этот момент ныряет или отшагивает (единицы viewBox) */
+function aim(oc){
+  var d = oc ? oc.id : null;
+  return {down: d === 'slip' ? 26 : 0, far: d === 'step' ? 30 : 0};
+}
+function playAction(i, c, oc){
+  var bx = BX[i], t = aim(oc);
+  switch(c.id){
+    case 'jab': {
+      var a = (c.lvl === 'head') ? -24 : 6;
+      var asc = 2.95;
+      if(c.lvl === 'head' && t.down){ a = 0; }          // соперник нырнул — бьём ниже
+      if(t.far){ asc += 0.9; }                          // отшагнул — тянемся вслед
+      swing(i, 'L', [{t:0,a:GUARD.L},{t:.16,a:GUARD.L-9,s:.85},{t:.44,a:a,s:asc,e:'linear'},{t:.55,a:a,s:asc},{t:1,a:GUARD.L}], DUR);
+      move(i, '.stance', [{t:0},{t:.16,x:-4},{t:.44,x:13},{t:.55,x:13},{t:1}], DUR);
+      break;
+    }
+    case 'uppercut': {
+      var ua = (c.lvl === 'head') ? -24 : -4;
+      var us = (c.lvl === 'head') ? 4.2  : 4.0;
+      if(c.lvl === 'head' && t.down){ ua = -3; }        // апперкот достаёт занырнувшую голову
+      if(t.far){ us += 0.9; }
+      swing(i, 'R', [{t:0,a:GUARD.R,e:'ease-in-out'},{t:.2,a:34,s:.88},{t:.44,a:ua,s:us,e:'linear'},{t:.55,a:ua,s:us},{t:1,a:GUARD.R}], DUR);
+      move(i, '.stance', [{t:0},{t:.2,y:8,x:-4},{t:.44,y:-7,x:21},{t:.55,y:-7,x:21},{t:1}], DUR);
+      break;
+    }
+    case 'cross':                                   // замах: заканчивается позой .windup
+      bx.classList.add('windup');
+      swing(i, 'R', [{t:0,a:GUARD.R},{t:.6,a:-152,s:.9,e:'ease-in-out'},{t:1,a:-140,s:.92}], 720);
+      move(i, '.stance', [{t:0,r:0},{t:.6,r:-12,e:'ease-in-out'},{t:1,r:-9}], 720);
+      break;
+    case 'crossLand':
+      bx.classList.remove('windup');
+      var cs = 3.9 + (t.far ? 0.9 : 0), ca = t.down ? -8 : -26;
+      swing(i, 'R', [{t:0,a:-140,s:.92,e:'ease-in-out'},{t:.14,a:-152,s:.86,e:'cubic-bezier(.15,.95,.3,1)'},{t:.44,a:ca,s:cs,e:'linear'},{t:.55,a:ca,s:cs},{t:1,a:GUARD.R}], DUR);
+      move(i, '.stance', [{t:0,r:-9},{t:.14,r:-14,x:-4},{t:.44,r:14,x:12},{t:.55,r:14,x:12},{t:1,r:0,x:0}], DUR);
+      break;
+    case 'block':
+      swing(i, 'L', [{t:0,a:GUARD.L},{t:.26,a:-86,s:.76},{t:.84,a:-86,s:.76},{t:1,a:GUARD.L}], DUR);
+      swing(i, 'R', [{t:0,a:GUARD.R},{t:.26,a:-97,s:.76},{t:.84,a:-97,s:.76},{t:1,a:GUARD.R}], DUR);
+      move(i, '.stance', [{t:0},{t:.26,y:5},{t:.84,y:5},{t:1}], DUR);
+      break;
+    case 'slip':
+      swing(i, 'L', [{t:0,a:GUARD.L},{t:.3,a:-72,s:.8},{t:.8,a:-72,s:.8},{t:1,a:GUARD.L}], DUR);
+      swing(i, 'R', [{t:0,a:GUARD.R},{t:.3,a:-90,s:.8},{t:.8,a:-90,s:.8},{t:1,a:GUARD.R}], DUR);
+      move(i, '.stance', [{t:0},{t:.3,sy:.79,r:6},{t:.8,sy:.79,r:6},{t:1}], DUR);
+      break;
+    case 'step':
+      move(i, '.root', [{t:0},{t:.3,x:-34},{t:.8,x:-34},{t:1}], DUR);
+      break;
+  }
+}
+
+/* --- реакция на попадание --- */
+function reactHit(j, lvl, heavy){
+  var k = heavy ? 1 : .62;
+  if(lvl === 'head'){
+    move(j, '.head', [{t:0,e:'cubic-bezier(.08,.9,.3,1)'},{t:.18,x:-13*k,y:-5*k,r:-15*k},{t:.55,x:2*k},{t:1}], 660);
+    move(j, '.hit',  [{t:0,e:'cubic-bezier(.08,.9,.3,1)'},{t:.2,x:-9*k,r:-4*k},{t:1}], 660);
+  } else {
+    move(j, '.hit',  [{t:0,e:'cubic-bezier(.08,.9,.3,1)'},{t:.2,x:-8*k,y:5*k,sy:.92},{t:.6,x:2*k},{t:1}], 660);
+    move(j, '.head', [{t:0,e:'cubic-bezier(.08,.9,.3,1)'},{t:.22,y:4*k,r:6*k},{t:1}], 660);
+  }
+}
+
+/* --- эффекты поверх ринга --- */
+function ptOf(i, lvl, act){
+  var rr = ring.getBoundingClientRect();
+  var sr = document.getElementById('slot' + i).getBoundingClientRect();
+  var h = sr.height, w = h * 120 / 175;
+  var t = aim(act);
+  var ux = 62 + NUDGE - t.far, uy = ((lvl === 'body') ? 92 : 40) + t.down;
+  var x = (i === 0) ? (sr.right - w) + ux / 120 * w : sr.left + (120 - ux) / 120 * w;
+  return {x: x - rr.left, y: sr.top + uy / 175 * h - rr.top};
+}
+function spawn(cls, i, lvl, text, act, dy){
+  var p = ptOf(i, lvl, act), el = document.createElement('div');
+  el.className = cls; el.style.left = p.x + 'px';
+  el.style.top = Math.max(26, p.y + (dy || 0)) + 'px';   // не выпускаем цифру за верх ринга
+  if(text) el.textContent = text;
+  fxL.appendChild(el);
+  setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 1200);
+}
+function clearFx(){
+  [].slice.call(fxL.querySelectorAll('.pop,.burst,.guardSpark')).forEach(function(e){ e.remove(); });
+}
+function shake(){
+  track(ring.animate([{transform:'translateX(0)'},{transform:'translateX(-8px)'},{transform:'translateX(7px)'},
+    {transform:'translateX(-4px)'},{transform:'translateX(0)'}], {duration:280, easing:'ease-out'}));
+}
+function whiten(){
+  track(flashEl.animate([{opacity:0},{opacity:.2},{opacity:0}], {duration:230, easing:'ease-out'}));
+}
+
+/* =========================================================================
+   СЦЕНА ВСКРЫТИЯ РАУНДА
+   ========================================================================= */
+var TL = {act:130, impact:530, text:880, ko:1120, end:1200};
+
+function impactMoment(rep){
+  syncDisp(); paintHud(true);
+  var heavy = false;
+  for(var i = 0; i < 2; i++){
+    var o = rep.out[i], j = 1 - i, c = rep.choices[i];
+    var dc = rep.choices[j];
+    if(o.type === 'windup'){ spawn('pop info', i, 'head', 'ЗАМАХ', c, -30); continue; }
+    if(o.type !== 'atk') continue;
+    var lvl = c.lvl || 'head';
+    if(o.dmg > 0){
+      reactHit(j, lvl, o.dmg >= 30);
+      spawn('burst', j, lvl, null, dc);
+      spawn('pop ' + (o.mult < 1 ? 'half' : 'dmg'), j, lvl, '−' + o.dmg, dc, -34);
+      if(o.dmg >= 30) heavy = true;
+    } else {
+      var d = dc ? dc.id : null;
+      spawn('guardSpark', j, lvl, null, dc);
+      spawn('pop good', j, lvl, d === 'step' ? 'МИМО' : (d === 'slip' ? 'НЫРОК!' : 'БЛОК!'), dc, -34);
+    }
+  }
+  if(heavy){ shake(); whiten(); }
+}
+
+function playReveal(rep){
+  clearFx();
+  ring.classList.add('full');
+  if(RM){ finishReveal(); return; }
+  animating = true;
+  at(TL.act,    function(){ playAction(0, rep.choices[0], rep.choices[1]); playAction(1, rep.choices[1], rep.choices[0]); });
+  at(TL.impact, function(){ impactMoment(rep); });
+  at(TL.text,   function(){ revealDone = true; render(); });
+  at(TL.ko,     function(){
+    for(var i = 0; i < 2; i++) if(F[i].ko){
+      BX[i].classList.add('ko');
+      spawn('pop info', i, 'head', 'НОКАУТ', null, -18);
+    }
+    if(F[0].ko || F[1].ko) shake();
+  });
+  at(TL.end,    function(){ animating = false; });
+}
+
+function finishReveal(){
+  clearTimers(); stopAll(); clearFx();
+  syncDisp();
+  for(var i = 0; i < 2; i++) if(F[i].pending) BX[i].classList.add('windup');
+  paintHud(false);
+  for(var k = 0; k < 2; k++) if(F[k].ko) BX[k].classList.add('ko');
+  animating = false; revealDone = true; render();
+}
+
+/* =========================================================================
+   ОТРИСОВКА ШАПКИ И РИНГА
+   ========================================================================= */
+function hpColor(p){ return p > 50 ? '#37d178' : (p > 25 ? '#ffb020' : '#ff4d5e'); }
+function faColor(v){ return v > TIRED_AT ? '#ff7a1a' : (v > 55 ? '#ffb020' : '#35b6dd'); }
+
+function paintHud(withFlash){
+  for(var i = 0; i < 2; i++){
+    var hp = disp[i].hp, fa = disp[i].fat;
+    var hb = document.getElementById('hp' + i), fb = document.getElementById('fa' + i);
+    var was = hb.style.width;
+    hb.style.width = (hp / MAX_HP * 100) + '%'; hb.style.background = hpColor(hp / MAX_HP * 100);
+    fb.style.width = (fa / MAX_FAT * 100) + '%'; fb.style.background = faColor(fa);
+    document.getElementById('hp' + i + 'v').textContent = hp;
+    var fv = document.getElementById('fa' + i + 'v');
+    fv.textContent = fa; fv.style.color = fa > TIRED_AT ? '#ff7a1a' : '';
+    if(withFlash && was !== hb.style.width) flashBar(hb.parentNode);
+  }
+  paintRing();
+  paintRounds();
+}
+function flashBar(el){
+  el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+  setTimeout(function(){ el.classList.remove('flash'); }, 450);
+}
+function paintRing(){
+  for(var i = 0; i < 2; i++){
+    BX[i].classList.toggle('tired', F[i].fat > TIRED_AT && !F[i].ko);
+    BX[i].classList.toggle('ko', !!F[i].ko && (phase === 'over' || revealDone));
+    if(!animating) BX[i].classList.toggle('windup', !!F[i].pending);
+    TAG[i].style.display = F[i].pending ? '' : 'none';
+  }
+  ring.classList.toggle('full', phase === 'reveal' || phase === 'over');
+  ring.classList.toggle('slim', phase === 'choose');
+}
+function paintRounds(){
+  var el = document.getElementById('rbar');
+  if(phase === 'over'){ el.innerHTML = 'БОЙ ОКОНЧЕН'; return; }
+  var h = 'РАУНД ' + round + ' / ' + MAX_ROUNDS + ' ';
+  for(var r = 1; r <= MAX_ROUNDS; r++)
+    h += '<span class="' + (r < round ? 'on' : (r === round ? 'now' : '')) + '"></span>';
+  el.innerHTML = h;
+}
+
+/* =========================================================================
+   ТЕКСТ РАЗБОРА И ЖУРНАЛ
    ========================================================================= */
 function resultLine(i, rep){
   var o = rep.out[i], c = rep.choices[i];
-  if(o.type === 'def')    return '<span class="res miss">Уходит в защиту — ' + ACT[c.id].hint + '.</span>';
-  if(o.type === 'windup') return '<span class="res">⚡ Замахивается кроссом. Удар прилетит в СЛЕДУЮЩЕМ раунде.</span>';
+  if(o.type === 'def')    return '<div class="res miss">Уходит в защиту — ' + ACT[c.id].hint + '.</div>';
+  if(o.type === 'windup') return '<div class="res">⚡ Замахивается кроссом. Удар прилетит в следующем раунде.</div>';
   var tail = o.tired ? '<div class="warnline">😮‍💨 Выдохся (усталость выше ' + TIRED_AT + ') — урон снижен на треть.</div>' : '';
   if(o.dmg === 0)
-    return '<span class="res miss">✖ Мимо: ' + o.why + '.<span class="zero">0</span></span>' + tail;
-  var half = o.mult < 1 && o.mult > 0;
-  return '<span class="res">' + (half ? '➖ Частично: ' : '✔ Попал: ') + o.why + '.' +
-         '<span class="dmg' + (half ? ' half' : '') + '">−' + o.dmg + '</span></span>' + tail;
-}
-
-function reportHTML(rep){
-  var h = '';
-  for(var i = 0; i < 2; i++){
-    h += '<div class="card ' + F[i].cls + '"><div class="rw ' + F[i].cls + '">' +
-         '<div class="who">' + F[i].ico + ' ' + F[i].name + ' — ' + label(rep.choices[i]) + '</div>' +
-         resultLine(i, rep) + '</div></div>';
-  }
-  h += '<div class="card"><div class="snap">' +
-       '<span>🔵 ❤️ ' + rep.hp[0] + ' · 😮‍💨 ' + rep.fat[0] + '</span>' +
-       '<span>🔴 ❤️ ' + rep.hp[1] + ' · 😮‍💨 ' + rep.fat[1] + '</span></div></div>';
-  return h;
+    return '<div class="res miss">✖ Мимо: ' + o.why + '.<span class="zero">0</span></div>' + tail;
+  var half = o.mult < 1;
+  return '<div class="res">' + (half ? '➖ Частично: ' : '✔ Попал: ') + o.why +
+         '.<span class="dmg' + (half ? ' half' : '') + '">−' + o.dmg + '</span></div>' + tail;
 }
 
 function pushLog(rep){
   var log = document.getElementById('log');
-  var e = log.querySelector('.empty');
-  if(e) e.remove();
-  var d = document.createElement('div');
-  d.className = 'ent';
+  var e = log.querySelector('.empty'); if(e) e.remove();
+  var d = document.createElement('div'); d.className = 'ent';
   var txt = '<div class="rn">РАУНД ' + rep.round + '</div>';
   for(var i = 0; i < 2; i++){
-    var o = rep.out[i], tag = '';
+    var o = rep.out[i], tag;
     if(o.type === 'def')         tag = 'защита';
-    else if(o.type === 'windup') tag = '⚡ ЗАМАХ КРОССОМ — сработает в раунде ' + (rep.round + 1);
+    else if(o.type === 'windup') tag = '⚡ замах кроссом — сработает в раунде ' + (rep.round + 1);
     else if(o.dmg === 0)         tag = 'мимо (' + o.why + ')';
     else                         tag = '−' + o.dmg + ' (' + o.why + ')' + (o.tired ? ' [выдохся]' : '');
     txt += '<div class="l"><b class="' + F[i].cls + '">' + F[i].ico + ' ' + F[i].name + '</b>: ' +
            label(rep.choices[i]) + ' → ' + tag + '</div>';
   }
-  txt += '<div class="l" style="color:#8b95a8">итог: 🔵 ' + rep.hp[0] + ' hp / ' + rep.fat[0] +
+  txt += '<div class="l sm">итог: 🔵 ' + rep.hp[0] + ' hp / ' + rep.fat[0] +
          ' уст.  ·  🔴 ' + rep.hp[1] + ' hp / ' + rep.fat[1] + ' уст.</div>';
-  d.innerHTML = txt;
-  log.appendChild(d);
-  log.scrollTop = log.scrollHeight;
-}
-
-/* =========================================================================
-   ОТРИСОВКА ШАПКИ
-   ========================================================================= */
-function hpColor(p){ return p > 50 ? '#3ad47c' : (p > 25 ? '#ffc44d' : '#ff4d5e'); }
-function faColor(v){ return v > TIRED_AT ? '#ff7a1a' : (v > 55 ? '#ffc44d' : '#39b8e0'); }
-
-function paintArena(){
-  for(var i = 0; i < 2; i++){
-    var hp = F[i].hp, fa = F[i].fat;
-    var hb = document.getElementById('hp' + i), fb = document.getElementById('fa' + i);
-    hb.style.width = (hp / MAX_HP * 100) + '%';
-    hb.style.background = hpColor(hp / MAX_HP * 100);
-    fb.style.width = (fa / MAX_FAT * 100) + '%';
-    fb.style.background = faColor(fa);
-    document.getElementById('hp' + i + 'v').textContent = hp;
-    var fv = document.getElementById('fa' + i + 'v');
-    fv.textContent = fa;
-    fv.style.color = fa > TIRED_AT ? '#ff7a1a' : '';
-    document.getElementById('te' + i).className = 'tele' + (F[i].pending ? ' on' : '');
-  }
-  document.getElementById('rbar').textContent =
-    (phase === 'over') ? 'БОЙ ОКОНЧЕН' : ('РАУНД ' + round + ' ИЗ ' + MAX_ROUNDS);
+  d.innerHTML = txt; log.appendChild(d); log.scrollTop = log.scrollHeight;
 }
 
 /* =========================================================================
@@ -413,105 +702,99 @@ function paintArena(){
 var P = document.getElementById('panel');
 
 function screenStart(){
-  return '<h1>🥊 ПОШАГОВЫЙ БОКС</h1>' +
-    '<div class="sub">Игра на двоих на одном телефоне.<br>Выбираете ходы по очереди и втайне друг от друга — потом ходы вскрываются одновременно.</div>' +
+  return '<h1>КЛИНЧ</h1>' +
+    '<div class="sub">Пошаговый бокс на двоих с одного телефона. Оба выбирают ход втайне, ходы вскрываются одновременно.</div>' +
     '<button class="btn gold big" data-go="begin">НАЧАТЬ БОЙ</button>' +
     '<details><summary>Правила</summary><div class="body">' +
       '<div><b>Атаки</b><br>' +
-      '👊 <span class="k">Прямой</span> — 20 урона, сразу. Выбираешь голову или корпус.<br>' +
-      '🥊 <span class="k">Апперкот</span> — 35 урона, сразу. Пробивает нырок насквозь, если бьёт в голову.<br>' +
-      '💥 <span class="k">Кросс</span> — 50 урона, но с замахом: объявляется сейчас, прилетает в следующем раунде. Соперник видит замах. Очень выматывает.</div>' +
+      '👊 <span class="k">Прямой</span> — 20 урона, сразу. Голова или корпус.<br>' +
+      '🥊 <span class="k">Апперкот</span> — 35 урона, сразу. В голову пробивает нырок насквозь, но гасится высоким блоком. В корпус проходит сквозь блок.<br>' +
+      '💥 <span class="k">Кросс</span> — 50 урона с замахом: объявляется сейчас, прилетает в следующем раунде. Соперник видит замах. Сильно выматывает.</div>' +
       '<div><b>Защиты</b><br>' +
-      '🛡️ <span class="k">Высокий блок</span> — гасит удары в голову, но корпус открыт. Кросс режет вдвое.<br>' +
-      '🌀 <span class="k">Нырок</span> — гасит удары в корпус, но подставляет голову под апперкот.<br>' +
-      '👣 <span class="k">Шаг назад</span> — уводит от любого мгновенного удара и хорошо снимает усталость, но НЕ спасает от объявленного кросса.</div>' +
-      '<div><b>Усталость</b><br>Растёт от атак и падает от пассивных действий. Если усталость <span class="k">выше ' + TIRED_AT +
-      '</span>, твоя атака бьёт на треть слабее.</div>' +
-      '<div><b>Конец боя</b><br>Нокаут (0 hp) или ' + MAX_ROUNDS + ' раундов — тогда побеждает тот, у кого больше здоровья.</div>' +
+      '🛡️ <span class="k">Высокий блок</span> — гасит удары в голову, корпус открыт. Кросс режет вдвое.<br>' +
+      '🌀 <span class="k">Нырок</span> — гасит удары в корпус, подставляет голову под апперкот.<br>' +
+      '👣 <span class="k">Шаг назад</span> — уводит от любого мгновенного удара и хорошо снимает усталость, но не спасает от объявленного кросса.</div>' +
+      '<div><b>Усталость</b><br>Растёт от атак, падает от пассивных действий. Выше <span class="k">' + TIRED_AT +
+      '</span> — твоя атака бьёт на треть слабее.</div>' +
+      '<div><b>Конец боя</b><br>Нокаут или ' + MAX_ROUNDS + ' раундов, дальше побеждает тот, у кого больше здоровья.</div>' +
     '</div></details>';
 }
 
 function screenHandoff(){
-  var me = F[active], op = F[1 - active];
-  var note = '';
+  var me = F[active], op = F[1 - active], note = '';
   if(op.pending)
     note += '<div class="card"><div class="warnline">⚡ ' + op.ico + ' ' + op.name +
             ' объявил тяжёлый удар в прошлом раунде. Он прилетит в этом раунде.</div></div>';
   if(choices[1 - active] && !op.pending)
     note += '<div class="sub">Выбор соперника уже сделан и скрыт.</div>';
-
-  return '<h2>Передай телефон<br><span style="color:var(--' + (active === 0 ? 'blueL' : 'redL') + ')">' +
+  return '<h2>ПЕРЕДАЙ ТЕЛЕФОН<br><span style="color:var(--' + (active === 0 ? 'blueL' : 'redL') + ')">' +
     me.ico + ' ' + me.name + ' УГОЛ</span></h2>' +
-    '<div class="sub">Второй игрок не должен видеть экран.</div>' + note +
-    '<div class="spacer"></div>' +
-    '<button class="btn ' + (active === 0 ? 'blue' : 'red') + ' big" data-go="choose">Я ' + me.ico + ' ' + me.name + ' — открыть выбор</button>';
+    '<div class="sub">Соперник не должен видеть экран.</div>' + note + '<div class="spacer"></div>' +
+    '<button class="btn ' + (active === 0 ? 'blue' : 'red') + ' big" data-go="choose">Я ' + me.ico + ' ' + me.name + ' — ОТКРЫТЬ ВЫБОР</button>';
 }
 
 function actBtn(id, wide){
   var a = ACT[id];
-  var body = wide
+  var inner = wide
     ? '<span class="em">' + a.em + '</span><span class="col"><span class="t">' + a.name + '</span><span class="s">' + a.hint + '</span></span>'
     : '<span class="em">' + a.em + '</span><span class="t">' + a.name + '</span><span class="s">' + a.hint + '</span>';
   return '<button class="act ' + (a.kind === 'attack' ? 'atk' : 'def') + (wide ? ' wide' : '') +
-    '" data-pick="' + id + '">' + body + '</button>';
+         '" data-pick="' + id + '">' + inner + '</button>';
 }
 
 function screenChoose(){
   var me = F[active];
   var warn = me.fat > TIRED_AT
-    ? '<div class="card"><div class="warnline">😮‍💨 Усталость ' + me.fat + ' — твоя атака в этом раунде бьёт на треть слабее. Стоит отдохнуть.</div></div>'
-    : '';
-  return '<h2>' + me.ico + ' ' + me.name + ', твой ход</h2>' + warn +
-    '<div class="hdr">Атака</div><div class="grid">' +
-      actBtn('jab') + actBtn('uppercut') + actBtn('cross', true) +
-    '</div>' +
-    '<div class="hdr">Защита</div><div class="grid">' +
-      actBtn('block') + actBtn('slip') + actBtn('step', true) +
-    '</div>';
+    ? '<div class="card"><div class="warnline">😮‍💨 Усталость ' + me.fat + ' — атака в этом раунде бьёт на треть слабее. Стоит отдохнуть.</div></div>' : '';
+  return '<h2>' + me.ico + ' ' + me.name + ', ТВОЙ ХОД</h2>' + warn +
+    '<div class="hdr">Атака</div><div class="grid">' + actBtn('jab') + actBtn('uppercut') + actBtn('cross', true) + '</div>' +
+    '<div class="hdr">Защита</div><div class="grid">' + actBtn('block') + actBtn('slip') + actBtn('step', true) + '</div>';
 }
 
 function screenLevel(){
   var a = ACT[pendLevel];
-  return '<h2>' + a.em + ' ' + a.name + '<br>куда бьёшь?</h2>' +
-    '<div class="sub">' + a.dmg + ' урона' + (pendLevel === 'uppercut'
-      ? '. В голову — пробивает нырок, но гасится высоким блоком. В корпус — проходит сквозь высокий блок.'
-      : '. В голову — гасится высоким блоком. В корпус — гасится нырком.') + '</div>' +
-    '<button class="btn ' + (active === 0 ? 'blue' : 'red') + ' big" data-lvl="head">🎯 В ГОЛОВУ</button>' +
-    '<button class="btn ' + (active === 0 ? 'blue' : 'red') + ' big" data-lvl="body">🎯 В КОРПУС</button>' +
+  return '<h2>' + a.em + ' ' + a.name.toUpperCase() + '<br>КУДА БЬЁШЬ?</h2>' +
+    '<div class="sub">' + a.dmg + ' урона. ' + (pendLevel === 'uppercut'
+      ? 'В голову — пробивает нырок, но гасится высоким блоком. В корпус — проходит сквозь высокий блок.'
+      : 'В голову — гасится высоким блоком. В корпус — гасится нырком.') + '</div>' +
+    '<button class="btn ' + (active === 0 ? 'blue' : 'red') + ' big" data-lvl="head">В ГОЛОВУ</button>' +
+    '<button class="btn ' + (active === 0 ? 'blue' : 'red') + ' big" data-lvl="body">В КОРПУС</button>' +
     '<button class="btn ghost" data-go="choose">← Назад к действиям</button>';
 }
 
 function screenConfirm(){
   var me = F[active], last = (active === 1) || !!choices[1];
-  return '<h2>' + me.ico + ' ' + me.name + '<br>твой выбор:</h2>' +
-    '<div class="card ' + me.cls + '"><div style="font-size:24px;font-weight:900;text-align:center;line-height:1.2">' +
+  return '<h2>' + me.ico + ' ' + me.name + '<br>ТВОЙ ВЫБОР</h2>' +
+    '<div class="card ' + me.cls + '"><div style="font-family:var(--disp);font-size:26px;font-weight:700;text-align:center;letter-spacing:.03em">' +
       ACT[choices[active].id].em + ' ' + label(choices[active]) + '</div></div>' +
-    '<div class="sub">Запомни и не показывай сопернику.</div>' +
-    '<div class="spacer"></div>' +
-    '<button class="btn gold big" data-go="done">' + (last ? 'ВСКРЫТЬ РАУНД →' : 'ГОТОВО — передать телефон →') + '</button>' +
+    '<div class="sub">Запомни и не показывай сопернику.</div><div class="spacer"></div>' +
+    '<button class="btn gold big" data-go="done">' + (last ? 'ВСКРЫТЬ РАУНД →' : 'ГОТОВО — ПЕРЕДАТЬ ТЕЛЕФОН →') + '</button>' +
     '<button class="btn ghost" data-go="choose">← Изменить выбор</button>';
 }
 
+function isOver(){ return F[0].hp <= 0 || F[1].hp <= 0 || round >= MAX_ROUNDS; }
+
 function screenReveal(){
-  var over = F[0].hp <= 0 || F[1].hp <= 0 || round >= MAX_ROUNDS;
-  return '<h2>Раунд ' + lastReport.round + ' — вскрытие</h2>' + reportHTML(lastReport) +
-    '<button class="btn gold big" data-go="' + (over ? 'over' : 'next') + '">' +
-    (over ? 'ИТОГ БОЯ →' : 'СЛЕДУЮЩИЙ РАУНД →') + '</button>';
+  var h = '<h2>РАУНД ' + lastReport.round + ' — ВСКРЫТИЕ</h2>';
+  for(var i = 0; i < 2; i++)
+    h += '<div class="card ' + F[i].cls + '"><div class="rw"><div class="who">' + F[i].ico + ' ' + F[i].name +
+         ' — ' + label(lastReport.choices[i]) + '</div>' + (revealDone ? resultLine(i, lastReport) : '') + '</div></div>';
+  h += revealDone
+    ? '<button class="btn gold big" data-go="' + (isOver() ? 'over' : 'next') + '">' + (isOver() ? 'ИТОГ БОЯ →' : 'СЛЕДУЮЩИЙ РАУНД →') + '</button>'
+    : '<div class="sub">Нажми в любом месте, чтобы пропустить</div>';
+  return h;
 }
 
 function screenOver(){
   var a = F[0].hp, b = F[1].hp, title, sub;
-  if(a <= 0 && b <= 0){ title = '🤝 ДВОЙНОЙ НОКАУТ'; sub = 'Оба на настиле. Ничья.'; }
-  else if(a <= 0){ title = '🔴 ПОБЕДИЛ КРАСНЫЙ'; sub = 'Нокаут в раунде ' + round + '.'; }
-  else if(b <= 0){ title = '🔵 ПОБЕДИЛ СИНИЙ';  sub = 'Нокаут в раунде ' + round + '.'; }
-  else if(a > b){ title = '🔵 ПОБЕДИЛ СИНИЙ';  sub = 'По очкам после ' + MAX_ROUNDS + ' раундов: ' + a + ' против ' + b + '.'; }
-  else if(b > a){ title = '🔴 ПОБЕДИЛ КРАСНЫЙ'; sub = 'По очкам после ' + MAX_ROUNDS + ' раундов: ' + b + ' против ' + a + '.'; }
-  else { title = '🤝 НИЧЬЯ'; sub = 'После ' + MAX_ROUNDS + ' раундов у обоих по ' + a + ' здоровья.'; }
-  return '<h1>' + title + '</h1><div class="sub">' + sub + '</div>' +
-    '<div class="card"><div class="snap">' +
-      '<span>🔵 ❤️ ' + Math.max(0, a) + '</span><span>🔴 ❤️ ' + Math.max(0, b) + '</span></div></div>' +
-    '<div class="spacer"></div>' +
-    '<button class="btn gold big" data-go="restart">🔄 ИГРАТЬ ЗАНОВО</button>';
+  if(a <= 0 && b <= 0){ title = 'ДВОЙНОЙ НОКАУТ'; sub = 'Оба на настиле. Ничья.'; }
+  else if(a <= 0){ title = '🔴 КРАСНЫЙ ПОБЕДИЛ'; sub = 'Нокаут в раунде ' + round + '.'; }
+  else if(b <= 0){ title = '🔵 СИНИЙ ПОБЕДИЛ';   sub = 'Нокаут в раунде ' + round + '.'; }
+  else if(a > b) { title = '🔵 СИНИЙ ПОБЕДИЛ';   sub = 'По очкам после ' + MAX_ROUNDS + ' раундов: ' + a + ' против ' + b + '.'; }
+  else if(b > a) { title = '🔴 КРАСНЫЙ ПОБЕДИЛ'; sub = 'По очкам после ' + MAX_ROUNDS + ' раундов: ' + b + ' против ' + a + '.'; }
+  else           { title = 'НИЧЬЯ'; sub = 'После ' + MAX_ROUNDS + ' раундов у обоих по ' + a + ' здоровья.'; }
+  return '<h1>' + title + '</h1><div class="sub">' + sub + '</div><div class="spacer"></div>' +
+         '<button class="btn gold big" data-go="restart">ИГРАТЬ ЗАНОВО</button>';
 }
 
 /* =========================================================================
@@ -526,54 +809,55 @@ function render(){
   else if(phase === 'confirm') h = screenConfirm();
   else if(phase === 'reveal')  h = screenReveal();
   else if(phase === 'over')    h = screenOver();
-  P.innerHTML = h;
-  P.scrollTop = 0;
-  paintArena();
+  P.innerHTML = h; P.scrollTop = 0;
+  paintHud(false);
 }
 
 function startRound(){
-  choices = [null, null];
-  pendLevel = null;
+  choices = [null,null]; pendLevel = null; revealDone = false;
   for(var i = 0; i < 2; i++) if(F[i].pending) choices[i] = {id:'crossLand'};
   nextChooser(0);
 }
-
 function nextChooser(from){
-  for(var i = from; i < 2; i++){
+  for(var i = from; i < 2; i++)
     if(!choices[i]){ active = i; phase = 'handoff'; render(); return; }
-  }
   resolveRound();
-  phase = 'reveal';
-  render();
+  phase = 'reveal'; render();
+  playReveal(lastReport);
 }
+
+/* тап в любом месте во время анимации — пропустить */
+document.addEventListener('click', function(ev){
+  if(!animating) return;
+  ev.stopPropagation(); ev.preventDefault(); finishReveal();
+}, true);
 
 P.addEventListener('click', function(ev){
   var t = ev.target.closest('[data-go],[data-pick],[data-lvl]');
   if(!t) return;
-
   if(t.dataset.pick){
     var id = t.dataset.pick;
     if(ACT[id].level){ pendLevel = id; phase = 'level'; }
     else { choices[active] = {id:id}; phase = 'confirm'; }
     render(); return;
   }
-
-  if(t.dataset.lvl){
-    choices[active] = {id:pendLevel, lvl:t.dataset.lvl};
-    phase = 'confirm';
-    render(); return;
-  }
-
+  if(t.dataset.lvl){ choices[active] = {id:pendLevel, lvl:t.dataset.lvl}; phase = 'confirm'; render(); return; }
   var go = t.dataset.go;
-  if(go === 'begin'){ newFight(); startRound(); }
+  if(go === 'begin'){ newFight(); resetRing(); startRound(); }
   else if(go === 'choose'){ phase = 'choose'; render(); }
   else if(go === 'done'){ nextChooser(active + 1); }
   else if(go === 'next'){ round++; startRound(); }
   else if(go === 'over'){ phase = 'over'; render(); }
-  else if(go === 'restart'){ newFight(); phase = 'start'; render(); }
+  else if(go === 'restart'){ newFight(); resetRing(); phase = 'start'; render(); }
 });
 
+function resetRing(){
+  stopAll(); clearTimers(); clearFx(); animating = false;
+  for(var i = 0; i < 2; i++) BX[i].classList.remove('ko', 'windup', 'tired');
+}
+
 /* старт */
+buildRing();
 newFight();
 phase = 'start';
 render();
