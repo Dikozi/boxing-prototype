@@ -1488,12 +1488,18 @@ function cutGlove(x, y, r, side, rot){
   cx.restore();
 }
 /* аниме-глаз: миндалевидная склера, радужка цвета бойца, блик, зрачок */
-function cutEye(ex, ey, ew, eh, sq, look, glint, s, lw){
-  cx.beginPath();                                        // разрез глаза: верхнее и нижнее веко
+/* разрез глаза: верхнее и нижнее веко. Путь строится дважды — cx.restore()
+   восстанавливает состояние, но не путь, поэтому после отсечения его надо
+   собрать заново, иначе обводка ляжет на последнюю нарисованную фигуру. */
+function cutEyePath(ex, ey, ew, eh){
+  cx.beginPath();
   cx.moveTo(ex - ew * .5, ey + eh * .05);
   cx.quadraticCurveTo(ex - ew * .14, ey - eh * 1.62, ex + ew * .5, ey - eh * .28);
   cx.quadraticCurveTo(ex + ew * .04, ey + eh * 1.3, ex - ew * .5, ey + eh * .05);
   cx.closePath();
+}
+function cutEye(ex, ey, ew, eh, sq, look, glint, s, lw){
+  cutEyePath(ex, ey, ew, eh);
   cx.fillStyle = '#f4f8ff'; cx.fill();
   cx.save(); cx.clip();
   var px = ex + ew * .1 + look * ew * .14, py = ey - eh * .06;
@@ -1517,6 +1523,7 @@ function cutEye(ex, ey, ew, eh, sq, look, glint, s, lw){
   cx.lineTo(ex + ew * .6, ey - eh * 2); cx.lineTo(ex - ew * .6, ey - eh * 2);
   cx.closePath(); cx.fill();
   cx.restore();
+  cutEyePath(ex, ey, ew, eh);
   cx.strokeStyle = INK; cx.lineWidth = lw; cx.lineJoin = 'round'; cx.stroke();
   cx.lineWidth = lw * 1.7; cx.lineCap = 'round';         // тяжёлая линия верхнего века
   cx.beginPath();
