@@ -79,6 +79,15 @@ body{
 #skip{position:absolute;right:7px;top:6px;font-family:var(--disp);font-size:9.5px;letter-spacing:.12em;
       color:#7d8ba3;background:#0a0d13a6;border:1px solid #23293a;border-radius:20px;padding:3px 9px;pointer-events:none}
 #skip.off{display:none}
+/* кнопка повтора живёт прямо на ринге — там, куда смотрит глаз после размена */
+#again{position:absolute;right:8px;top:8px;display:flex;align-items:center;gap:6px;
+  font-family:var(--disp);font-size:14px;font-weight:700;letter-spacing:.08em;
+  color:#2a1c00;background:linear-gradient(#ffcf6b,#e19100);border:1px solid #ffe3a6;
+  border-radius:22px;padding:9px 16px;box-shadow:0 3px 12px #0009;
+  animation:againIn .3s cubic-bezier(.2,.85,.3,1) both}
+#again:active{transform:scale(.95);filter:brightness(1.12)}
+#again.off{display:none}
+@keyframes againIn{from{opacity:0;transform:translateY(8px) scale(.9)}to{opacity:1;transform:none}}
 
 /* ===================== ТАБЛО РАУНДА ===================== */
 #rbar{flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:9px;
@@ -232,6 +241,7 @@ details .body b{color:var(--txt)} details .body .k{color:var(--gold);font-weight
   <canvas id="cv"></canvas>
   <div id="fx"></div>
   <div id="skip" class="off">ТАП — ПРОПУСТИТЬ</div>
+  <button id="again" class="off">↺ ПОВТОР</button>
 </div>
 
 <div id="rbar"></div>
@@ -971,6 +981,7 @@ var SKIN = [
 var ring = document.getElementById('ring');
 var cv = document.getElementById('cv'), cx = cv.getContext('2d');
 var fxL = document.getElementById('fx'), skipEl = document.getElementById('skip');
+var againEl = document.getElementById('again');
 var DPR = 1, VW = 0, VH = 0, SC = 1, OX = 0;
 var shake = 0, shakeX = 0, shakeY = 0, flashA = 0;
 var cam = null, camY = null, zoomS = null;        // пружины слежения, создаются после Sp
@@ -1452,6 +1463,10 @@ function skipSeq(){
   if(done) done();
 }
 ring.addEventListener('click', function(){ if(animating) skipSeq(); });
+againEl.addEventListener('click', function(ev){
+  ev.stopPropagation();                             // не даём тапу уйти в «пропустить»
+  rewatchRound();
+});
 
 /* =========================================================================
    6. ШАПКА
@@ -1493,6 +1508,7 @@ function paintRing(){
   var lw = document.getElementById('logWrap');
   lw.classList.toggle('off', phase === 'replay');
   lw.classList.toggle('rev', phase === 'reveal');
+  againEl.classList.toggle('off', !(phase === 'reveal' && revealDone && !animating));
 }
 
 /* =========================================================================
@@ -1614,8 +1630,7 @@ function screenReveal(){
   return '<h2>РАУНД ' + lastRec.round + ' — ВСКРЫТИЕ</h2>' +
     '<div class="card">' + resRow(0, lastRec, true) + resRow(1, lastRec, true) + '</div>' +
     '<button class="btn gold big" data-go="' + (isOver() ? 'over' : 'next') + '">' +
-    (isOver() ? 'ИТОГ БОЯ →' : 'СЛЕДУЮЩИЙ РАУНД →') + '</button>' +
-    '<button class="btn ghost" data-go="rewatch">↺ ПЕРЕСМОТРЕТЬ РАУНД</button>';
+    (isOver() ? 'ИТОГ БОЯ →' : 'СЛЕДУЮЩИЙ РАУНД →') + '</button>';
 }
 
 function verdict(){
@@ -1783,7 +1798,6 @@ P.addEventListener('click', function(ev){
   else if(go === 'done'){ nextChooser(active + 1); }
   else if(go === 'next'){ round++; startRound(); }
   else if(go === 'over'){ phase = 'over'; render(); }
-  else if(go === 'rewatch'){ rewatchRound(); }
   else if(go === 'restart'){ replayStop(); newFight(); resetRing(); phase = 'start'; render(); }
   else if(go === 'replay'){ replayStart(); }
   else if(go === 'rpPause'){ paused = !paused; render(); }
