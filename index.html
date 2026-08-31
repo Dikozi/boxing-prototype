@@ -1348,20 +1348,65 @@ function whiten(){ if(!RM) flashA = 0.24; }
    Каждая запись реестра CUT — отдельный кадр со своей длительностью, форматом
    и рисовалкой. Рисовалка получает прогресс e (0..1) и обязана двигаться всё
    это время: статичных панелей в игре нет.
-   Шов под замену: положив в img готовую картинку (data-URI — файл остаётся
+   Шов под замену: положив готовые картинки в CUT_ART (data-URI — файл остаётся
    одним), получаем ту же панель с тем же влётом, дрейфом и линиями поверх,
    и ни одной правки в местах вызова.
    ========================================================================= */
 var cut = null, cutQ = null;
+/* word/wpos/wcol/wmax — ономатопея поверх ГОТОВОЙ иллюстрации. Сами картинки
+   рисуются без текста (так и просили у генератора): надпись ставит игра, и она
+   остаётся резкой на любом экране и на нужном языке. У процедурных панелей
+   надпись своя, внутри их draw(), — там эти поля не используются. */
 var CUT = {
-  eyes:  {dur:1250, prio:5, full:true,  img:null, draw:cutEyes},
-  ko:    {dur:1450, prio:4, full:true,  img:null, draw:cutKo},
-  cross: {dur: 950, prio:3, full:true,  img:null, draw:cutCross},
-  upper: {dur: 950, prio:3, full:true,  img:null, draw:cutUpper},
-  guard: {dur: 780, prio:1, full:false, img:null, draw:cutGuard},
-  slip:  {dur: 780, prio:1, full:false, img:null, draw:cutSlip},
-  step:  {dur: 780, prio:1, full:false, img:null, draw:cutStep}
+  eyes:  {dur:1250, prio:5, full:true,  draw:cutEyes,  wpos:[.5,.87],  wcol:'#ffd257', wmax:.9,
+          word:function(c){ return c.decisive ? 'РЕШАЮЩИЙ РАЗМЕН' : 'ГОНГ'; }},
+  ko:    {dur:1450, prio:4, full:true,  draw:cutKo,    wpos:[.5,.8],   wcol:'#fff0b4', wmax:.6,  word:'K.O.'},
+  cross: {dur: 950, prio:3, full:true,  draw:cutCross, wpos:[.3,.88],  wcol:'#ffd257', wmax:.62, word:'КРОСС!'},
+  upper: {dur: 950, prio:3, full:true,  draw:cutUpper, wpos:[.5,.88],  wcol:'#ffd257', wmax:.86, word:'АППЕРКОТ!'},
+  guard: {dur: 780, prio:1, full:false, draw:cutGuard, wpos:[.24,.19], wcol:'#a9d8ff', wmax:.4,  word:'БЛОК!'},
+  slip:  {dur: 780, prio:1, full:false, draw:cutSlip,  wpos:[.24,.8],  wcol:'#9ff2c8', wmax:.42, word:'НЫРОК!'},
+  step:  {dur: 780, prio:1, full:false, draw:cutStep,  wpos:[.5,.19],  wcol:'#ffd257', wmax:.44, word:'МИМО!'}
 };
+function cutArtWord(d, c, e, W, H){
+  if(!d.word) return;
+  var k = e < .34 ? 0 : Math.min(1, (e - .34) / .1);
+  if(k <= 0) return;
+  cutWord(typeof d.word === 'function' ? d.word(c) : d.word,
+          W * d.wpos[0], H * d.wpos[1], Math.max(18, H * (d.full ? .13 : .2)),
+          d.wcol, -.05, k < 1 ? .55 + k * .6 : 1.02 - k * .02, W * d.wmax);
+}
+
+/* Готовые иллюстрации. Пусто — панель рисуется кодом; заполнено — рисуется
+   картинка, в тот же самый «конверт» движения.
+     both — одна картинка на обе стороны (глаза, нокаут);
+     by:'atk' — набор выбирается по тому, КТО БЬЁТ (кросс, апперкот);
+     by:'def' — по тому, КТО ЗАЩИТИЛСЯ (блок, нырок, шаг назад).
+   В каждом наборе можно держать несколько вариантов: они чередуются по номеру
+   раунда. Выбор именно по раунду, а не случайный, — иначе пересмотр раунда
+   и повтор боя показывали бы каждый раз другую картинку. */
+var CUT_ART = {};
+var cutImgs = null;
+function cutArtInit(){
+  cutImgs = {};
+  for(var id in CUT_ART){
+    var a = CUT_ART[id], out = {by:a.by || null, sets:{}};
+    for(var k in a){
+      if(k === 'by') continue;
+      var src = a[k], arr = [];
+      for(var i = 0; i < src.length; i++){ var im = new Image(); im.src = src[i]; arr.push(im); }
+      out.sets[k] = arr;
+    }
+    cutImgs[id] = out;
+  }
+}
+function cutArtFor(id, c){
+  if(!cutImgs) cutArtInit();
+  var a = cutImgs[id]; if(!a) return null;
+  var set = a.sets.both || a.sets[a.by === 'def' ? c.j : c.i];
+  if(!set || !set.length) return null;
+  var im = set[(c.round || 1) % set.length];        // чередование по раунду, воспроизводится в повторе
+  return (im && im.complete && im.naturalWidth) ? im : null;
+}
 
 /* В одном размене могут сработать оба бойца — копим кандидатов и показываем
    одну панель, самую крупную по смыслу. */
@@ -1901,13 +1946,18 @@ function drawCut(){
     cx.translate(W / 2, H / 2); cx.scale(kz, kz);
     cx.translate(-W / 2 + (e - .5) * W * .025 * cut.dir, -H / 2 + (e - .5) * H * .02);
   }
-  if(d.img && d.img.complete && d.img.naturalWidth){
-    var iw = d.img.naturalWidth, ih = d.img.naturalHeight, ik = Math.max(W / iw, H / ih);
+  var art = cutArtFor(cut.id, cut);
+  if(art){                                              // готовая иллюстрация — «залить и обрезать»
+    var iw = art.naturalWidth, ih = art.naturalHeight, ik = Math.max(W / iw, H / ih);
     cx.fillStyle = '#05070c'; cx.fillRect(0, 0, W, H);
-    cx.drawImage(d.img, (W - iw * ik) / 2, (H - ih * ik) / 2, iw * ik, ih * ik);
+    cx.drawImage(art, (W - iw * ik) / 2, (H - ih * ik) / 2, iw * ik, ih * ik);
+    cutArtWord(d, cut, e, W, H);
   } else d.draw(e, cut, W, H);
-  if(!RM && e > .42 && e < .56){                        // вспышка на контакте
-    cx.fillStyle = 'rgba(255,255,255,' + (.42 * (1 - Math.abs(e - .49) / .07)) + ')';
+  /* вспышка на контакте: процедурной панели она ставит акцент, а готовую
+     иллюстрацию только выбеливает — там удар уже нарисован, хватает намёка */
+  if(!RM && e > .42 && e < .56){
+    var fa = (art ? .14 : .42) * (1 - Math.abs(e - .49) / .07);
+    cx.fillStyle = 'rgba(255,255,255,' + fa + ')';
     cx.fillRect(0, 0, W, H);
   }
   cx.restore();
