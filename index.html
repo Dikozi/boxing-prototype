@@ -2464,27 +2464,42 @@ function sndBell(vol, quick){
 function sndWhoosh(power){                        // рассекание воздуха
   if(!AC) return;
   var t = AC.currentTime;
-  hiss('bandpass', 1600, 280, t, .24, .62 * power, 1.1);
+  hiss('bandpass', 2200, 260, t, .26, .72 * power, 1.35);
+  hiss('highpass', 900, 420, t, .18, .2 * power, .7);
 }
-function sndHit(power, body){                     // попадание: низкий толчок + шлепок
+/* Попадание собирается из трёх слоёв: короткий яркий транзиент даёт «щелчок»,
+   полосовой шлепок — мясо удара, синус снизу — вес. Чем сильнее удар, тем
+   глубже и длиннее низ; на самых тяжёлых добавляется саб и гулкий хвост. */
+function sndHit(power, body){
+  if(!AC) return;
+  var t = AC.currentTime, p = Math.min(1, power);
+  musicDuck(.45 * Math.min(1, p + .25));          // удар пробивается сквозь музыку
+  hiss('highpass', 5200, 2600, t, .035, .55 * p, .7);
+  hiss('bandpass', body ? 420 : 1100, body ? 200 : 470, t, body ? .17 : .12, .72 * p, .9);
+  tone('sine', (body ? 92 : 128) * (1 + p * .1), body ? 30 : 40, t, .18 + .22 * p, 1.05 * p);
+  if(p > .55){
+    tone('sine', 62, 26, t + .01, .34 + .3 * p, .85 * p);
+    tone('triangle', 190, 70, t, .16, .3 * p);
+  }
+  if(p > .85) hiss('lowpass', 260, 90, t + .02, .5, .35 * p, .6);
+}
+function sndBlock(){                              // перчатка о перчатку: плотно и глухо
   if(!AC) return;
   var t = AC.currentTime;
-  musicDuck(.38 * Math.min(1, power + .2));       // удар пробивается сквозь музыку
-  tone('sine', (body ? 78 : 108) * (1 + power * .12), body ? 32 : 44, t, body ? .3 : .21, .8 * power);
-  hiss('bandpass', body ? 400 : 950, body ? 220 : 500, t, body ? .15 : .1, .55 * power, .9);
-  if(power > .6) tone('triangle', 210, 90, t, .12, .26 * power);
-}
-function sndBlock(){                              // перчатка о перчатку
-  if(!AC) return;
-  var t = AC.currentTime;
-  hiss('bandpass', 2000, 1400, t, .09, .85, 1.7);
-  tone('triangle', 215, 120, t, .12, .32);
+  musicDuck(.3);
+  hiss('highpass', 4200, 2000, t, .03, .5, .7);
+  hiss('bandpass', 1500, 800, t, .13, .82, 1.4);
+  tone('sine', 150, 62, t, .17, .55);
+  tone('triangle', 240, 130, t, .1, .24);
 }
 function sndDown(){                               // тело на настил
   if(!AC) return;
   var t = AC.currentTime;
-  tone('sine', 72, 28, t, .6, .85);
-  hiss('lowpass', 950, 170, t, .45, .6, .7);
+  musicDuck(.55);
+  tone('sine', 88, 24, t, .75, 1);
+  tone('sine', 48, 20, t + .02, .9, .7);
+  hiss('lowpass', 1100, 140, t, .5, .7, .7);
+  hiss('bandpass', 300, 110, t + .04, .35, .38, .8);
 }
 function sndCharge(){                             // замах кросса
   if(!AC) return;
@@ -2549,12 +2564,37 @@ function sndStare(){
   o.start(t); o.stop(t + 1.3); o2.start(t); o2.stop(t + 1.3);
   hiss('highpass', 300, 5200, t, 1.02, .06, .8);
 }
+/* У каждой врезки свой голос — по тому, что на кадре происходит:
+   промах звучит воздухом без удара, принятый блок — плотно и глухо,
+   а прошедшие кросс с апперкотом и нокаут бьют сабом и трещиной. */
 function sndCut(id){
   if(!AC) return;
+  var t = AC.currentTime;
   if(id === 'eyes'){ sndStare(); return; }
-  var t = AC.currentTime, big = (id === 'cross' || id === 'upper' || id === 'ko');
-  tone('sine', big ? 96 : 150, big ? 38 : 72, t, big ? .3 : .15, big ? .42 : .22);
-  hiss('bandpass', big ? 2600 : 3400, big ? 700 : 1600, t, big ? .2 : .11, big ? .26 : .16, 1.1);
+  if(id === 'slip'){                              // кулак прошёл мимо виска — только воздух
+    hiss('bandpass', 2600, 320, t, .3, .52, 1.4);
+    hiss('highpass', 1200, 500, t, .2, .16, .8);
+    return;
+  }
+  if(id === 'step'){                              // разрыв дистанции: свист и шорох подошв
+    hiss('bandpass', 1800, 400, t, .22, .36, 1.2);
+    hiss('highpass', 3000, 1400, t + .1, .16, .2, .6);
+    return;
+  }
+  if(id === 'guard'){                             // удар принят на перчатки
+    musicDuck(.34);
+    hiss('highpass', 4600, 2200, t, .03, .48, .7);
+    hiss('bandpass', 1400, 700, t, .15, .72, 1.3);
+    tone('sine', 140, 58, t, .2, .5);
+    return;
+  }
+  var huge = id === 'ko';                         // кросс, апперкот, нокаут
+  musicDuck(huge ? .6 : .5);
+  hiss('highpass', 6000, 2800, t, .04, .58, .7);
+  tone('sine', huge ? 84 : 104, huge ? 24 : 34, t, huge ? .55 : .36, huge ? 1.05 : .85);
+  tone('sine', 52, 22, t + .015, huge ? .8 : .5, huge ? .8 : .55);
+  hiss('bandpass', 900, 260, t, huge ? .3 : .2, .5, .9);
+  if(huge) hiss('lowpass', 400, 90, t + .05, .9, .45, .6);
 }
 
 /* =========================================================================
@@ -2564,106 +2604,143 @@ function sndCut(id){
    а планировщиком с забеганием вперёд по часам AudioContext.
    ========================================================================= */
 var musBus = null, musShape = null, musTimer = null, musStep = 0, musNext = 0, musCrash = false;
-var BPM = 168, SPB = 60 / BPM, STEP = SPB / 4, MUS_VOL = .3;
-var MUS_CH = [0, -4, 3, -2];          // Am – F – C – G, ход всех опенингов сразу
-var MUS_3RD = [3, 4, 4, 4];
-var MUS_MEL = [                       // хук припева: шаги такта и полутона над ля
-  [[0,7],[3,5],[6,7],[8,12],[12,10]],
-  [[0,8],[3,7],[6,5],[8,8],[12,7]],
-  [[0,3],[3,5],[6,7],[8,10],[12,12]],
-  [[0,14],[4,12],[8,10],[12,7]]
+var BPM = 172, SPB = 60 / BPM, STEP = SPB / 4, MUS_VOL = .3;
+/* Am – F – G – Am: ход i–bVI–bVII–i, тот самый «эпик-метал», а не мажорная
+   опенинговая карамель. Аккорды берутся без терции — только квинта и октава,
+   от этого они тяжелее и злее. */
+var MUS_CH = [0, -4, -2, 0];
+var GALLOP = [0,2,3, 4,6,7, 8,10,11, 12,14,15];  // «дун-да-дун» — приглушённые доли гитары
+var MUS_RIFF = [                     // рифф припева: шаг такта и полутон над ля малой октавы
+  [[0,12],[3,10],[6,12],[8,15],[11,14],[14,12]],
+  [[0,8],[3,10],[6,12],[8,10],[12,8]],
+  [[0,10],[3,12],[6,14],[8,17],[12,15]],
+  [[0,12],[2,12],[4,10],[6,8],[8,12],[12,19]]
 ];
 function mf(n){ return 55 * Math.pow(2, n / 12); }   // ля субконтроктавы как ноль
 
-function mKick(t){
-  tone('sine', 132, 44, t, .22, .9, musBus);
-  hiss('lowpass', 900, 130, t, .05, .26, .7, musBus);
+function mKick(t){                   // глубже и с щелчком атаки
+  tone('sine', 150, 38, t, .24, 1, musBus);
+  hiss('lowpass', 1400, 160, t, .04, .32, .7, musBus);
 }
-function mSnare(t){
-  hiss('bandpass', 1900, 1150, t, .15, .42, .8, musBus);
-  tone('triangle', 225, 150, t, .09, .2, musBus);
+function mSnare(t, ghost){           // больше треска сверху, тело туже
+  var v = ghost ? .16 : 1;
+  hiss('highpass', 6500, 3200, t, .03, .3 * v, .7, musBus);
+  hiss('bandpass', 2100, 1000, t, .13, .5 * v, .9, musBus);
+  tone('triangle', 235, 155, t, .07, .22 * v, musBus);
 }
 function mHat(t, open){
-  hiss('highpass', 7200, 6200, t, open ? .17 : .04, open ? .1 : .075, .7, musBus);
+  hiss('highpass', 7600, 6400, t, open ? .16 : .035, open ? .1 : .07, .7, musBus);
 }
-function mCrash(t){ hiss('highpass', 4200, 2400, t, 1.25, .17, .5, musBus); }
+function mCrash(t){ hiss('highpass', 4000, 2200, t, 1.4, .2, .5, musBus); }
+function mTom(t, f){                 // тайко для эпического веса в сбивках
+  tone('sine', f, f * .55, t, .28, .75, musBus);
+  hiss('lowpass', 900, 200, t, .1, .2, .7, musBus);
+}
+function mSub(t, f, dur){            // саб под басом — вес, который слышно телом
+  var o = AC.createOscillator(), g = AC.createGain();
+  o.type = 'sine'; o.frequency.value = f;
+  g.gain.setValueAtTime(.0001, t);
+  g.gain.exponentialRampToValueAtTime(.5, t + .015);
+  g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  o.connect(g); g.connect(musBus);
+  o.start(t); o.stop(t + dur + .03);
+}
 function mBass(t, f, dur){
   var o = AC.createOscillator(), g = AC.createGain(), lp = AC.createBiquadFilter();
   o.type = 'sawtooth'; o.frequency.value = f;
   lp.type = 'lowpass';
-  lp.frequency.setValueAtTime(f * 7, t);
-  lp.frequency.exponentialRampToValueAtTime(Math.max(90, f * 2.2), t + dur);
+  lp.frequency.setValueAtTime(f * 8, t);
+  lp.frequency.exponentialRampToValueAtTime(Math.max(90, f * 2.4), t + dur);
   g.gain.setValueAtTime(.0001, t);
-  g.gain.exponentialRampToValueAtTime(.42, t + .012);
+  g.gain.exponentialRampToValueAtTime(.46, t + .01);
   g.gain.exponentialRampToValueAtTime(.0001, t + dur);
   o.connect(lp); lp.connect(g); g.connect(musBus);
   o.start(t); o.stop(t + dur + .03);
 }
-function mChord(t, f, dur){          // «глушёная» ритм-гитара сквозь общий перегруз
+function mChug(t, f){                // приглушённая доля: очень короткая, вся в перегрузе
+  var o = AC.createOscillator(), g = AC.createGain();
+  o.type = 'sawtooth'; o.frequency.value = f;
+  g.gain.setValueAtTime(.0001, t);
+  g.gain.exponentialRampToValueAtTime(.42, t + .004);
+  g.gain.exponentialRampToValueAtTime(.0001, t + STEP * .8);
+  o.connect(g); g.connect(musShape);
+  o.start(t); o.stop(t + STEP);
+}
+function mChord(t, f, dur){          // силовой аккорд: корень и квинта, без терции
   for(var i = 0; i < 2; i++){
     var o = AC.createOscillator(), g = AC.createGain();
-    o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = i ? 7 : -7;
+    o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = i ? 9 : -9;
     g.gain.setValueAtTime(.0001, t);
-    g.gain.exponentialRampToValueAtTime(.3, t + .008);
+    g.gain.exponentialRampToValueAtTime(.32, t + .008);
     g.gain.exponentialRampToValueAtTime(.0001, t + dur);
     o.connect(g); g.connect(musShape);
     o.start(t); o.stop(t + dur + .03);
   }
 }
-function mLead(t, f, dur){
-  var o = AC.createOscillator(), g = AC.createGain(), lp = AC.createBiquadFilter();
-  var lfo = AC.createOscillator(), lg = AC.createGain();
-  o.type = 'square'; o.frequency.value = f;
-  lfo.type = 'sine'; lfo.frequency.value = 5.4; lg.gain.value = f * .011;
-  lfo.connect(lg); lg.connect(o.frequency);
-  lp.type = 'lowpass'; lp.frequency.value = 2700;
-  g.gain.setValueAtTime(.0001, t);
-  g.gain.exponentialRampToValueAtTime(.17, t + .02);
-  g.gain.setValueAtTime(.17, t + dur * .62);
-  g.gain.exponentialRampToValueAtTime(.0001, t + dur);
-  o.connect(lp); lp.connect(g); g.connect(musBus);
-  o.start(t); o.stop(t + dur + .03); lfo.start(t); lfo.stop(t + dur + .03);
-}
-function mPad(t, fs, dur){
+function mBrass(t, root, dur){       // низкая медь: эпический стаб на сильную долю
+  var fs = [mf(12 + root), mf(24 + root), mf(24 + root + 7)];
   for(var i = 0; i < fs.length; i++){
     var o = AC.createOscillator(), g = AC.createGain(), lp = AC.createBiquadFilter();
-    o.type = 'sawtooth'; o.frequency.value = fs[i]; o.detune.value = (i - 1) * 7;
-    lp.type = 'lowpass'; lp.frequency.value = 1500;
+    o.type = 'sawtooth'; o.frequency.value = fs[i]; o.detune.value = (i - 1) * 8;
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(700, t);
+    lp.frequency.exponentialRampToValueAtTime(2600, t + .07);
+    lp.frequency.exponentialRampToValueAtTime(600, t + dur);
     g.gain.setValueAtTime(.0001, t);
-    g.gain.linearRampToValueAtTime(.05, t + dur * .35);
-    g.gain.linearRampToValueAtTime(.0001, t + dur);
+    g.gain.exponentialRampToValueAtTime(.1, t + .03);
+    g.gain.exponentialRampToValueAtTime(.0001, t + dur);
     o.connect(lp); lp.connect(g); g.connect(musBus);
     o.start(t); o.stop(t + dur + .05);
   }
 }
+function mLead(t, f, dur){           // рифф идёт сквозь тот же перегруз, что и гитара
+  var o = AC.createOscillator(), g = AC.createGain();
+  o.type = 'sawtooth'; o.frequency.value = f;
+  g.gain.setValueAtTime(.0001, t);
+  g.gain.exponentialRampToValueAtTime(.26, t + .012);
+  g.gain.setValueAtTime(.26, t + dur * .6);
+  g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  o.connect(g); g.connect(musShape);
+  o.start(t); o.stop(t + dur + .03);
+}
 
 function musNote(s, t){
   var bar = (s / 16) | 0, k = s % 16, ch = bar % 4, root = MUS_CH[ch];
-  var intro = bar < 2, chorus = !intro && ((bar - 2) % 8) >= 4;
+  var intro = bar < 2, lb = intro ? 0 : (bar - 2) % 8, chorus = !intro && lb >= 4;
   if(musCrash && k === 0){ musCrash = false; mCrash(t); }
   if(k % 2 === 0) mHat(t, k === 14);
-  if(intro){
-    if(k === 0) mPad(t, [mf(24 + root), mf(24 + root + MUS_3RD[ch]), mf(24 + root + 7)], SPB * 4);
-    if(bar === 1 && k >= 8 && k % 2 === 0) mSnare(t);          // подъём во вступление
-    if(bar === 1 && k === 8) hiss('bandpass', 380, 5400, t, SPB * 2, .16, .8, musBus);
+  if(intro){                                     // вступление: пустой зал и нарастающий гул
+    if(k === 0) mBrass(t, root, SPB * 3.6);
+    if(k === 0) mSub(t, mf(root), SPB * 3.6);
+    if(bar === 1 && k >= 8 && k % 2 === 0) mSnare(t, k < 12);
+    if(bar === 1 && k === 8) hiss('bandpass', 380, 5600, t, SPB * 2, .18, .8, musBus);
+    if(bar === 1 && k === 14) mTom(t, 120);
     return;
   }
   if(k === 0 && bar % 4 === 0) mCrash(t);
-  if(k === 0 || k === 6 || k === 8 || k === 14) mKick(t);
+  /* бочка галопом, в припеве вдвое плотнее — это и даёт «боевой» ход */
+  if(k === 0 || k === 3 || k === 6 || k === 8 || k === 11 || k === 14) mKick(t);
+  else if(chorus && (k === 2 || k === 10)) mKick(t);
   if(k === 4 || k === 12) mSnare(t);
-  if(k % 2 === 0) mBass(t, mf(12 + root + (k >= 12 ? 12 : 0)), STEP * 1.7);
-  if(k === 0 || k === 3 || k === 6 || k === 8 || k === 11 || k === 14){
-    mChord(t, mf(24 + root), STEP * 1.6);
-    mChord(t, mf(24 + root + 7), STEP * 1.6);
+  else if(chorus && k === 7) mSnare(t, true);
+  if(k % 2 === 0){
+    mBass(t, mf(12 + root + (k >= 12 ? 12 : 0)), STEP * 1.8);
+    if(k % 4 === 0) mSub(t, mf(root), STEP * 3.4);
+  }
+  for(var q = 0; q < GALLOP.length; q++) if(GALLOP[q] === k) mChug(t, mf(24 + root));
+  if(k === 0 || k === 8){                        // силовой аккорд на сильные доли
+    mChord(t, mf(24 + root), STEP * 3.2);
+    mChord(t, mf(24 + root + 7), STEP * 3.2);
   }
   if(chorus){
-    if(k === 0) mPad(t, [mf(24 + root), mf(24 + root + MUS_3RD[ch]), mf(24 + root + 7)], SPB * 4);
-    var mel = MUS_MEL[ch];
-    for(var i = 0; i < mel.length; i++) if(mel[i][0] === k){
-      var nx = i + 1 < mel.length ? mel[i + 1][0] : 16;
-      mLead(t, mf(36 + mel[i][1]), (nx - k) * STEP * .92);
+    if(k === 0) mBrass(t, root, SPB * 1.8);
+    var riff = MUS_RIFF[ch];
+    for(var i = 0; i < riff.length; i++) if(riff[i][0] === k){
+      var nx = i + 1 < riff.length ? riff[i + 1][0] : 16;
+      mLead(t, mf(24 + riff[i][1]), (nx - k) * STEP * .9);
     }
   }
+  if(lb === 7 && k >= 12) mTom(t, [150, 128, 110, 96][k - 12]);   // сбивка перед повтором
 }
 function musTick(){
   if(!AC || !musBus) return;
@@ -2674,12 +2751,15 @@ function musTick(){
 function musicStart(){
   if(!AC || musTimer) return;
   musBus = AC.createGain(); musBus.gain.value = MUS_VOL; musBus.connect(master);
+  /* перегруз потяжелее и подрезанный снизу — так гитара звучит зло,
+     а не гудит, и не спорит с басом и сабом за низ */
   var sh = AC.createWaveShaper(), n = 1024, cv = new Float32Array(n);
-  for(var i = 0; i < n; i++) cv[i] = Math.tanh((i / (n - 1) * 2 - 1) * 3.2);
+  for(var i = 0; i < n; i++) cv[i] = Math.tanh((i / (n - 1) * 2 - 1) * 6.5);
   sh.curve = cv; sh.oversample = '2x';
-  var lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3300;
-  var gg = AC.createGain(); gg.gain.value = .2;
-  sh.connect(lp); lp.connect(gg); gg.connect(musBus);
+  var hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 150;
+  var lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3800;
+  var gg = AC.createGain(); gg.gain.value = .17;
+  sh.connect(hp); hp.connect(lp); lp.connect(gg); gg.connect(musBus);
   musShape = sh;
   musStep = 0; musCrash = false; musNext = AC.currentTime + .1;
   musTimer = setInterval(musTick, 25);
