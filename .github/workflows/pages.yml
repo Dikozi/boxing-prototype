@@ -1,0 +1,47 @@
+# Деплой «Клинча» на GitHub Pages.
+# Игра — один самодостаточный index.html, поэтому сборки нет: файл просто
+# кладётся в корень сайта. Папка art/ — исходники иллюстраций, в сайт не идёт:
+# картинки уже вшиты в index.html как data-URI.
+name: Deploy to Pages
+
+on:
+  push:
+    branches: [claude/boxing-game-prototype-6gs9m8]
+    paths: ['index.html', '.github/workflows/pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Включить Pages, если ещё не включён
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Собрать сайт из одного файла
+        run: |
+          mkdir -p _site
+          cp index.html _site/index.html
+          ls -la _site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
