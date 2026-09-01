@@ -418,7 +418,7 @@ var STAGE_W = 168, STAGE_H = 106, FLOOR = 97;
 var POS = [63, 105];                      // 42 единицы между бойцами — дистанция удара
 var TORSO = 24, HEAD_UP = 9.4, HEAD_R = 7.0;
 var UPARM = 13.5, FOREARM = 13.5, THIGH = 16.5, SHIN = 16.5;
-var GLOVE = 5.2, HIP_Y = FLOOR - 31;
+var GLOVE = 5.6, HIP_Y = FLOOR - 31;
 
 /* Пружина с полунеявным Эйлером и подшагами: держит жёсткие ударные
    пружины устойчивыми даже при просадке кадра. */
@@ -439,6 +439,10 @@ function Boxer(i){
   this.hy = new Sp(HIP_Y, 220, 27);
   this.lean = new Sp(0, 150, 22);
   this.head = new Sp(0, 260, 17);
+  /* Скрутка плечевого пояса. Без неё удар выглядел рукой, живущей отдельно
+     от тела: плечи стояли намертво, и вперёд уезжал только кулак.
+     >0 — вперёд идёт заднее плечо (кросс, апперкот), <0 — переднее (джеб). */
+  this.twist = new Sp(0, 200, 25);
   this.hand = [
     {x:new Sp(POS[i], 200, 25), y:new Sp(HIP_Y - 27, 200, 25)},
     {x:new Sp(POS[i], 200, 25), y:new Sp(HIP_Y - 27, 200, 25)}
@@ -453,6 +457,7 @@ function Boxer(i){
 Boxer.prototype.reset = function(){
   var f = this.face;
   this.hx.reset(this.base); this.hy.reset(HIP_Y); this.lean.reset(0); this.head.reset(0);
+  this.twist.reset(0);
   this.foot[0].reset(this.base + 10 * f); this.foot[1].reset(this.base - 11 * f);
   this.charge = false; this.down = false; this.tired = false;
   this.trail = [[], []];
@@ -482,9 +487,12 @@ Boxer.prototype.solve = function(){
   var shB  = {x:neck.x - up.x * 3.5,  y:neck.y - up.y * 3.5};
   var ha = lean + this.head.x;
   var head = {x:neck.x + Math.sin(ha) * f * HEAD_UP, y:neck.y - Math.cos(ha) * HEAD_UP};
+  var tw = this.twist.x;
+  var o0 = 4.2 - tw * 4.4;
+  var o1 = -4.2 + tw * (tw > 0 ? 9.2 : 3.2);       // вперёд плечо проносит, назад — только уводит
   var sh = [
-    {x:shB.x + fw.x * 4.2, y:shB.y + fw.y * 4.2},
-    {x:shB.x - fw.x * 4.2, y:shB.y - fw.y * 4.2}
+    {x:shB.x + fw.x * o0, y:shB.y + fw.y * o0},
+    {x:shB.x + fw.x * o1, y:shB.y + fw.y * o1}
   ];
   var arms = [], legs = [], k;
   for(k = 0; k < 2; k++){
@@ -516,7 +524,10 @@ function guardPt(o){
    Считается от нейтрального положения плеча, поэтому не раскачивается. */
 var REACH = UPARM + FOREARM;
 function lungeX(b, k, p, extra, cap, sep){
-  var shx = b.base + (k === 0 ? 4.2 : -4.2) * b.face;
+  /* Смещение плеча берём фактическое, а не нейтральное: скрутка корпуса
+     уже уносит плечо вперёд, и без этой поправки боец шагает лишнее
+     и въезжает в противника. */
+  var shx = b.base + (b.J.sh[k].x - b.hx.x);
   var need = Math.abs(p.x - shx) - REACH * 0.92;
   var d = Math.max(0, need) + (extra || 0);
   var x = b.base + Math.min(d, cap == null ? 26 : cap) * b.face;
@@ -537,6 +548,7 @@ function driveGuard(b){
   b.head.set(0, 260, 17);
   handTo(b, 0, n.x + 10 * f, n.y - 1 + drop, 190, 25);
   handTo(b, 1, n.x + 5 * f, n.y - 3.5 + drop, 190, 25);
+  b.twist.set(0, 190, 25);
   footTo(b, 0, b.base + 10 * f, 170, 24);
   footTo(b, 1, b.base - 11 * f, 170, 24);
 }
@@ -544,6 +556,7 @@ function driveGuard(b){
 function applyCharge(b){                        // заряженный кросс держится позой
   var f = b.face, n = b.J.neck;
   handTo(b, 1, n.x - 13 * f, n.y + 2, 210, 26);
+  b.twist.set(-0.55, 190, 24);                  // плечи скручены назад — пружина взведена
   b.lean.set(-0.20, 150, 22);
   b.hx.set(b.base - 4 * f, 130, 21);
   footTo(b, 1, b.base - 15 * f, 170, 24);
@@ -580,51 +593,73 @@ function driveActor(i, t, rec){
 
   switch(c.id){
     case 'jab':
-      if(t < 365){                                   // замах: плечо назад, вес на заднюю ногу
+      if(t < 330){                                   // замах: плечо назад, вес на заднюю ногу
         handTo(b, 0, n.x + 4 * f, n.y + 1, 240, 26);
+        b.twist.set(0.24, 210, 25);
         b.lean.set(-0.07, 170, 22); b.hx.set(b.base - 2.5 * f, 150, 21);
-      } else if(t < 800){                            // вынос
+      } else if(t < 700){                            // вынос: переднее плечо уходит за кулаком
         p = targetPoint(i, rec);
         handTo(b, 0, p.x, p.y, 950, 41);
         var jx = lungeX(b, 0, p, 3, 22, 30);
+        b.twist.set(-0.92, 300, 22);
         b.lean.set(0.17, 230, 21); b.hx.set(jx, 230, 23);
         footTo(b, 0, jx + 11 * f, 220, 24); footTo(b, 1, jx - 12 * f, 210, 24);
+      } else if(t < 1010){                           // возврат такой же резкий, как вынос
+        handTo(b, 0, n.x + 9 * f, n.y - 1, 560, 31);
+        b.twist.set(0, 260, 24);
       }
       break;
 
     case 'uppercut':
-      if(t < 350){                                   // просадка: кулак уходит вниз
+      if(t < 320){                                   // просадка: кулак уходит вниз, плечи копят
         handTo(b, 1, n.x - 3 * f, n.y + 17, 300, 27);
+        b.twist.set(-0.40, 210, 25);
         b.hy.set(HIP_Y + 5, 240, 26); b.lean.set(0.10, 180, 22);
-      } else if(t < 830){                            // взрыв снизу вверх
+      } else if(t < 430){                            // проносим кулак вперёд низом — это низ дуги
+        p = targetPoint(i, rec);
+        handTo(b, 1, p.x - 3 * f, p.y + 16, 800, 38);
+        b.twist.set(0.40, 260, 23);
+        b.hy.set(HIP_Y + 1, 260, 25);
+      } else if(t < 780){                            // взрыв снизу вверх
         p = targetPoint(i, rec);
         handTo(b, 1, p.x, p.y, 1000, 40);
         var ux = lungeX(b, 1, p, 6, 28, 29);
+        b.twist.set(0.95, 320, 22);
         b.hy.set(HIP_Y - 5, 300, 24); b.lean.set(0.08, 230, 21);
         b.hx.set(ux, 240, 23);
         footTo(b, 0, ux + 12 * f, 220, 24); footTo(b, 1, ux - 12 * f, 210, 24);
+      } else if(t < 1080){
+        handTo(b, 1, n.x + 4 * f, n.y - 3, 560, 31);
+        b.twist.set(0, 260, 24);
       }
       break;
 
     case 'cross':                                    // замах: скрутка и удержание
       handTo(b, 1, n.x - 13 * f, n.y + 2, t < 620 ? 230 : 210, 26);
       handTo(b, 0, n.x + 9 * f, n.y - 1, 200, 25);
+      b.twist.set(-0.55, 180, 24);
       b.lean.set(-0.21, 150, 22); b.hx.set(b.base - 4 * f, 130, 21);
       footTo(b, 1, b.base - 15 * f, 170, 24);
       if(t > 560) b.charge = true;
       break;
 
     case 'crossLand':
-      if(t < 360){                                   // добирает скрутку
+      if(t < 340){                                   // добирает скрутку
         handTo(b, 1, n.x - 17 * f, n.y + 4, 260, 26);
+        b.twist.set(-0.85, 230, 24);
         b.lean.set(-0.30, 190, 22); b.hx.set(b.base - 5 * f, 160, 21);
         footTo(b, 1, b.base - 17 * f, 190, 24);
-      } else if(t < 880){                            // всем корпусом
+      } else if(t < 800){                            // всем корпусом: плечо проносит через цель
         p = targetPoint(i, rec);
         handTo(b, 1, p.x, p.y, 1250, 43);
         var cxx = lungeX(b, 1, p, 7, 34, 24);
+        b.twist.set(1.15, 340, 22);
         b.lean.set(0.34, 280, 21); b.hx.set(cxx, 280, 23);
         footTo(b, 0, cxx + 14 * f, 250, 24); footTo(b, 1, cxx - 11 * f, 250, 24);
+        b.charge = false;
+      } else if(t < 1120){                           // раскрутка обратно в стойку
+        handTo(b, 1, n.x + 4 * f, n.y - 3, 540, 31);
+        b.twist.set(0, 240, 24);
         b.charge = false;
       }
       break;
@@ -1014,9 +1049,11 @@ function poseOf(b){
    ========================================================================= */
 var SKIN = [
   {body:'#3b7fe0', bodyD:'#1f4f9e', dark:'#17396f', trunk:'#0d2650', trunkL:'#5a9cf5',
-   glove:'#b5d3ff', gloveD:'#5b90e6', rim:'#b9d6ff', boot:'#0a172c'},
+   glove:'#b5d3ff', gloveD:'#5b90e6', rim:'#b9d6ff', boot:'#0a172c',
+   hair:'#0e1a30', tape:'#dce9ff', crop:0},
   {body:'#e04150', bodyD:'#a02531', dark:'#741822', trunk:'#520f17', trunkL:'#f97d89',
-   glove:'#ffbcc3', gloveD:'#dd5866', rim:'#ffc2c8', boot:'#2e080d'}
+   glove:'#ffbcc3', gloveD:'#dd5866', rim:'#ffc2c8', boot:'#2e080d',
+   hair:'#2b0a10', tape:'#ffe3e6', crop:1}
 ];
 
 var ring = document.getElementById('ring');
@@ -1089,36 +1126,123 @@ function line(a, b2, w, col, noInk){
   if(!noInk){ cx.strokeStyle = INK; cx.lineWidth = w + 2.1; cx.stroke(); }
   cx.strokeStyle = col; cx.lineWidth = w; cx.stroke();
 }
-function arm(A, w1, w2, col){
-  cx.strokeStyle = INK; cx.lineWidth = w1 + 2.1; cx.lineCap = 'round';
-  cx.beginPath(); cx.moveTo(A.sh.x, A.sh.y); cx.lineTo(A.el.x, A.el.y); cx.lineTo(A.hand.x, A.hand.y); cx.stroke();
-  line(A.sh, A.el, w1, col, 1); line(A.el, A.hand, w2, col, 1);
+function unitV(a, b2){
+  var dx = b2.x - a.x, dy = b2.y - a.y, d = Math.hypot(dx, dy) || 1;
+  return {x:dx / d, y:dy / d};
 }
-function leg(L, w1, w2, col){
-  cx.strokeStyle = INK; cx.lineWidth = w1 + 2.1; cx.lineCap = 'round';
-  cx.beginPath(); cx.moveTo(L.hip.x, L.hip.y); cx.lineTo(L.knee.x, L.knee.y); cx.lineTo(L.foot.x, L.foot.y); cx.stroke();
-  line(L.hip, L.knee, w1, col, 1); line(L.knee, L.foot, w2, col, 1);
-}
+function nrmV(a, b2){ var u = unitV(a, b2); return {x:-u.y, y:u.x}; }
 
-function glove(p, prev, col, colD, r){
+/* Конечность рисуется сужающимся силуэтом, а не палкой постоянной ширины:
+   толстая дельта у плеча, уже к локтю, ещё уже к запястью. Именно равная
+   толщина по всей длине и делала из руки верёвку с шариком на конце.
+   Торцы скруглены квадратичной кривой (у неё контрольная точка ровно вдвое
+   дальше вершины), чтобы не разбираться с направлением обхода дуги. */
+function limb(a, b2, c, r0, r1, r2, col, colD){
+  var n0 = nrmV(a, b2), n2 = nrmV(b2, c);
+  var dA = unitV(b2, a), dC = unitV(b2, c);
+  /* На локте не строим митру: когда рука сложена острее прямого угла, она
+     улетает в бесконечность и даёт шип. Вместо неё — фаска из двух точек,
+     по нормали каждого звена, а внутренний зарез потом закрывается кружком
+     сустава. */
+  cx.lineJoin = 'round';
+  cx.beginPath();
+  cx.moveTo(a.x + n0.x * r0, a.y + n0.y * r0);
+  cx.lineTo(b2.x + n0.x * r1, b2.y + n0.y * r1);
+  cx.lineTo(b2.x + n2.x * r1, b2.y + n2.y * r1);
+  cx.lineTo(c.x + n2.x * r2, c.y + n2.y * r2);
+  cx.quadraticCurveTo(c.x + dC.x * r2 * 2, c.y + dC.y * r2 * 2, c.x - n2.x * r2, c.y - n2.y * r2);
+  cx.lineTo(b2.x - n2.x * r1, b2.y - n2.y * r1);
+  cx.lineTo(b2.x - n0.x * r1, b2.y - n0.y * r1);
+  cx.lineTo(a.x - n0.x * r0, a.y - n0.y * r0);
+  cx.quadraticCurveTo(a.x + dA.x * r0 * 2, a.y + dA.y * r0 * 2, a.x + n0.x * r0, a.y + n0.y * r0);
+  cx.closePath();
+  var g = cx.createLinearGradient(a.x, a.y, c.x, c.y);
+  g.addColorStop(0, col); g.addColorStop(1, colD);
+  cx.strokeStyle = INK; cx.lineWidth = 2.5; cx.stroke();
+  cx.fillStyle = g; cx.fill();
+  cx.beginPath(); cx.arc(b2.x, b2.y, r1, 0, 6.284); cx.fill();   // сустав закрывает зарез
+}
+function arm(A, r0, r1, r2, col, colD){ limb(A.sh, A.el, A.hand, r0, r1, r2, col, colD); }
+function leg(L, r0, r1, r2, col, colD){ limb(L.hip, L.knee, L.foot, r0, r1, r2, col, colD); }
+
+/* Перчатка развёрнута по предплечью и «смотрит» туда, куда летит удар:
+   тупая масса у костяшек, бинт на запястье, шов большого пальца. Кружок
+   с бликом читался воздушным шариком, а не кулаком. */
+function glove(p, prev, dir, f, col, colD, wrap, r){
   if(prev){                                     // смаз на быстрой перчатке
     var d = Math.hypot(p.x - prev.x, p.y - prev.y);
     if(d > 2.4){
-      cx.globalAlpha = 0.22; cx.fillStyle = col;
-      for(var s = 0.25; s < 1; s += 0.25){
+      cx.globalAlpha = 0.18; cx.fillStyle = col;
+      for(var t = 0.3; t < 1; t += 0.3){
         cx.beginPath();
-        cx.arc(prev.x + (p.x - prev.x) * s, prev.y + (p.y - prev.y) * s, r * (0.55 + s * 0.4), 0, 6.284);
+        cx.ellipse(prev.x + (p.x - prev.x) * t, prev.y + (p.y - prev.y) * t,
+                   r * (0.5 + t * 0.5), r * (0.38 + t * 0.45),
+                   Math.atan2(p.y - prev.y, p.x - prev.x), 0, 6.284);
         cx.fill();
       }
       cx.globalAlpha = 1;
     }
   }
-  var g = cx.createLinearGradient(p.x, p.y - r, p.x, p.y + r);
+  cx.save();
+  cx.translate(p.x, p.y);
+  cx.rotate(Math.atan2(dir.y, dir.x));
+  cx.scale(1, f);                               // боец смотрит влево — палец всё равно снизу
+  cx.lineJoin = 'round'; cx.strokeStyle = INK;
+  cx.fillStyle = wrap; cx.lineWidth = 1.3;      // бинт на запястье
+  cx.beginPath(); cx.ellipse(-r * .95, 0, r * .3, r * .56, 0, 0, 6.284); cx.fill(); cx.stroke();
+  var g = cx.createLinearGradient(0, -r, 0, r * .8);
   g.addColorStop(0, col); g.addColorStop(1, colD);
-  cx.fillStyle = g; cx.strokeStyle = INK; cx.lineWidth = 1.6;
-  cx.beginPath(); cx.arc(p.x, p.y, r, 0, 6.284); cx.fill(); cx.stroke();
-  cx.fillStyle = 'rgba(255,255,255,.5)';
-  cx.beginPath(); cx.arc(p.x - r * .3, p.y - r * .34, r * .28, 0, 6.284); cx.fill();
+  cx.fillStyle = g; cx.lineWidth = 1.7;         // масса: тупая у костяшек, сходит к запястью
+  cx.beginPath();
+  cx.moveTo(-r * .72, -r * .6);
+  cx.quadraticCurveTo(r * .3, -r * 1.02, r * .92, -r * .44);
+  cx.quadraticCurveTo(r * 1.24, 0, r * .92, r * .46);
+  cx.quadraticCurveTo(r * .25, r * 1.0, -r * .72, r * .64);
+  cx.quadraticCurveTo(-r * .98, 0, -r * .72, -r * .6);
+  cx.closePath(); cx.stroke(); cx.fill();
+  cx.strokeStyle = 'rgba(0,0,0,.34)'; cx.lineWidth = 1.15;   // шов большого пальца
+  cx.beginPath();
+  cx.moveTo(-r * .34, r * .58);
+  cx.quadraticCurveTo(r * .3, r * .3, r * .42, r * .62);
+  cx.stroke();
+  cx.fillStyle = 'rgba(255,255,255,.34)';                    // сдержанный блик
+  cx.beginPath(); cx.ellipse(r * .26, -r * .46, r * .26, r * .15, -.34, 0, 6.284); cx.fill();
+  cx.restore();
+}
+
+/* Лицо. Рисуется в системе координат головы: +x — вперёд, на противника,
+   +y — вниз. Без него голова читалась просто кружком. */
+function face(J, f, s, mix){
+  cx.save();
+  cx.translate(J.head.x, J.head.y);
+  cx.rotate(J.ha * f);
+  cx.scale(f, 1);
+  cx.lineJoin = 'round'; cx.lineCap = 'round';
+
+  cx.save();                                     // причёска обрезается по черепу
+  cx.beginPath(); cx.ellipse(0, 0, HEAD_R * 1.02, HEAD_R * .96, 0, 0, 6.284); cx.clip();
+  cx.fillStyle = s.hair;
+  cx.beginPath();
+  if(s.crop) cx.ellipse(-2.2, -4.4, HEAD_R * 1.16, HEAD_R * .96, -.20, 0, 6.284);   // назад, с зачёсом
+  else       cx.ellipse(-0.9, -5.4, HEAD_R * 1.10, HEAD_R * .82, -.05, 0, 6.284);   // низкий ёжик
+  cx.fill();
+  cx.restore();
+
+  cx.strokeStyle = INK; cx.lineCap = 'round';    // бровь нависает прямо над глазом
+  cx.lineWidth = 1.8;
+  cx.beginPath(); cx.moveTo(0.2, -2.7); cx.lineTo(3.7, -1.6); cx.stroke();
+
+  cx.fillStyle = INK;                            // глаз
+  cx.beginPath(); cx.ellipse(2.5, .1, 1.25, 1.0, .2, 0, 6.284); cx.fill();
+  cx.fillStyle = 'rgba(255,255,255,.9)';
+  cx.beginPath(); cx.arc(2.9, -.3, .4, 0, 6.284); cx.fill();
+
+  cx.strokeStyle = INK; cx.lineWidth = 1.3;      // спинка носа
+  cx.beginPath(); cx.moveTo(4.6, -.7); cx.quadraticCurveTo(5.6, .4, 4.4, 1.2); cx.stroke();
+
+  cx.lineWidth = 1.4;                            // сжатый рот
+  cx.beginPath(); cx.moveTo(1.9, 3.0); cx.lineTo(4.0, 2.6); cx.stroke();
+  cx.restore();
 }
 
 function drawBoxer(b){
@@ -1134,11 +1258,15 @@ function drawBoxer(b){
   cx.globalAlpha = 1;
 
   // дальние конечности
-  leg(J.legs[1], 8.4, 6.6, mix(s.dark));
+  leg(J.legs[1], 5.1, 3.6, 2.6, mix(s.dark), mix(s.dark));
   cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
-  boot(J.legs[1], f, 5, 2.7);
+  boot(J.legs[1], f, 5, 2.7, mix(s.dark));
   var rearOut = (J.arms[1].hand.x - J.neck.x) * f > 7;      // задняя рука вылетела вперёд
-  if(!rearOut){ arm(J.arms[1], 7.4, 5.9, mix(s.dark)); glove(J.arms[1].hand, b.trail[1][0], mix(s.gloveD), mix(s.dark), GLOVE * .94); }
+  if(!rearOut){
+    arm(J.arms[1], 4.6, 3.2, 2.4, mix(s.dark), mix(s.dark));
+    glove(J.arms[1].hand, b.trail[1][0], unitV(J.arms[1].el, J.arms[1].hand), f,
+          mix(s.gloveD), mix(s.dark), mix(s.dark), GLOVE * .93);
+  }
 
   // корпус
   var p = function(t, n){ return {x:J.hip.x + up.x * t + fw.x * n, y:J.hip.y + up.y * t + fw.y * n}; };
@@ -1155,6 +1283,18 @@ function drawBoxer(b){
   cx.strokeStyle = INK; cx.lineWidth = 4.2; cx.stroke();
   cx.fillStyle = g; cx.fill();
 
+  cx.lineCap = 'round';
+  cx.strokeStyle = 'rgba(255,255,255,.14)';          // свет по переднему краю — корпус получает объём
+  cx.lineWidth = 2.2;
+  var r1 = p(3.5, 7.6), r2 = p(12, 9.2), r3 = p(19, 8.6);
+  cx.beginPath(); cx.moveTo(r1.x, r1.y); cx.quadraticCurveTo(r2.x, r2.y, r3.x, r3.y); cx.stroke();
+  cx.strokeStyle = 'rgba(0,0,0,.2)'; cx.lineWidth = 1.5;   // грудная мышца
+  var q1 = p(17.2, 7.6), q2 = p(13.4, 4.2), q3 = p(12.4, -1.0);
+  cx.beginPath(); cx.moveTo(q1.x, q1.y); cx.quadraticCurveTo(q2.x, q2.y, q3.x, q3.y); cx.stroke();
+  cx.lineWidth = 1.2;                                      // средняя линия пресса
+  var w1 = p(11.4, 2.2), w2 = p(4.2, 2.0);
+  cx.beginPath(); cx.moveTo(w1.x, w1.y); cx.lineTo(w2.x, w2.y); cx.stroke();
+
   // шорты и пояс
   var t1 = p(-2.5, 7.4), t2 = p(6, 7.9), t3 = p(6, -7.2), t4 = p(-2.5, -6.9);
   cx.beginPath(); cx.moveTo(t1.x, t1.y); cx.lineTo(t2.x, t2.y); cx.lineTo(t3.x, t3.y); cx.lineTo(t4.x, t4.y);
@@ -1162,11 +1302,12 @@ function drawBoxer(b){
   cx.strokeStyle = INK; cx.lineWidth = 3.4; cx.stroke();
   cx.fillStyle = mix(s.trunk); cx.fill();
   line(p(6, 7.5), p(6, -6.8), 1.8, mix(s.trunkL), 1);
+  line(p(5.4, 7.0), p(-2.2, 6.6), 1.5, mix(s.trunkL), 1);   // лампас
 
   // ближняя нога
-  leg(J.legs[0], 8.8, 6.9, mix(s.bodyD));
+  leg(J.legs[0], 5.6, 3.9, 2.8, mix(s.body), mix(s.bodyD));
   cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
-  boot(J.legs[0], f, 5.2, 2.8);
+  boot(J.legs[0], f, 5.2, 2.8, mix(s.trunkL));
 
   // шея и голова одним силуэтом: череп + челюсть вперёд
   line(J.neck, {x:J.head.x, y:J.head.y + HEAD_R * .6}, 6.2, mix(s.bodyD));
@@ -1177,21 +1318,30 @@ function drawBoxer(b){
   cx.stroke(); cx.fill();
   cx.fillStyle = 'rgba(255,255,255,.13)';                       // мягкий блик от софита
   cx.beginPath(); cx.ellipse(J.head.x - fw.x * 1.4, J.head.y - 2.3, HEAD_R * .6, HEAD_R * .46, 0, 0, 6.284); cx.fill();
-  cx.fillStyle = mix(s.dark);                                   // затенение под челюстью
-  cx.beginPath(); cx.ellipse(J.head.x + fw.x * 1.2, J.head.y + HEAD_R * .82, 3.4, 1.5, 0, 0, 6.284); cx.fill();
+  cx.fillStyle = mix(s.dark);                                   // узкая тень под скулой
+  cx.beginPath(); cx.ellipse(J.head.x + fw.x * .4, J.head.y + HEAD_R * .86, 2.4, .95, 0, 0, 6.284); cx.fill();
+  face(J, f, s, mix);
 
   // ближняя рука и вылетевшая задняя
-  if(rearOut){ arm(J.arms[1], 7.6, 6.1, mix(s.bodyD)); }
-  arm(J.arms[0], 7.8, 6.3, mix(s.body));
-  glove(J.arms[0].hand, b.trail[0][0], mix(s.glove), mix(s.gloveD), GLOVE);
-  if(rearOut) glove(J.arms[1].hand, b.trail[1][0], mix(s.glove), mix(s.gloveD), GLOVE);
+  if(rearOut) arm(J.arms[1], 4.9, 3.4, 2.6, mix(s.body), mix(s.bodyD));
+  arm(J.arms[0], 5.2, 3.6, 2.7, mix(s.body), mix(s.bodyD));
+  glove(J.arms[0].hand, b.trail[0][0], unitV(J.arms[0].el, J.arms[0].hand), f,
+        mix(s.glove), mix(s.gloveD), mix(s.trunkL), GLOVE);
+  if(rearOut) glove(J.arms[1].hand, b.trail[1][0], unitV(J.arms[1].el, J.arms[1].hand), f,
+                    mix(s.glove), mix(s.gloveD), mix(s.trunkL), GLOVE);
 }
 
-function boot(L, f, rx, ry){         // ботинок едет за ступнёй и разворачивается с ногой
+function boot(L, f, rx, ry, lace){   // ботинок едет за ступнёй и разворачивается с ногой
   var a = Math.atan2(L.foot.y - L.knee.y, L.foot.x - L.knee.x) - Math.PI / 2;
+  var bx = L.foot.x + Math.cos(a) * 1.5 * f, by = Math.min(FLOOR - 1.5, L.foot.y);
   cx.beginPath();
-  cx.ellipse(L.foot.x + Math.cos(a) * 1.5 * f, Math.min(FLOOR - 1.5, L.foot.y), rx, ry, a * .5, 0, 6.284);
+  cx.ellipse(bx, by, rx, ry, a * .5, 0, 6.284);
   cx.fill(); cx.stroke();
+  cx.strokeStyle = lace; cx.lineWidth = 1.1; cx.lineCap = 'round';   // шнуровка
+  cx.beginPath();
+  cx.moveTo(bx - rx * .5 * f, by - ry * .5); cx.lineTo(bx + rx * .15 * f, by - ry * .75);
+  cx.stroke();
+  cx.strokeStyle = INK;
 }
 function shadeHex(h, m){
   var n = parseInt(h.slice(1), 16);
@@ -2055,7 +2205,7 @@ function frame(now){
   for(var i = 0; i < 2; i++){
     var b = B[i], k;
     b.breath += dt * (b.tired ? 3.2 : 1.9);
-    b.hx.step(dt); b.hy.step(dt); b.lean.step(dt); b.head.step(dt);
+    b.hx.step(dt); b.hy.step(dt); b.lean.step(dt); b.head.step(dt); b.twist.step(dt);
     for(k = 0; k < 2; k++){ b.hand[k].x.step(dt); b.hand[k].y.step(dt); b.foot[k].step(dt); }
     for(k = 0; k < 2; k++){
       b.trail[k].unshift({x:b.J.arms[k].hand.x, y:b.J.arms[k].hand.y});
@@ -2155,7 +2305,7 @@ function snapEnd(rec){
 function settle(dt){
   for(var i = 0; i < 2; i++){
     var b = B[i], k;
-    b.hx.step(dt); b.hy.step(dt); b.lean.step(dt); b.head.step(dt);
+    b.hx.step(dt); b.hy.step(dt); b.lean.step(dt); b.head.step(dt); b.twist.step(dt);
     for(k = 0; k < 2; k++){ b.hand[k].x.step(dt); b.hand[k].y.step(dt); b.foot[k].step(dt); }
     b.solve();
   }
