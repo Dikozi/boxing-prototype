@@ -143,6 +143,8 @@ button{font-family:inherit;color:inherit;cursor:pointer;touch-action:manipulatio
   min-height:clamp(60px,10vh,90px);padding:8px 6px;border-radius:15px;border:1px solid var(--line);
   background:var(--panel2);transition:transform .09s ease,filter .12s ease}
 .act:active{transform:scale(.968);filter:brightness(1.22)}
+.act.off{opacity:.34;filter:grayscale(.85)}
+.act.off:active{transform:none;filter:grayscale(.85)}
 .act.wide{grid-column:1/-1;flex-direction:row;justify-content:flex-start;gap:11px;min-height:clamp(50px,7.6vh,70px);padding:8px 15px}
 .act.wide .col{display:flex;flex-direction:column;align-items:flex-start;gap:0}
 .act .em{font-size:21px;line-height:1}
@@ -208,15 +210,25 @@ details .body b{color:var(--txt)} details .body .k{color:var(--gold);font-weight
   #ring{height:clamp(60px,9.5vh,110px)}
   #log{height:13vh;min-height:54px}
   #panel{gap:6px;padding:8px}
-  .act{min-height:clamp(52px,9vh,84px)}
-  .act.wide{min-height:clamp(46px,7vh,66px)}
+  .act{min-height:clamp(46px,7.4vh,76px)}
+  .act.wide{min-height:clamp(42px,6vh,60px)}
+  .act .em{font-size:18px} .act .t{font-size:16px}
   .sub{font-size:13.5px}
   details{padding:9px 12px}
+}
+/* Совсем низкие экраны: девять кнопок влезают только без подсказок —
+   они дублируются на экране выбора уровня и в правилах. */
+@media (max-height:520px){
+  .act .s{display:none}
+  .act{min-height:38px} .act.wide{min-height:34px}
+  .act .em{font-size:14px} .act .t{font-size:13px}
 }
 @media (max-height:600px){
   #ring{height:48px}
   #log{height:48px;min-height:48px}
-  .act{min-height:48px} .act.wide{min-height:44px}
+  .act{min-height:42px} .act.wide{min-height:38px}
+  .act .em{font-size:15px} .act .t{font-size:14px} .act .s{font-size:9px}
+  .grid{gap:6px} .hdr{font-size:9px;letter-spacing:.18em}
   .btn.big{padding:16px 12px;font-size:19px}
   .btn.ghost{padding:10px;font-size:14px}
   .card{padding:10px 12px;gap:6px}
@@ -297,6 +309,7 @@ var REST = 8;           // сколько выносливости возвра�
 var BODY_DMG = 0.72;
 var BODY_ST  = 1.1;     // доля урона удара, которую корпус снимает выносливостью
 var KICK_WHIFF = 12;    // промах ногой дороже промаха рукой — за это её и держим в узде
+var LIVER_CHANCE = 0.2; // шанс, что удар по корпусу придёт точно в печень
 
 /* Спорные места правил вынесены сюда — переключаются одной строкой.
    1) В ТЗ две взаимоисключающие фразы про апперкот в голову против высокого
@@ -313,9 +326,12 @@ var ACT = {
   jab:      {id:'jab',      kind:'attack', name:'Прямой',       em:'👊', dmg:20, st:14,  level:true,  hint:'быстрый · 20/13'},
   uppercut: {id:'uppercut', kind:'attack', name:'Апперкот',     em:'🥊', dmg:35, st:22,  level:true,  hint:'бьёт нырок · 35/23'},
   kick:     {id:'kick',     kind:'attack', name:'Удар ногой',   em:'🦵', dmg:32, st:30,  level:true,  hint:'ломает блок · 32/21'},
+  spin:     {id:'spin',     kind:'attack', name:'С разворота',   em:'🌪️', dmg:58, st:30,  level:true,  hint:'замах на раунд · 58/42'},
+  spinLand: {id:'spinLand', kind:'attack', name:'С разворота',   em:'🌪️', dmg:58, st:10,  level:true,  hint:''},
   cross:    {id:'cross',    kind:'attack', name:'Кросс',        em:'💥', dmg:50, st:32,  level:false, hint:'замах на раунд · 50'},
   block:    {id:'block',    kind:'defense',name:'Высокий блок', em:'🛡️', dmg:0,  st:6,   level:false, hint:'закрывает голову'},
-  slip:     {id:'slip',     kind:'defense',name:'Нырок',        em:'🌀', dmg:0,  st:8,   level:false, hint:'закрывает корпус'},
+  bblock:   {id:'bblock',   kind:'defense',name:'Блок корпуса', em:'🧱', dmg:0,  st:5,   level:false, hint:'корпус и печень'},
+  slip:     {id:'slip',     kind:'defense',name:'Нырок',        em:'🌀', dmg:0,  st:8,   level:false, hint:'уводит корпус и голову'},
   step:     {id:'step',     kind:'defense',name:'Шаг назад',    em:'👣', dmg:0,  st:-10, level:false, hint:'уход + отдых'},
   crossLand:{id:'crossLand',kind:'attack', name:'Кросс',        em:'💥', dmg:50, st:6,   level:false, hint:''}
 };
@@ -332,8 +348,8 @@ var mode = 'pvp';                   // 'pvp' — два игрока на одн
 
 function newFight(){
   F = [
-    {i:0, name:'СИНИЙ', cls:'b', ico:'🔵', hp:MAX_HP, st:MAX_ST, pending:false, ko:false},
-    {i:1, name:(mode === 'cpu' ? 'CPU' : 'КРАСНЫЙ'), cls:'r', ico:'🔴', hp:MAX_HP, st:MAX_ST, pending:false, ko:false}
+    {i:0, name:'СИНИЙ', cls:'b', ico:'🔵', hp:MAX_HP, st:MAX_ST, pending:null, winded:false, ko:false},
+    {i:1, name:(mode === 'cpu' ? 'CPU' : 'КРАСНЫЙ'), cls:'r', ico:'🔴', hp:MAX_HP, st:MAX_ST, pending:null, winded:false, ko:false}
   ];
   round = 1; choices = [null,null]; pendLevel = null; lastRec = null; revealDone = false;
   bouts = []; eyesDone = false; botLastKey = null;
@@ -350,9 +366,26 @@ function resolve(atk, def){
     if(d === 'block') return {mult:CROSS_BLOCK_MULT, why:'высокий блок принял кросс — урон вдвое меньше'};
     if(d === 'step')  return {mult:1, why:'шаг назад НЕ спасает от объявленного кросса'};
     if(d === 'slip')  return {mult:1, why:'нырок не помогает против кросса'};
+    if(d === 'bblock') return {mult:1, why:'блок корпуса низко — кросс шёл в голову'};
     return {mult:1, why:'кросс дошёл без помех'};
   }
-  if(atk.id === 'cross') return null;
+  if(atk.id === 'cross' || atk.id === 'spin') return null;
+  /* Вертушка объявлена за раунд, но КУДА она пойдёт — соперник не знает.
+     У каждого уровня ровно один жёсткий ответ: под голову ныряют,
+     корпус закрывают блоком корпуса. Шаг назад её только смягчает:
+     от раскрученной ноги не убежать так же, как от объявленного кросса. */
+  if(atk.id === 'spinLand'){
+    if(atk.lvl === 'head'){
+      if(d === 'slip')   return {mult:0,  why:'нырок ушёл прямо под вертушку'};
+      if(d === 'block')  return {mult:.5, why:'высокий блок принял вертушку — половина дошла'};
+      if(d === 'step')   return {mult:.5, why:'шаг назад смягчил вертушку, но не спас'};
+      return {mult:1, why:'вертушка дошла в голову'};
+    }
+    if(d === 'bblock') return {mult:0,  why:'блок корпуса встретил вертушку'};
+    if(d === 'slip')   return {mult:.5, why:'нырок подставил корпус под вертушку'};
+    if(d === 'step')   return {mult:.5, why:'шаг назад смягчил вертушку, но не спас'};
+    return {mult:1, why:'вертушка дошла в корпус'};
+  }
   if(d === 'step') return {mult:0, why:'шаг назад разорвал дистанцию — удар не достал'};
   if(atk.id === 'jab'){
     if(atk.lvl === 'head'){
@@ -360,8 +393,9 @@ function resolve(atk, def){
       if(d === 'slip')  return {mult:1, why:'нырок уводил корпус, а удар шёл в голову'};
       return {mult:1, why:'соперник не защищался'};
     }
-    if(d === 'slip')  return {mult:0, why:'нырок увёл корпус из-под удара'};
-    if(d === 'block') return {mult:1, why:'высокий блок держал голову — корпус открыт'};
+    if(d === 'slip')   return {mult:0, why:'нырок увёл корпус из-под удара'};
+    if(d === 'bblock') return {mult:0, why:'блок корпуса принял удар'};
+    if(d === 'block')  return {mult:1, why:'высокий блок держал голову — корпус открыт'};
     return {mult:1, why:'соперник не защищался'};
   }
   if(atk.id === 'kick'){
@@ -370,8 +404,9 @@ function resolve(atk, def){
       if(d === 'slip')  return {mult:0, why:'нырок ушёл прямо под ногу'};
       return {mult:1, why:'соперник не защищался'};
     }
-    if(d === 'slip')  return {mult:0, why:'нырок закрыл корпус'};
-    if(d === 'block') return {mult:1, why:'высокий блок держал голову — корпус открыт'};
+    if(d === 'bblock') return {mult:0,  why:'блок корпуса встретил ногу'};
+    if(d === 'slip')   return {mult:.5, why:'нырок ушёл вниз — нога всё равно задела корпус'};
+    if(d === 'block')  return {mult:1,  why:'высокий блок держал голову — корпус открыт'};
     return {mult:1, why:'соперник не защищался'};
   }
   if(atk.id === 'uppercut'){
@@ -385,6 +420,7 @@ function resolve(atk, def){
     if(d === 'slip')  return UPPERCUT_PIERCES_SLIP_HEAD_ONLY
       ? {mult:0, why:'нырок ушёл вниз и закрыл корпус'}
       : {mult:1, why:'апперкот пробил нырок насквозь'};
+    if(d === 'bblock') return {mult:0, why:'блок корпуса принял апперкот'};
     if(d === 'block') return {mult:1, why:'высокий блок держал голову — корпус открыт'};
     return {mult:1, why:'соперник не защищался'};
   }
@@ -395,20 +431,23 @@ function label(c){
   if(!c) return '—';
   if(c.id === 'crossLand') return 'КРОСС ПРИЛЕТАЕТ';
   if(c.id === 'cross')     return 'Кросс — замах';
+  if(c.id === 'spinLand')  return 'ВЕРТУШКА ПРИЛЕТАЕТ' + (c.lvl === 'body' ? ' В КОРПУС' : ' В ГОЛОВУ');
+  if(c.id === 'spin')      return 'С разворота — замах';
   var a = ACT[c.id];
   return a.name + (c.lvl ? (c.lvl === 'head' ? ' в голову' : ' в корпус') : '');
 }
 
 /* просчёт раунда: оба удара считаются от состояния НА НАЧАЛО раунда */
 function resolveRound(){
-  var i, before = {hp:[F[0].hp,F[1].hp], st:[F[0].st,F[1].st], pending:[F[0].pending,F[1].pending]};
+  var i, before = {hp:[F[0].hp,F[1].hp], st:[F[0].st,F[1].st],
+                   pending:[F[0].pending,F[1].pending], winded:[F[0].winded,F[1].winded]};
   var tired = [F[0].st < LOW_ST, F[1].st < LOW_ST];
   var out = [null,null];
 
   for(i = 0; i < 2; i++){
     var mine = choices[i], A = ACT[mine.id];
     if(A.kind !== 'attack'){ out[i] = {type:'def', dmg:0}; continue; }
-    if(mine.id === 'cross'){ out[i] = {type:'windup', dmg:0}; continue; }
+    if(mine.id === 'cross' || mine.id === 'spin'){ out[i] = {type:'windup', dmg:0}; continue; }
     var r = resolve(mine, choices[1-i]);
     out[i] = {type:'atk', dmg:Math.round(dmgOf(mine) * (tired[i] ? TIRED_MULT : 1) * r.mult),
               mult:r.mult, why:r.why, tired:tired[i]};
@@ -416,6 +455,17 @@ function resolveRound(){
 
   F[1].hp = Math.max(0, F[1].hp - out[0].dmg);
   F[0].hp = Math.max(0, F[0].hp - out[1].dmg);
+
+  /* Печень. Бросок делается один раз здесь и оседает в записи раунда, поэтому
+     пересмотр и повтор боя показывают ровно тот же исход, что живой бой.
+     Блок корпуса до печени не допускает: он обнуляет любой удар по низу. */
+  var winded = [false, false];
+  for(i = 0; i < 2; i++)
+    if(out[i].type === 'atk' && out[i].dmg > 0 && choices[i].lvl === 'body'
+       && Math.random() < LIVER_CHANCE){
+      out[i].liver = true;
+      winded[1 - i] = true;
+    }
 
   /* Выносливость: своя трата за действие, чужая — выбитая ударом по корпусу.
      Считается от состояния на начало раунда, как и урон. */
@@ -430,14 +480,18 @@ function resolveRound(){
   }
   for(i = 0; i < 2; i++){
     F[i].st = Math.max(0, Math.min(MAX_ST, F[i].st - spend[i] - drain[i] + REST));
-    if(choices[i].id === 'cross')          F[i].pending = true;
-    else if(choices[i].id === 'crossLand') F[i].pending = false;
+    /* Заряд помнит не только факт, но и сам удар: у вертушки есть уровень,
+       и выбран он был ещё на замахе. */
+    if(choices[i].id === 'cross')          F[i].pending = {id:'crossLand'};
+    else if(choices[i].id === 'spin')      F[i].pending = {id:'spinLand', lvl:choices[i].lvl || 'head'};
+    else                                   F[i].pending = null;
+    F[i].winded = winded[i];               // держится ровно один следующий раунд
     if(F[i].hp <= 0) F[i].ko = true;
   }
 
   lastRec = {round:round, choices:[choices[0], choices[1]], out:out, tired:tired,
              before:before, hp:[F[0].hp,F[1].hp], st:[F[0].st,F[1].st],
-             ko:[F[0].ko, F[1].ko]};
+             winded:[F[0].winded, F[1].winded], ko:[F[0].ko, F[1].ko]};
   /* Сплит «глаза в глаза»: перед первым разменом и один раз перед решающим.
      Признак живёт в самой записи — пересмотр раунда и повтор боя показывают
      его там же и ровно столько же раз, сколько живой бой. */
@@ -491,7 +545,7 @@ function Boxer(i){
   this.footY = [new Sp(FLOOR, 190, 25), new Sp(FLOOR, 190, 25)];
   this.trail = [[], []];
   this.breath = Math.random() * 6;
-  this.charge = false; this.down = false; this.tired = false;
+  this.charge = false; this.down = false; this.tired = false; this.winded = false;
   this.J = null;
   this.solve();
 }
@@ -501,7 +555,7 @@ Boxer.prototype.reset = function(){
   this.twist.reset(0);
   this.foot[0].reset(this.base + 10 * f); this.foot[1].reset(this.base - 11 * f);
   this.footY[0].reset(FLOOR); this.footY[1].reset(FLOOR);
-  this.charge = false; this.down = false; this.tired = false;
+  this.charge = false; this.down = false; this.tired = false; this.winded = false;
   this.trail = [[], []];
   this.solve();
   this.hand[0].x.reset(this.J.neck.x + 8 * f); this.hand[0].y.reset(this.J.neck.y - 1);
@@ -596,12 +650,15 @@ function lungeLeg(b, p, hipY, sep){
    ========================================================================= */
 function driveGuard(b){
   var f = b.face, n = b.J.neck;
-  var drop = b.tired ? 3.4 : 0;                 // выдохся — руки опускаются
-  var br = Math.sin(b.breath) * (b.tired ? 1.7 : 0.75);
+  /* Печень: дыхание перехватило — боец складывается вперёд, руки уходят вниз.
+     Внешне это сильнее обычной усталости, потому что это и есть её предел. */
+  var wd = b.winded ? 1 : 0;
+  var drop = (b.tired ? 3.4 : 0) + wd * 6.5;    // выдохся — руки опускаются
+  var br = Math.sin(b.breath) * (b.tired ? 1.7 : 0.75) * (1 + wd);
   b.hx.set(b.base, 130, 21);
-  b.hy.set(HIP_Y + br, 220, 27);
-  b.lean.set(b.tired ? 0.07 : 0.02, 150, 22);
-  b.head.set(0, 260, 17);
+  b.hy.set(HIP_Y + br + wd * 5.5, 220, 27);
+  b.lean.set((b.tired ? 0.07 : 0.02) + wd * 0.30, 150, 22);
+  b.head.set(wd * 0.22, 260, 17);
   handTo(b, 0, n.x + 10 * f, n.y - 1 + drop, 190, 25);
   handTo(b, 1, n.x + 5 * f, n.y - 3.5 + drop, 190, 25);
   b.twist.set(0, 190, 25);
@@ -609,8 +666,20 @@ function driveGuard(b){
   footTo(b, 1, b.base - 11 * f, 170, 24);
 }
 
-function applyCharge(b){                        // заряженный кросс держится позой
+function chargeKind(p){ return p ? (p.id === 'spinLand' ? 'spin' : 'cross') : false; }
+
+function applyCharge(b){                        // заряженный удар держится позой
   var f = b.face, n = b.J.neck;
+  if(b.charge === 'spin'){                      // вертушка: корпус уже развёрнут спиной
+    b.twist.set(-1.0, 170, 23);
+    b.lean.set(-0.26, 150, 22);
+    b.hx.set(b.base - 6 * f, 130, 21);
+    handTo(b, 0, n.x - 2 * f, n.y + 2, 200, 25);
+    handTo(b, 1, n.x - 16 * f, n.y - 1, 200, 25);
+    footTo(b, 0, b.base + 4 * f, 170, 24);
+    footTo(b, 1, b.base - 19 * f, 170, 24);
+    return;
+  }
   handTo(b, 1, n.x - 13 * f, n.y + 2, 210, 26);
   b.twist.set(-0.55, 190, 24);                  // плечи скручены назад — пружина взведена
   b.lean.set(-0.20, 150, 22);
@@ -696,7 +765,7 @@ function driveActor(i, t, rec){
       b.twist.set(-0.55, 180, 24);
       b.lean.set(-0.21, 150, 22); b.hx.set(b.base - 4 * f, 130, 21);
       footTo(b, 1, b.base - 15 * f, 170, 24);
-      if(t > 560) b.charge = true;
+      if(t > 560) b.charge = 'cross';
       break;
 
     case 'crossLand':
@@ -746,11 +815,52 @@ function driveActor(i, t, rec){
       }
       break;
 
+    case 'spin':                                     // замах: корпус разворачивается спиной
+      b.charge = 'spin';
+      applyCharge(b);
+      break;
+
+    case 'spinLand':
+      if(t < 300){                                   // добирает разворот, нога уходит назад и вверх
+        b.charge = 'spin';
+        b.twist.set(-1.3, 220, 23);
+        b.lean.set(-0.30, 190, 22);
+        footToXY(b, 1, b.base - 26 * f, FLOOR - 26, 520, 30);
+        handTo(b, 0, n.x - 4 * f, n.y + 3, 220, 25);
+        handTo(b, 1, n.x - 17 * f, n.y - 1, 220, 25);
+      } else if(t < 820){                            // нога обходит по дуге и приходит в цель
+        p = targetPoint(i, rec);
+        var hiS = HIP_Y + (kl === 'head' ? -8 : 0);
+        var sx = lungeLeg(b, p, hiS, kl === 'head' ? 22 : 30);
+        b.hy.set(hiS, 260, 24);
+        b.hx.set(sx, 250, 23);
+        b.twist.set(1.4, 330, 21);
+        b.lean.set(kl === 'head' ? -0.46 : -0.24, 260, 21);
+        footToXY(b, 1, p.x, p.y, 1050, 40);
+        footTo(b, 0, sx + 4 * f, 230, 24);
+        handTo(b, 0, n.x + 13 * f, n.y + 6, 240, 25);
+        handTo(b, 1, n.x - 15 * f, n.y - 3, 240, 25);
+        b.charge = false;
+      } else if(t < 1220){                           // приземление
+        b.twist.set(0, 240, 24);
+        footToXY(b, 1, b.base - 13 * f, FLOOR, 430, 30);
+        b.charge = false;
+      }
+      break;
+
     case 'block':
       if(t > 90 && t < 980){                         // обе перчатки к лицу, локти внутрь
         handTo(b, 0, n.x + 5.5 * f, n.y - 3.5, 330, 27);
         handTo(b, 1, n.x - 0.5 * f, n.y - 4.5, 330, 27);
         b.lean.set(0.12, 210, 24); b.hy.set(HIP_Y + 2.5, 220, 26);
+      }
+      break;
+
+    case 'bblock':
+      if(t > 90 && t < 980){                         // локти вниз, перчатки закрывают низ
+        handTo(b, 0, n.x + 7 * f, n.y + 14, 330, 27);
+        handTo(b, 1, n.x + 1 * f, n.y + 15, 330, 27);
+        b.lean.set(0.20, 210, 24); b.hy.set(HIP_Y + 5, 220, 26);
       }
       break;
 
@@ -772,7 +882,7 @@ function driveActor(i, t, rec){
       }
       break;
   }
-  if(b.charge && c.id === 'cross' && t >= 560) applyCharge(b);
+  if(b.charge === 'cross' && c.id === 'cross' && t >= 560) applyCharge(b);
 }
 
 /* Тяжёлый ли это момент: только на них передаём тело физике.
@@ -782,7 +892,7 @@ function heavyMode(rec, i){
   var o = rec.out[i], c = rec.choices[i], j = 1 - i;
   if(o.type !== 'atk' || o.dmg <= 0) return null;
   if(rec.hp[j] <= 0) return 'down';
-  if(o.mult === 1 && (c.id === 'uppercut' || c.id === 'crossLand' || c.id === 'kick')) return 'stagger';
+  if(o.mult === 1 && (c.id === 'uppercut' || c.id === 'crossLand' || c.id === 'kick' || c.id === 'spinLand')) return 'stagger';
   if(rec.hp[j] < 20) return 'stagger';
   return null;
 }
@@ -794,7 +904,7 @@ function applyImpact(rec){
     var o = rec.out[i], j = 1 - i, a = B[i], d = B[j], c = rec.choices[i];
     if(o.type === 'windup'){ popAt(a.J.arms[1].hand.x, a.J.arms[1].hand.y - 12, 'ЗАМАХ', 'info'); continue; }
     if(o.type !== 'atk') continue;
-    var lvl = c.lvl || 'head', f = a.face, kick = c.id === 'kick';
+    var lvl = c.lvl || 'head', f = a.face, kick = c.id === 'kick' || c.id === 'spinLand';
     var hp = kick ? a.J.legs[1].foot : a.J.arms[c.id === 'jab' ? 0 : 1].hand;
 
     if(o.dmg > 0){
@@ -831,6 +941,16 @@ function applyImpact(rec){
       burst(hp.x, hp.y, 16 + (k * 20 | 0), k);
       if(!mode) spawnRays(hp.x, hp.y, 4, f > 0 ? 0 : Math.PI, '#ffd48a');
       popAt(hp.x, hp.y - 24, '−' + o.dmg, o.mult < 1 ? 'half' : 'dmg');
+      if(o.liver){                                   // точно в печень: дыхание выбито
+        popAt(d.J.hip.x, d.J.hip.y - 26, '🫁 ПЕЧЕНЬ!', 'half');
+        sndLiver();
+        d.lean.v += 9.5; d.hy.v += 52; d.head.v += 4.2;
+        d.hand[0].y.v += 40; d.hand[1].y.v += 36;
+        freeze += 130; shake = Math.max(shake, 6);
+        slowT = RM ? 0 : Math.max(slowT, 420);
+        spawnRays(hp.x, hp.y, 8, f > 0 ? 0 : Math.PI, '#ffb46a');
+        seqExtend(420);
+      }
       freeze += 55 + 55 * k;
       shake = Math.max(shake, 2.6 + 5.4 * k);
       if(rag) shake = Math.max(shake, 7);
@@ -995,6 +1115,10 @@ function impulseFor(id, lvl, mode, back){
     return lvl === 'body'                          // в корпус — складывается вперёд
       ? {head:{x:back * 2.0, y:.4}, hspin:-back * .70, torso:{x:back * 4.6, y:1.4}, tspin:-back * .75, sup:[.05, .005], feet:.20}
       : {head:{x:back * 5.5, y:-1.0}, hspin:back * 1.1, torso:{x:back * 4.5, y:-.5}, tspin:back * .60, sup:[.022, .0035], feet:.10};
+  if(id === 'spinLand')                            // вертушка: разгон по дуге, сносит с ног
+    return lvl === 'body'
+      ? {head:{x:back * 3.0, y:.2}, hspin:-back * .6, torso:{x:back * 6.6, y:1.2}, tspin:-back * .8, sup:[.06, .007], feet:.26}
+      : {head:{x:back * 7.4, y:-1.6}, hspin:back * 1.6, torso:{x:back * 5.2, y:-1.0}, tspin:back * .9, sup:[.024, .0035], feet:.10};
   if(id === 'kick')                                // нога тяжелее руки: сносит целиком, а не крутит голову
     return lvl === 'body'
       ? {head:{x:back * 2.4, y:.2}, hspin:-back * .5, torso:{x:back * 5.4, y:1.0}, tspin:-back * .6, sup:[.05, .006], feet:.22}
@@ -2391,9 +2515,10 @@ function snapEnd(rec){
   ragResetAll();
   for(i = 0; i < 2; i++){
     disp[i].hp = rec.hp[i]; disp[i].st = rec.st[i];
-    B[i].charge = (rec.choices[i].id === 'cross');
+    B[i].charge = rec.choices[i].id === 'cross' ? 'cross' : (rec.choices[i].id === 'spin' ? 'spin' : false);
     B[i].down = !!rec.ko[i];
     B[i].tired = rec.st[i] < LOW_ST;
+    B[i].winded = !!rec.winded[i];
   }
   for(var n = 0; n < 40; n++){ driveIdle(); settle(1 / 60); }
   ragResetAll();
@@ -2455,7 +2580,9 @@ function paintRounds(){
   el.innerHTML = h;
 }
 function paintRing(){
-  if(phase !== 'replay') for(var i = 0; i < 2; i++) B[i].tired = F[i].st < LOW_ST && !F[i].ko;
+  if(phase !== 'replay') for(var i = 0; i < 2; i++){
+    B[i].tired = F[i].st < LOW_ST && !F[i].ko; B[i].winded = F[i].winded && !F[i].ko;
+  }
   ring.classList.toggle('full', (phase === 'reveal' && revealDone) || phase === 'over');
   ring.classList.toggle('cinema', phase === 'replay' || (phase === 'reveal' && !revealDone));
   ring.classList.toggle('slim', phase === 'choose');
@@ -2480,6 +2607,7 @@ function pushLog(rec){
     else if(o.type === 'windup') tag = '⚡ замах кроссом — сработает в раунде ' + (rec.round + 1);
     else if(o.dmg === 0)         tag = 'мимо (' + o.why + ')';
     else                         tag = '−' + o.dmg + (o.stHit ? ' и −' + o.stHit + ' вын.' : '') +
+                                       (o.liver ? ' 🫁 ПЕЧЕНЬ' : '') +
                                        ' (' + o.why + ')' + (o.tired ? ' [выдохся]' : '');
     txt += '<div class="l"><b class="' + F[i].cls + '">' + F[i].ico + ' ' + F[i].name + '</b>: ' +
            label(rec.choices[i]) + ' → ' + tag + '</div>';
@@ -2527,23 +2655,30 @@ function screenHandoff(){
     '<button class="btn ' + (active === 0 ? 'blue' : 'red') + ' big" data-go="choose">Я ' + me.ico + ' ' + me.name + ' — ОТКРЫТЬ ВЫБОР</button>';
 }
 
-function actBtn(id, wide){
+function actBtn(id, wide, off){
   var a = ACT[id];
+  var hint = off ? 'нечем дышать' : a.hint;
   var inner = wide
-    ? '<span class="em">' + a.em + '</span><span class="col"><span class="t">' + a.name + '</span><span class="s">' + a.hint + '</span></span>'
-    : '<span class="em">' + a.em + '</span><span class="t">' + a.name + '</span><span class="s">' + a.hint + '</span>';
+    ? '<span class="em">' + a.em + '</span><span class="col"><span class="t">' + a.name + '</span><span class="s">' + hint + '</span></span>'
+    : '<span class="em">' + a.em + '</span><span class="t">' + a.name + '</span><span class="s">' + hint + '</span>';
   return '<button class="act ' + (a.kind === 'attack' ? 'atk' : 'def') + (wide ? ' wide' : '') +
-         '" data-pick="' + id + '">' + inner + '</button>';
+         (off ? ' off' : '') + '"' + (off ? '' : ' data-pick="' + id + '"') + '>' + inner + '</button>';
 }
 
 function screenChoose(){
   var me = F[active];
   var warn = me.st < LOW_ST
     ? '<div class="card"><div class="warnline">😮‍💨 Выносливость ' + me.st + ' — атака в этом раунде бьёт на треть слабее. Стоит отдохнуть.</div></div>' : '';
+  /* Печень выбивает дыхание: раунд нельзя ни закрыться, ни разорвать
+     дистанцию — остаётся нырять или бить. */
+  var wd = me.winded;
+  if(wd) warn += '<div class="card"><div class="warnline">🫁 Удар в печень — дыхание перехватило. ' +
+                 'В этом раунде не закрыться и не отойти, только нырок или атака.</div></div>';
   return '<h2>' + me.ico + ' ' + me.name + ', ТВОЙ ХОД</h2>' + warn +
     '<div class="hdr">Атака</div><div class="grid">' + actBtn('jab') + actBtn('uppercut') +
-      actBtn('kick') + actBtn('cross') + '</div>' +
-    '<div class="hdr">Защита</div><div class="grid">' + actBtn('block') + actBtn('slip') + actBtn('step', true) + '</div>';
+      actBtn('kick') + actBtn('spin') + actBtn('cross', true) + '</div>' +
+    '<div class="hdr">Защита</div><div class="grid">' + actBtn('block', false, wd) +
+      actBtn('bblock', false, wd) + actBtn('slip') + actBtn('step', false, wd) + '</div>';
 }
 
 function screenLevel(){
@@ -2553,7 +2688,9 @@ function screenLevel(){
     '<div class="sub">' + (pendLevel === 'uppercut'
       ? 'В голову — пробивает нырок, но гасится высоким блоком. В корпус — проходит сквозь высокий блок.'
       : pendLevel === 'kick'
-      ? 'В голову — высокий блок гасит только половину, но нырок уводит из-под ноги. В корпус — проходит сквозь блок.'
+      ? 'В голову — высокий блок гасит только половину, но нырок уводит из-под ноги. В корпус — проходит сквозь высокий блок.'
+      : pendLevel === 'spin'
+      ? 'Прилетит в следующем раунде, но соперник не узнает куда. В голову спасает только нырок, в корпус — только блок корпуса.'
       : 'В голову — гасится высоким блоком. В корпус — гасится нырком.') + '</div>' +
     '<button class="btn ' + col + ' big" data-lvl="head">В ГОЛОВУ<br><span class="s">' + dh + ' урона</span></button>' +
     '<button class="btn ' + col + ' big" data-lvl="body">В КОРПУС<br><span class="s">' + db +
@@ -2828,6 +2965,15 @@ function sndStare(){
 /* У каждой врезки свой голос — по тому, что на кадре происходит:
    промах звучит воздухом без удара, принятый блок — плотно и глухо,
    а прошедшие кросс с апперкотом и нокаут бьют сабом и трещиной. */
+/* Печень: не звонкий шлепок, а глухой низ с длинным выдохом. */
+function sndLiver(){
+  if(!AC) return;
+  var t = AC.currentTime;
+  tone('sine', 132, 46, t, .30, .95);
+  tone('sine', 76, 34, t + .01, .38, .8);
+  hiss('lowpass', 520, 150, t, .34, .5, .8);
+  hiss('bandpass', 700, 300, t + .16, .5, .16, .9);   // выдох сквозь зубы
+}
 function sndCut(id){
   if(!AC) return;
   var t = AC.currentTime;
@@ -3019,6 +3165,8 @@ function keyToChoice(k){
   if(k === 'upB')  return {id:'uppercut', lvl:'body'};
   if(k === 'kickH') return {id:'kick', lvl:'head'};
   if(k === 'kickB') return {id:'kick', lvl:'body'};
+  if(k === 'spinH') return {id:'spin', lvl:'head'};
+  if(k === 'spinB') return {id:'spin', lvl:'body'};
   return {id:k};                                   // cross / block / slip / step
 }
 function pickWeightedKey(w){
@@ -3033,19 +3181,29 @@ function pickWeightedKey(w){
 }
 function botChoose(){
   var me = F[1], op = F[0], tiredMe = me.st < LOW_ST;
-  var w = {jabH:20, jabB:14, upH:10, upB:7, kickH:7, kickB:6, cross:7, block:16, slip:12, step:8};
+  var w = {jabH:20, jabB:14, upH:10, upB:7, kickH:7, kickB:6, spinH:4, spinB:4, cross:7,
+           block:12, bblock:10, slip:12, step:8};
+  if(me.winded){ w.block = 0; w.bblock = 0; w.step = 0; w.slip *= 1.8; }   // дышать нечем — не закрыться
   if(tiredMe){                                     // свои удары всё равно бьют на треть слабее — беречь силы
     w.jabH *= .5; w.jabB *= .5; w.upH *= .4; w.upB *= .4; w.cross *= .25;
     w.kickH *= .15; w.kickB *= .15;                // нога дороже всего, на нуле её не бросают
+    w.spinH *= .1; w.spinB *= .1;
     w.step *= 2.6; w.block *= 1.15; w.slip *= 1.15;
-  } else if(me.st < 45){ w.kickH *= .5; w.kickB *= .5; w.cross *= .7; }
+  } else if(me.st < 45){ w.kickH *= .5; w.kickB *= .5; w.spinH *= .4; w.spinB *= .4; w.cross *= .7; }
   if(me.hp <= 30){ w.block *= 1.5; w.slip *= 1.5; w.step *= 1.5; w.cross *= .5; w.upH *= .75; w.upB *= .75; }
-  if(op.hp <= 30 && !tiredMe){ w.upH *= 1.7; w.upB *= 1.3; w.cross *= 1.6; w.jabH *= 1.2; w.kickH *= 1.4; }
+  if(op.hp <= 30 && !tiredMe){ w.upH *= 1.7; w.upB *= 1.3; w.cross *= 1.6; w.jabH *= 1.2;
+                               w.kickH *= 1.4; w.spinH *= 1.5; }
+  if(op.winded){ w.block = 0; w.bblock = 0; w.step = 0;        // соперник не закроется — давим
+                 w.upH *= 1.6; w.kickH *= 1.5; w.jabH *= 1.4; }
   if(op.st > 60 && me.st > 55){ w.jabB *= 1.5; w.upB *= 1.5; w.kickB *= 1.5; }   // соперник свеж — вымотать корпусом
   botHistoryBias(w);
   if(choices[0] && choices[0].id === 'crossLand'){   // публично видимый замах — честная реакция, не подглядывание
     var k = pickWeightedKey({block:w.block * 4.2, slip:w.slip * .5, step:w.step * .5, jabH:w.jabH * .3, jabB:w.jabB * .3});
     botLastKey = k; return keyToChoice(k);
+  }
+  if(choices[0] && choices[0].id === 'spinLand'){    // видно, что заряжено, но не видно куда — гадает, как и человек
+    var k2 = pickWeightedKey({slip:w.slip * 3, bblock:w.bblock * 3, block:w.block * .6, step:w.step * .8, jabH:w.jabH * .4});
+    botLastKey = k2; return keyToChoice(k2);
   }
   if(botLastKey && w[botLastKey] != null) w[botLastKey] *= .6;  // не долбить один и тот же выбор второй раз подряд
   var key = pickWeightedKey(w);
@@ -3055,7 +3213,7 @@ function botChoose(){
 
 function startRound(){
   choices = [null,null]; pendLevel = null; revealDone = false;
-  for(var i = 0; i < 2; i++) if(F[i].pending) choices[i] = {id:'crossLand'};
+  for(var i = 0; i < 2; i++) if(F[i].pending) choices[i] = F[i].pending;
   if(mode === 'cpu' && !choices[1]) choices[1] = botChoose();
   nextChooser(0);
 }
@@ -3099,9 +3257,10 @@ function rewatchRound(){
   var rec = lastRec, i;
   revealDone = false; render();
   for(i = 0; i < 2; i++){
-    B[i].charge = rec.before.pending[i];
+    B[i].charge = chargeKind(rec.before.pending[i]);
     B[i].down = false;
     B[i].tired = rec.before.st[i] < LOW_ST;
+    B[i].winded = !!rec.before.winded[i];
     disp[i].hp = rec.before.hp[i]; disp[i].st = rec.before.st[i];
   }
   for(i = 0; i < 14; i++){ driveIdle(); settle(1 / 60); }
@@ -3111,7 +3270,8 @@ function rewatchRound(){
   openT = setTimeout(function(){
     runRound(rec, function(){
       for(var j = 0; j < 2; j++){                    // возвращаем настоящее состояние боя
-        B[j].down = !!F[j].ko; B[j].charge = F[j].pending; B[j].tired = F[j].st < LOW_ST;
+        B[j].down = !!F[j].ko; B[j].charge = chargeKind(F[j].pending);
+        B[j].tired = F[j].st < LOW_ST; B[j].winded = F[j].winded;
       }
       syncDisp();
       revealDone = true; render();
@@ -3135,9 +3295,10 @@ function replayNext(){
   if(replay.idx >= bouts.length){ render(); return; }
   var rec = bouts[replay.idx], i;
   for(i = 0; i < 2; i++){
-    B[i].charge = rec.before.pending[i];
+    B[i].charge = chargeKind(rec.before.pending[i]);
     B[i].down = false;
     B[i].tired = rec.before.st[i] < LOW_ST;
+    B[i].winded = !!rec.before.winded[i];
     disp[i].hp = rec.before.hp[i]; disp[i].st = rec.before.st[i];
   }
   for(i = 0; i < 14; i++) { driveIdle(); settle(1/60); }
@@ -3155,7 +3316,8 @@ function replayStop(){
   dark = 0; darkT = 0; cineT = 0; cineFollow = -1; koCardT = 0; lb = 0; cut = null; cutQ = null;
   for(var g = 0; g < 2; g++) B[g].gh = [];
   ragResetAll();
-  for(var i = 0; i < 2; i++){ B[i].down = !!F[i].ko; B[i].charge = false; B[i].tired = F[i].st < LOW_ST; }
+  for(var i = 0; i < 2; i++){ B[i].down = !!F[i].ko; B[i].charge = false;
+                              B[i].tired = F[i].st < LOW_ST; B[i].winded = F[i].winded; }
   syncDisp();
   for(var n = 0; n < 40; n++){ driveIdle(); settle(1/60); }
   phase = 'over'; musicPlay('ko'); render();
@@ -3217,7 +3379,7 @@ function syncTags(){
    ========================================================================= */
 for(var ti = 0; ti < 2; ti++){
   var tg = document.createElement('div');
-  tg.className = 'tag'; tg.textContent = '⚡ ЗАРЯЖЕН КРОСС';
+  tg.className = 'tag'; tg.textContent = '⚡ ЗАРЯЖЕН ТЯЖЁЛЫЙ';
   tg.style.display = 'none'; tg._on = false;
   fxL.appendChild(tg); TAG.push(tg);
 }
