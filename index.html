@@ -386,6 +386,14 @@ var REST = 8;           // сколько выносливости возвра�
 var BODY_DMG = 0.72;
 var BODY_ST  = 1.1;     // доля урона удара, которую корпус снимает выносливостью
 var KICK_WHIFF = 12;    // промах ногой дороже промаха рукой — за это её и держим в узде
+/* Апперкот держался в лидерах с самого бокса (0.895 в турнире стратегий):
+   контры у него ровно те же, что у прямого, а урона почти вдвое больше.
+   Замерено, что именно чинит, а что нет: стоимость 22 → 26 сдвинула долю
+   побед на 0.005 (бои коротки, до измора не доходят), штраф за промах — ещё
+   на 0.006. Решает урон: 35 → 32 опускает апперкот до 0.767, вровень с ногой
+   (0.774). Штраф за промах оставлен — он даёт удару честную цену за риск,
+   даже если сам по себе баланс не решает. */
+var UPPER_WHIFF = 16;
 var LIVER_CHANCE = 0.2; // шанс, что удар по корпусу придёт точно в печень
 
 /* Спорные места правил вынесены сюда — переключаются одной строкой.
@@ -401,7 +409,7 @@ var CROSS_BLOCK_MULT = 0.5;
 
 var ACT = {
   jab:      {id:'jab',      kind:'attack', name:'Прямой',       em:'👊', dmg:20, st:14,  level:true,  hint:'быстрый · 20/13'},
-  uppercut: {id:'uppercut', kind:'attack', name:'Апперкот',     em:'🥊', dmg:35, st:22,  level:true,  hint:'бьёт нырок · 35/23'},
+  uppercut: {id:'uppercut', kind:'attack', name:'Апперкот',     em:'🥊', dmg:32, st:26,  level:true,  hint:'бьёт нырок · 32/23'},
   kick:     {id:'kick',     kind:'attack', name:'Удар ногой',   em:'🦵', dmg:32, st:30,  level:true,  hint:'ломает блок · 32/21'},
   spin:     {id:'spin',     kind:'attack', name:'С разворота',   em:'🌪️', dmg:58, st:30,  level:true,  hint:'замах на раунд · 58/42'},
   spinLand: {id:'spinLand', kind:'attack', name:'С разворота',   em:'🌪️', dmg:58, st:10,  level:true,  hint:''},
@@ -716,6 +724,7 @@ function resolveRound(){
       out[i].stHit = drain[1-i];
     }
     if(out[i].dmg === 0 && choices[i].id === 'kick') spend[i] += KICK_WHIFF;   // провалился за ногой
+    if(out[i].dmg === 0 && choices[i].id === 'uppercut') spend[i] += UPPER_WHIFF;
   }
   for(i = 0; i < 2; i++){
     F[i].st = Math.max(0, Math.min(MAX_ST, F[i].st - spend[i] - drain[i] + REST));
@@ -1029,6 +1038,7 @@ function resolveRoundMMA(){
       out[i].stHit = drain[1 - i];
     }
     if(out[i].type === 'atk' && out[i].dmg === 0 && choices[i].id === 'kick') spend[i] += KICK_WHIFF;
+    if(out[i].type === 'atk' && out[i].dmg === 0 && choices[i].id === 'uppercut') spend[i] += UPPER_WHIFF;
     if(out[i].type === 'grap' && choices[i].id === 'shoot' && !out[i].ok) spend[i] += TD_FAIL_ST;
   }
   var bonus = [0, 0];
@@ -1258,56 +1268,113 @@ function setRP(pos, top){ RP.pos = pos; RP.top = top; }
 /* bHy/tHy — насколько таз выше настила; tOff — где верхний относительно
    лежащего, по направлению его ног; bFoot/bFy — куда уходят ступни нижнего. */
 var GPOSE = {
-  guard:{bLean:-1.40, bHy:8,  bFoot:[14, 10], bFy:[14, 18], tOff: 11, tLean:0.44, tHy:18},
+  guard:{bLean:-1.40, bHy:8,  bFoot:[14, 10], bFy:[14, 18], tOff:  8, tLean:0.62, tHy:17},
   side: {bLean:-1.50, bHy:6,  bFoot:[21, 17], bFy:[1, 4],   tOff:  4, tLean:0.82, tHy:13},
   mount:{bLean:-1.52, bHy:5,  bFoot:[23, 19], bFy:[0, 1],   tOff: -3, tLean:0.08, tHy:20},
-  back: {bLean:-0.48, bHy:14, bFoot:[17, 12], bFy:[0, 0],   tOff:-14, tLean:0.14, tHy:16}
+  back: {bLean: 0.44, bHy:18, bFoot:[13,  8], bFy:[0, 0],   tOff:-17, tLean:-0.10, tHy:13}
 };
 var GCX = 84;                                  // середина партера на настиле
 
+/* Тянемся к точке на ЧУЖОМ теле, но не дальше, чем достаёт конечность:
+   иначе кисть повисает в воздухе, а рука вытягивается в палку. */
+function graspTo(b, k, tx, ty, kk, dd){
+  var sh = b.J.sh[k], dx = tx - sh.x, dy = ty - sh.y, d = Math.sqrt(dx * dx + dy * dy), m = REACH * .94;
+  if(d > m){ tx = sh.x + dx / d * m; ty = sh.y + dy / d * m; }
+  handTo(b, k, tx, ty, kk, dd);
+}
+function hookTo(b, k, tx, ty, kk, dd){
+  var hp = b.J.legs[k].hip, dx = tx - hp.x, dy = ty - hp.y, d = Math.sqrt(dx * dx + dy * dy), m = LEG_REACH * .94;
+  if(d > m){ tx = hp.x + dx / d * m; ty = hp.y + dy / d * m; }
+  footToXY(b, k, tx, ty, kk, dd);
+}
+function mixPt(a, c, e){ return {x:a.x + (c.x - a.x) * e, y:a.y + (c.y - a.y) * e}; }
+
+/* Позы партера. Ключевое отличие от прежней версии: конечности целятся
+   в СУСТАВЫ СОПЕРНИКА, а не в точки на настиле. Закрытый гард — это ноги,
+   сомкнутые за поясом верхнего; сайд-контроль — рука, продетая под шею;
+   маунт — колени, прижатые к рёбрам. Пока целями были абсолютные координаты,
+   поза могла быть только приблизительно похожей. Чужой скелет берётся с
+   прошлого кадра — при жёсткости пружин 160–200 отставание не видно. */
 function driveGround(b){
-  var g = GPOSE[RP.pos] || GPOSE.guard, bot = 1 - RP.top;
-  /* Разворот перестал быть свойством индекса бойца: тот, кто взял спину,
-     смотрит В ТУ ЖЕ сторону, что и соперник, а не ему в лицо. */
+  var g = GPOSE[RP.pos] || GPOSE.guard, bot = 1 - RP.top, pos = RP.pos;
   B[bot].face = B[bot].face0;
-  var bf = B[bot].face, bx = GCX + 6 * bf, n;
-  if(b.i !== bot) b.face = (RP.pos === 'back') ? bf : b.face0;
+  var bf = B[bot].face, bx = GCX + 6 * bf;
+  var me = b.i === bot ? 'bot' : 'top', O = B[b.i === bot ? RP.top : bot].J;
+  if(me === 'top') b.face = (pos === 'back') ? bf : b.face0;
+  var f = b.face;
   var br = Math.sin(b.breath) * (b.tired ? 1.5 : .6) * (b.winded ? 2 : 1);
+  /* Возня. В партере никто не стоит неподвижно: вес переваливается,
+     нижний подбивает бёдрами, верхний доседает. Без этого пара выглядит
+     двумя замершими куклами, что бы ни происходило по правилам. */
+  var w1 = Math.sin(b.breath * .8), w2 = Math.sin(b.breath * 1.27 + 1.1);
   b.twist.set(0, 170, 24); b.turned = 0;
-  if(b.i === bot){                              // нижний: спина на настиле, колени к сопернику
+
+  if(me === 'bot'){
     b.base = bx;
-    b.hx.set(bx, 120, 20);
-    b.hy.set(FLOOR - g.bHy + br, 170, 24);
-    b.lean.set(g.bLean, 120, 20);
-    b.head.set(RP.pos === 'back' ? -0.08 : 0.58, 200, 17);   // подбородок прижат, смотрит на верхнего
-    b.solve(); n = b.J.neck;
-    handTo(b, 0, n.x + 10 * bf, n.y - 2, 170, 24);
-    handTo(b, 1, n.x + 5 * bf,  n.y - 6, 170, 24);
-    footToXY(b, 0, bx + g.bFoot[0] * bf, FLOOR - g.bFy[0], 160, 23);
-    footToXY(b, 1, bx + g.bFoot[1] * bf, FLOOR - g.bFy[1], 160, 23);
+    b.hx.set(bx + w1 * 1.3, 120, 20);
+    b.hy.set(FLOOR - g.bHy + br + w2 * .7, 170, 24);
+    b.lean.set(g.bLean + w2 * .045, 120, 20);
+    b.head.set(pos === 'back' ? 0.30 : 0.58, 200, 17);
+    b.solve();
+    if(pos === 'back'){
+      /* Руки нижнего дерутся с рукой на горле — у своей же шеи, а не над
+         головой: прежняя цель уводила их за затылок и связывала в узел. */
+      var ch = O.arms[0].hand, cel = O.arms[0].el;
+      graspTo(b, 0, ch.x - 2 * bf, ch.y + 6, 180, 24);            // держит предплечье, а не своё лицо
+      graspTo(b, 1, (ch.x + cel.x) / 2, (ch.y + cel.y) / 2 + 7, 180, 24);
+      hookTo(b, 0, bx + g.bFoot[0] * bf, FLOOR - g.bFy[0], 160, 23);
+      hookTo(b, 1, bx + g.bFoot[1] * bf, FLOOR - g.bFy[1], 160, 23);
+    } else if(pos === 'guard'){
+      /* Закрытый гард: щиколотки сомкнуты ЗА поясом верхнего, руки держат
+         его ближнюю руку и воротник — отсюда и вся борьба за захваты. */
+      hookTo(b, 0, O.hip.x + 8 * bf, O.hip.y + 4, 165, 23);
+      hookTo(b, 1, O.hip.x + 3 * bf, O.hip.y + 9, 165, 23);
+      graspTo(b, 0, O.arms[0].el.x, O.arms[0].el.y - 2, 175, 24);
+      graspTo(b, 1, O.neck.x + 2 * bf, O.neck.y + 4, 175, 24);
+    } else {
+      /* Из-под сайда и маунта нижний ставит рамки в шею и упирается в таз. */
+      graspTo(b, 0, O.neck.x + (pos === 'mount' ? 0 : 1) * bf, O.neck.y + 4, 175, 24);
+      graspTo(b, 1, O.hip.x - 4 * bf, O.hip.y + 1, 175, 24);
+      hookTo(b, 0, bx + (g.bFoot[0] + w1 * 1.6) * bf, FLOOR - g.bFy[0], 160, 23);
+      hookTo(b, 1, bx + (g.bFoot[1] + w2 * 1.4) * bf, FLOOR - g.bFy[1], 160, 23);
+    }
     return;
   }
-  var tx = bx + g.tOff * bf, f = b.face;        // верхний: над ним, вес на руках и коленях
-  if(RP.pos === 'back'){ tx = bx + g.tOff * bf; }
+
+  var tx = bx + g.tOff * bf;
   b.base = tx;
-  b.hx.set(tx, 120, 20);
-  b.hy.set(FLOOR - g.tHy + br * .6, 170, 24);
-  b.lean.set(g.tLean, 120, 20);
+  b.hx.set(tx + w2 * .9, 120, 20);
+  b.hy.set(FLOOR - g.tHy + br * .6 + w1 * 1.0, 170, 24);
+  b.lean.set(g.tLean + w1 * .04, 120, 20);
   b.head.set(0.20, 200, 17);
-  b.solve(); n = b.J.neck;
-  if(RP.pos === 'back'){
-    /* Руки идут не вниз, а вперёд через шею: это и есть заход на удушение. */
-    var oh = B[bot].J.head;
-    handTo(b, 0, oh.x + 1 * f, oh.y + 8, 170, 24);
-    handTo(b, 1, oh.x - 7 * f, oh.y + 9, 170, 24);
-    footToXY(b, 0, tx + 13 * f, FLOOR, 160, 23);
+  b.solve();
+  if(pos === 'back'){
+    /* Заход на удушение: предплечье ложится под подбородок, вторая рука
+       замыкает захват, а стопы крюками заходят изнутри бёдер соперника. */
+    graspTo(b, 0, O.neck.x - 7 * bf, O.neck.y + 3, 175, 24);      // предплечье поперёк горла
+    graspTo(b, 1, O.neck.x - 1 * bf, O.neck.y + 8, 175, 24);      // вторая замыкает захват
+    hookTo(b, 0, O.legs[0].knee.x + 2 * bf, O.legs[0].knee.y + 2, 160, 23);
     footToXY(b, 1, tx - 6 * f, FLOOR, 160, 23);
     return;
   }
-  handTo(b, 0, n.x + 12 * f, n.y + 7, 170, 24);
-  handTo(b, 1, n.x + 6 * f,  n.y + 4, 170, 24);
-  footToXY(b, 0, tx + 9 * f, FLOOR, 160, 23);
-  footToXY(b, 1, tx - 8 * f, FLOOR, 160, 23);
+  var chest = mixPt(O.hip, O.neck, .6);
+  if(pos === 'guard'){
+    graspTo(b, 0, chest.x + 4 * bf, chest.y - 3, 175, 24);         // давит в грудь
+    graspTo(b, 1, mixPt(O.hip, chest, .2).x, O.hip.y - 4, 175, 24); // вторая держит пояс
+    footToXY(b, 0, tx + 9 * f, FLOOR, 160, 23);
+    footToXY(b, 1, tx - 7 * f, FLOOR, 160, 23);
+  } else if(pos === 'side'){
+    graspTo(b, 1, O.neck.x - 5 * bf, O.neck.y + 2, 175, 24);       // рука продета под шею
+    graspTo(b, 0, O.hip.x + 5 * bf, O.hip.y - 3, 175, 24);         // вторая через таз
+    footToXY(b, 0, tx + 13 * f, FLOOR, 160, 23);                   // ноги разбросаны в упор
+    footToXY(b, 1, tx - 11 * f, FLOOR, 160, 23);
+  } else {
+    graspTo(b, 0, chest.x + 6 * bf, chest.y - 4, 175, 24);         // маунт: одна держит грудь
+    var nk = b.J.neck;
+    graspTo(b, 1, nk.x - 10 * bf, nk.y + 1 + w2 * 1.5, 175, 24);   // вторая взведена у плеча
+    footToXY(b, 0, O.hip.x + 11 * bf, FLOOR, 160, 23);             // колени прижаты к рёбрам
+    footToXY(b, 1, O.hip.x - 7 * bf, FLOOR, 160, 23);
+  }
 }
 
 function driveClinchPose(b){
@@ -1322,11 +1389,47 @@ function driveClinchPose(b){
   b.twist.set(0, 180, 24);
   b.turned = 0;
   b.solve(); n = b.J.neck;
+  /* Здесь цели намеренно остаются своими, а не чужими суставами: бойцы стоят
+     грудь в грудь, и руки, нацеленные на чужую шею, складываются вплотную —
+     переплетение перестаёт читаться. Сцепление даёт глубина, а не цель. */
   handTo(b, 0, n.x + 16 * f, n.y - 5, 180, 24);      // захват за шею соперника
   handTo(b, 1, n.x + 12 * f, n.y + 1, 180, 24);
   footTo(b, 0, cx + 8 * f, 170, 24);
   footTo(b, 1, cx - 9 * f, 170, 24);
 }
+
+/* Подпись движения у каждого приёма своя. Раньше свип, проход, вставание,
+   заход за спину и сброс спины играли ОДИН И ТОТ ЖЕ рывок тазом — восемь
+   разных техник выглядели одинаково, и партер читался как возня без смысла.
+   hy — куда идёт таз (минус вверх), hx — вдоль своего направления, lean —
+   наклон корпуса, tw — скрутка плеч. Флаги: plant — упор в настил обеими
+   ступнями (мост), swing — перенос дальней ноги через соперника, post —
+   упор рукой в настил (подъём в стойку). */
+var GMOVE = {
+  sweep:   {hy:-13, lean: .55, tw: .35, hx: -3, plant:1},
+  bridge:  {hy:-15, lean: .62, tw: .30, hx: -2, plant:1},
+  pass:    {hy: -4, lean: .22, tw:-.45, hx: 11},
+  tomount: {hy: -7, lean: .10, tw:-.30, hx:  4, swing:1},
+  takeback:{hy: -3, lean: .05, tw: .70, hx: -9},
+  standup: {hy:-16, lean:-.40, tw: .20, hx: -5, post:1},
+  toguard: {hy: -3, lean:-.25, tw:-.55, hx:-11},
+  reguard: {hy: -4, lean:-.20, tw:-.50, hx: -8},
+  shed:    {hy: -5, lean:-.15, tw:-.85, hx:  6},
+  spinout: {hy: -6, lean: .20, tw:-1.1, hx:  5},
+  throw:   {hy:  6, lean: .50, tw: 1.0, hx:  7},
+  escape:  {hy: -8, lean: .30, tw:-.70, hx: -4, plant:1}
+};
+
+/* Болевые и удушения тоже были одним рывком на всех. Разница между ними —
+   ЧТО берут и куда валятся: рычаг локтя выкручивает руку и падает назад,
+   треугольник перекидывает ногу через плечо, удушение тянет шею на себя. */
+var SUBMOVE = {
+  kimura:  {tw: .85, lean:-.22, hy:-2, grab:'arm'},
+  armbar:  {tw: .55, lean:-.55, hy: 5, grab:'arm',  fall:1},
+  tri:     {tw:-.30, lean: .35, hy:-6, grab:'head', legOver:1},
+  leglock: {tw: .40, lean:-.70, hy: 6, grab:'leg',  fall:1},
+  rnc:     {tw: .35, lean:-.32, hy:-1, grab:'head'}
+};
 
 /* --- движения приёмов ---------------------------------------------------
    Общая форма у всех: подготовка до T_IMPACT, всплеск в контакт, возврат
@@ -1417,16 +1520,44 @@ function driveMMA(i, t, rec){
     return;
   }
 
-  /* --- попытки приёмов: рывок всем телом --- */
+  /* --- попытки приёмов --- */
   if(A.kind === 'grap'){
-    var h = punch * (ok ? 1 : .6);
-    if(A.sub || id === 'cinch'){                      // болевой: руки тянут, корпус подкручен
-      var pull = {x:op.J.arms[0].hand.x, y:op.J.arms[0].hand.y};
-      if(id === 'rnc' || ACT[id].kind === 'grap' && id === 'rnc') pull = {x:op.J.head.x, y:op.J.head.y + 3};
-      handTo(b, 1, n.x + (pull.x - n.x) * h, n.y + (pull.y - n.y) * h, 230, 26);
-      handTo(b, 0, n.x + (pull.x - n.x) * h * .8 + 4 * f, n.y + (pull.y - n.y) * h * .8, 230, 26);
-      b.twist.set(0.5 * h, 200, 25);
-      b.lean.set(b.lean.t + .22 * h, 150, 22);
+    var h = punch * (ok ? 1 : .62);
+    var mv = GMOVE[id];
+    if(mv && id !== 'escape'){
+      b.hy.set(b.hy.t + mv.hy * h, 185, 24);
+      b.hx.set(b.hx.t + mv.hx * h * f, 135, 20);
+      b.lean.set(b.lean.t + mv.lean * h, 145, 21);
+      b.twist.set(mv.tw * h, 195, 25);
+      var nm = b.J.neck;
+      if(mv.plant){                                   // мост идёт с упора обеими ступнями
+        footToXY(b, 0, b.base + 10 * f, FLOOR, 210, 25);
+        footToXY(b, 1, b.base - 8 * f, FLOOR, 210, 25);
+      }
+      if(mv.swing) footToXY(b, 1, b.base + 5 * f, FLOOR - 19 * h, 215, 25);   // нога переносится через корпус
+      if(mv.post)  handTo(b, 1, b.base - 15 * f, FLOOR - 3, 205, 25);         // упор рукой в настил
+      handTo(b, 0, nm.x + (12 + 9 * h) * f, nm.y + (onGround() ? 4 : 0) - 6 * h, 200, 25);
+      if(!mv.post) handTo(b, 1, nm.x + (7 + 7 * h) * f, nm.y + (onGround() ? 2 : -3) - 4 * h, 200, 25);
+      return;
+    }
+    if(A.sub || id === 'cinch'){
+      var sk = id === 'cinch'
+        ? (rec.before.sub ? rec.before.sub.kind : 'kimura')          // дожимаем тот приём, что уже взят
+        : id;
+      var sm = SUBMOVE[sk] || SUBMOVE.kimura;
+      var oa = op.J.arms[0], ol = op.J.legs[0], g1, g2;
+      if(sm.grab === 'head'){ g1 = op.J.head; g2 = {x:op.J.neck.x, y:op.J.neck.y + 4}; }
+      else if(sm.grab === 'leg'){ g1 = ol.foot; g2 = ol.knee; }
+      else { g1 = oa.hand; g2 = oa.el; }
+      graspTo(b, 1, n.x + (g1.x - n.x) * h, n.y + (g1.y - n.y) * h, 235, 26);
+      graspTo(b, 0, n.x + (g2.x - n.x) * h, n.y + (g2.y - n.y) * h, 235, 26);
+      b.twist.set(sm.tw * h, 205, 25);
+      b.lean.set(b.lean.t + sm.lean * h, 150, 22);
+      b.hy.set(b.hy.t + sm.hy * h, 185, 24);
+      if(sm.legOver)                                                // треугольник: нога через плечо
+        footToXY(b, 0, op.J.neck.x - 4 * f, op.J.neck.y - 5 * h, 210, 25);
+      if(sm.fall)                                                   // рычаг доводится падением назад
+        b.hx.set(b.hx.t - 5 * h * f, 135, 20);
       return;
     }
     /* свипы, проходы, выходы — это работа таза и упор ногами */
@@ -2316,99 +2447,161 @@ function face(J, f, s, mix, turned){
   cx.restore();
 }
 
-function drawBoxer(b){
+/* =========================================================================
+   ГЛУБИНА ПО ЧАСТЯМ ТЕЛА
+   -------------------------------------------------------------------------
+   Раньше глубин было ровно две: боец целиком спереди или целиком сзади.
+   Переплести тела этим нечем — корпус залитый непрозрачный многоугольник,
+   он закрывает всё, что нарисовано до него. Теперь каждая часть получает
+   свою глубину, обе фигуры складываются в ОДИН список и сортируются: рука
+   уходит под чужой корпус, а нога того же бойца ложится поверх — сразу.
+   ========================================================================= */
+var PZ = {shadow:0, farLeg:10, farArm:20, torso:30, nearLeg:40, kickLeg:45,
+          head:50, rearArm:55, nearArm:56, rearGlove:57};
+var ZB = 1000;                                  // слой второго бойца
+
+/* Кто над кем в каждой позиции. Ключ — роль и часть тела, значение — итоговая
+   глубина; всё неназванное остаётся в своём слое. */
+var GZ = {
+  guard:{base:{bot:0, top:ZB},  o:{'b.nearLeg':1044, 'b.nearArm':1046, 't.farArm':1032}},
+  side: {base:{bot:0, top:ZB},  o:{'t.farArm':44,    'b.nearArm':1046}},
+  mount:{base:{bot:0, top:ZB},  o:{'t.farLeg':22,    'b.nearArm':1044}},
+  back: {base:{bot:ZB, top:0},  o:{'t.nearArm':1045, 't.rearGlove':1046, 't.head':1035,
+                                   't.farArm':1042,  't.nearLeg':1035}}
+};
+
+function depthFor(i){
+  if(game === 'mma' && RP.pos === 'clinch'){
+    /* В клинче руки переплетаются: у заднего бойца ближняя рука ложится
+       поверх чужого корпуса, но под его головой. */
+    var back = drawOrder[0];
+    return i === back ? {base:0, ov:{nearArm:1044, rearGlove:1045}}
+                      : {base:ZB, ov:null};
+  }
+  if(game === 'mma' && onGround() && RP.top >= 0){
+    var g = GZ[RP.pos];
+    if(g){
+      var isTop = RP.top === i, ov = {}, k, pk;
+      for(k in g.o) if(g.o.hasOwnProperty(k)){
+        pk = k.split('.');
+        if((pk[0] === 't') === isTop) ov[pk[1]] = g.o[k];
+      }
+      return {base:g.base[isTop ? 'top' : 'bot'], ov:ov};
+    }
+  }
+  return {base:drawOrder[0] === i ? 0 : ZB, ov:null};   // стойка: как было
+}
+
+function boxerParts(b, out){
   var s = SKIN[b.i], J = b.drawJ || poseOf(b), f = b.face, fw = J.fw, up = J.up;
   var dim = b.down ? 0.55 : 1;
   function mix(c){ return dim < 1 ? shadeHex(c, dim) : c; }
+  var D = depthFor(b.i);
+  function put(part, fn){ out.push({z:(D.ov && D.ov[part] != null) ? D.ov[part] : D.base + PZ[part], d:fn}); }
 
-  // тень на настиле
-  var lift = Math.max(0, (HIP_Y - J.hip.y)) / 20;
-  if(b.rd) lift = 0;
-  cx.fillStyle = 'rgba(0,0,0,.42)'; cx.globalAlpha = Math.max(.12, .42 - lift * .18);
-  cx.beginPath(); cx.ellipse(J.hip.x, FLOOR + 1.2, 15 + lift * 3, 2.9, 0, 0, 6.284); cx.fill();
-  cx.globalAlpha = 1;
-
-  // дальние конечности
   var legOut = J.legs[1].foot.y < FLOOR - 5;                // задняя нога пошла в удар
-  if(!legOut){
+  var rearOut = (J.arms[1].hand.x - J.neck.x) * f > 7;      // задняя рука вылетела вперёд
+
+  put('shadow', function(){
+    var lift = Math.max(0, (HIP_Y - J.hip.y)) / 20;
+    if(b.rd) lift = 0;
+    cx.fillStyle = 'rgba(0,0,0,.42)'; cx.globalAlpha = Math.max(.12, .42 - lift * .18);
+    cx.beginPath(); cx.ellipse(J.hip.x, FLOOR + 1.2, 15 + lift * 3, 2.9, 0, 0, 6.284); cx.fill();
+    cx.globalAlpha = 1;
+  });
+
+  if(!legOut) put('farLeg', function(){
     leg(J.legs[1], 4.7, 3.3, 2.4, mix(s.dark), mix(s.dark));
     cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
     boot(J.legs[1], f, 4.6, 2.5, mix(s.dark));
-  }
-  var rearOut = (J.arms[1].hand.x - J.neck.x) * f > 7;      // задняя рука вылетела вперёд
-  if(!rearOut){
+  });
+  if(!rearOut) put('farArm', function(){
     arm(J.arms[1], 4.2, 2.9, 2.2, mix(s.dark), mix(s.dark));
     glove(J.arms[1].hand, b.trail[1][0], unitV(J.arms[1].el, J.arms[1].hand), f,
           mix(s.gloveD), mix(s.dark), mix(s.dark), gloveR() * .93);
-  }
+  });
 
-  // корпус
-  var p = function(t, n){ t *= TS; n *= TW;
-                          return {x:J.hip.x + up.x * t + fw.x * n, y:J.hip.y + up.y * t + fw.y * n}; };
-  var g = cx.createLinearGradient(J.neck.x, J.neck.y, J.hip.x, J.hip.y + 6);
-  g.addColorStop(0, mix(s.body)); g.addColorStop(1, mix(s.bodyD));
-  cx.lineJoin = 'round';
-  cx.beginPath();
-  var a1 = p(1, 6.8), a2 = p(10, 8.8), a3 = p(20.5, 9.6), a4 = p(20.5, -8.8), a5 = p(10, -7.8), a6 = p(1, -6.2);
-  cx.moveTo(a1.x, a1.y);
-  cx.quadraticCurveTo(a2.x, a2.y, a3.x, a3.y);
-  cx.lineTo(a4.x, a4.y);
-  cx.quadraticCurveTo(a5.x, a5.y, a6.x, a6.y);
-  cx.closePath();
-  cx.strokeStyle = INK; cx.lineWidth = 4.2; cx.stroke();
-  cx.fillStyle = g; cx.fill();
+  put('torso', function(){
+    var p = function(t, n){ t *= TS; n *= TW;
+                            return {x:J.hip.x + up.x * t + fw.x * n, y:J.hip.y + up.y * t + fw.y * n}; };
+    var g = cx.createLinearGradient(J.neck.x, J.neck.y, J.hip.x, J.hip.y + 6);
+    g.addColorStop(0, mix(s.body)); g.addColorStop(1, mix(s.bodyD));
+    cx.lineJoin = 'round';
+    cx.beginPath();
+    var a1 = p(1, 6.8), a2 = p(10, 8.8), a3 = p(20.5, 9.6), a4 = p(20.5, -8.8), a5 = p(10, -7.8), a6 = p(1, -6.2);
+    cx.moveTo(a1.x, a1.y);
+    cx.quadraticCurveTo(a2.x, a2.y, a3.x, a3.y);
+    cx.lineTo(a4.x, a4.y);
+    cx.quadraticCurveTo(a5.x, a5.y, a6.x, a6.y);
+    cx.closePath();
+    cx.strokeStyle = INK; cx.lineWidth = 4.2; cx.stroke();
+    cx.fillStyle = g; cx.fill();
 
-  cx.lineCap = 'round';
-  cx.strokeStyle = 'rgba(255,255,255,.14)';          // свет по переднему краю — корпус получает объём
-  cx.lineWidth = 2.2;
-  var r1 = p(3.5, 7.6), r2 = p(12, 9.2), r3 = p(19, 8.6);
-  cx.beginPath(); cx.moveTo(r1.x, r1.y); cx.quadraticCurveTo(r2.x, r2.y, r3.x, r3.y); cx.stroke();
-  cx.strokeStyle = 'rgba(0,0,0,.2)'; cx.lineWidth = 1.5;   // грудная мышца
-  var q1 = p(17.2, 7.6), q2 = p(13.4, 4.2), q3 = p(12.4, -1.0);
-  cx.beginPath(); cx.moveTo(q1.x, q1.y); cx.quadraticCurveTo(q2.x, q2.y, q3.x, q3.y); cx.stroke();
-  cx.lineWidth = 1.2;                                      // средняя линия пресса
-  var w1 = p(11.4, 2.2), w2 = p(4.2, 2.0);
-  cx.beginPath(); cx.moveTo(w1.x, w1.y); cx.lineTo(w2.x, w2.y); cx.stroke();
+    cx.lineCap = 'round';
+    cx.strokeStyle = 'rgba(255,255,255,.14)';          // свет по переднему краю — корпус получает объём
+    cx.lineWidth = 2.2;
+    var r1 = p(3.5, 7.6), r2 = p(12, 9.2), r3 = p(19, 8.6);
+    cx.beginPath(); cx.moveTo(r1.x, r1.y); cx.quadraticCurveTo(r2.x, r2.y, r3.x, r3.y); cx.stroke();
+    cx.strokeStyle = 'rgba(0,0,0,.2)'; cx.lineWidth = 1.5;   // грудная мышца
+    var q1 = p(17.2, 7.6), q2 = p(13.4, 4.2), q3 = p(12.4, -1.0);
+    cx.beginPath(); cx.moveTo(q1.x, q1.y); cx.quadraticCurveTo(q2.x, q2.y, q3.x, q3.y); cx.stroke();
+    cx.lineWidth = 1.2;                                      // средняя линия пресса
+    var w1 = p(11.4, 2.2), w2 = p(4.2, 2.0);
+    cx.beginPath(); cx.moveTo(w1.x, w1.y); cx.lineTo(w2.x, w2.y); cx.stroke();
 
-  // шорты и пояс
-  var t1 = p(-2.5, 7.4), t2 = p(6, 7.9), t3 = p(6, -7.2), t4 = p(-2.5, -6.9);
-  cx.beginPath(); cx.moveTo(t1.x, t1.y); cx.lineTo(t2.x, t2.y); cx.lineTo(t3.x, t3.y); cx.lineTo(t4.x, t4.y);
-  cx.closePath();
-  cx.strokeStyle = INK; cx.lineWidth = 3.4; cx.stroke();
-  cx.fillStyle = mix(s.trunk); cx.fill();
-  line(p(6, 7.5), p(6, -6.8), 1.8, mix(s.trunkL), 1);
-  line(p(5.4, 7.0), p(-2.2, 6.6), 1.5, mix(s.trunkL), 1);   // лампас
+    var t1 = p(-2.5, 7.4), t2 = p(6, 7.9), t3 = p(6, -7.2), t4 = p(-2.5, -6.9);   // шорты и пояс
+    cx.beginPath(); cx.moveTo(t1.x, t1.y); cx.lineTo(t2.x, t2.y); cx.lineTo(t3.x, t3.y); cx.lineTo(t4.x, t4.y);
+    cx.closePath();
+    cx.strokeStyle = INK; cx.lineWidth = 3.4; cx.stroke();
+    cx.fillStyle = mix(s.trunk); cx.fill();
+    line(p(6, 7.5), p(6, -6.8), 1.8, mix(s.trunkL), 1);
+    line(p(5.4, 7.0), p(-2.2, 6.6), 1.5, mix(s.trunkL), 1);   // лампас
+  });
 
-  // ближняя нога, а следом бьющая задняя — поверх корпуса, чтобы удар было видно
-  leg(J.legs[0], 5.1, 3.6, 2.6, mix(s.body), mix(s.bodyD));
-  cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
-  boot(J.legs[0], f, 4.8, 2.6, mix(s.trunkL));
-  if(legOut){
+  put('nearLeg', function(){
+    leg(J.legs[0], 5.1, 3.6, 2.6, mix(s.body), mix(s.bodyD));
+    cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
+    boot(J.legs[0], f, 4.8, 2.6, mix(s.trunkL));
+  });
+  if(legOut) put('kickLeg', function(){
     leg(J.legs[1], 4.9, 3.4, 2.5, mix(s.body), mix(s.bodyD));
     cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
     boot(J.legs[1], f, 4.7, 2.55, mix(s.trunkL));
-  }
+  });
 
-  // шея и голова одним силуэтом: череп + челюсть вперёд
-  line(J.neck, {x:J.head.x, y:J.head.y + HEAD_R * .6}, 5.6, mix(s.bodyD));
-  cx.strokeStyle = INK; cx.lineWidth = 3.2; cx.fillStyle = mix(s.body);
-  cx.beginPath(); cx.ellipse(J.head.x + fw.x * 2.1 * HS, J.head.y + fw.y * 2.1 * HS + 2.9 * HS, 4.3 * HS, 3.7 * HS, 0, 0, 6.284);
-  cx.stroke(); cx.fill();
-  cx.beginPath(); cx.ellipse(J.head.x, J.head.y, HEAD_R * 1.02, HEAD_R * .96, J.ha * f, 0, 6.284);
-  cx.stroke(); cx.fill();
-  cx.fillStyle = 'rgba(255,255,255,.13)';                       // мягкий блик от софита
-  cx.beginPath(); cx.ellipse(J.head.x - fw.x * 1.4 * HS, J.head.y - 2.3 * HS, HEAD_R * .6, HEAD_R * .46, 0, 0, 6.284); cx.fill();
-  cx.fillStyle = mix(s.dark);                                   // узкая тень под скулой
-  cx.beginPath(); cx.ellipse(J.head.x + fw.x * .4, J.head.y + HEAD_R * .86, 2.4 * HS, .95 * HS, 0, 0, 6.284); cx.fill();
-  face(J, f, s, mix, b.turned > .5);
+  put('head', function(){                       // шея и голова одним силуэтом: череп + челюсть вперёд
+    line(J.neck, {x:J.head.x, y:J.head.y + HEAD_R * .6}, 5.6, mix(s.bodyD));
+    cx.strokeStyle = INK; cx.lineWidth = 3.2; cx.fillStyle = mix(s.body);
+    cx.beginPath(); cx.ellipse(J.head.x + fw.x * 2.1 * HS, J.head.y + fw.y * 2.1 * HS + 2.9 * HS, 4.3 * HS, 3.7 * HS, 0, 0, 6.284);
+    cx.stroke(); cx.fill();
+    cx.beginPath(); cx.ellipse(J.head.x, J.head.y, HEAD_R * 1.02, HEAD_R * .96, J.ha * f, 0, 6.284);
+    cx.stroke(); cx.fill();
+    cx.fillStyle = 'rgba(255,255,255,.13)';                       // мягкий блик от софита
+    cx.beginPath(); cx.ellipse(J.head.x - fw.x * 1.4 * HS, J.head.y - 2.3 * HS, HEAD_R * .6, HEAD_R * .46, 0, 0, 6.284); cx.fill();
+    cx.fillStyle = mix(s.dark);                                   // узкая тень под скулой
+    cx.beginPath(); cx.ellipse(J.head.x + fw.x * .4, J.head.y + HEAD_R * .86, 2.4 * HS, .95 * HS, 0, 0, 6.284); cx.fill();
+    face(J, f, s, mix, b.turned > .5);
+  });
 
-  // ближняя рука и вылетевшая задняя
-  if(rearOut) arm(J.arms[1], 4.5, 3.1, 2.4, mix(s.body), mix(s.bodyD));
-  arm(J.arms[0], 4.8, 3.3, 2.5, mix(s.body), mix(s.bodyD));
-  glove(J.arms[0].hand, b.trail[0][0], unitV(J.arms[0].el, J.arms[0].hand), f,
-        mix(s.glove), mix(s.gloveD), mix(s.trunkL), gloveR());
-  if(rearOut) glove(J.arms[1].hand, b.trail[1][0], unitV(J.arms[1].el, J.arms[1].hand), f,
-                    mix(s.glove), mix(s.gloveD), mix(s.trunkL), gloveR());
+  if(rearOut) put('rearArm', function(){ arm(J.arms[1], 4.5, 3.1, 2.4, mix(s.body), mix(s.bodyD)); });
+  put('nearArm', function(){
+    arm(J.arms[0], 4.8, 3.3, 2.5, mix(s.body), mix(s.bodyD));
+    glove(J.arms[0].hand, b.trail[0][0], unitV(J.arms[0].el, J.arms[0].hand), f,
+          mix(s.glove), mix(s.gloveD), mix(s.trunkL), gloveR());
+  });
+  if(rearOut) put('rearGlove', function(){
+    glove(J.arms[1].hand, b.trail[1][0], unitV(J.arms[1].el, J.arms[1].hand), f,
+          mix(s.glove), mix(s.gloveD), mix(s.trunkL), gloveR());
+  });
+}
+
+/* Общий список на двоих: сортировка устойчивая, поэтому при равных глубинах
+   порядок остаётся прежним и стойка рисуется в точности как раньше. */
+function drawPair(){
+  var list = [], i;
+  boxerParts(B[0], list); boxerParts(B[1], list);
+  list.sort(function(a, c){ return a.z - c.z; });
+  for(i = 0; i < list.length; i++) list[i].d();
 }
 
 function boot(L, f, rx, ry, lace){   // ботинок едет за ступнёй и разворачивается с ногой
@@ -2438,25 +2631,11 @@ function drawStage(){
   cx.translate(-viewCx(), -viewCy());
   drawArena();
 
-  var order = drawOrder, i;
+  var i;
   /* В партере глубина задаётся позицией, а не силой удара: верхний всегда
      поверх нижнего, иначе тела читаются наизнанку. */
-  var wrap = null;
-  if(game === 'mma' && onGround() && RP.top >= 0){
-    var bot = 1 - RP.top;
-    /* Взявший спину находится ПОЗАДИ — его и рисуем первым, а душащую руку
-       доводим поверх. В остальных позициях верхний закрывает нижнего, но
-       обхватывающая нога и рамка нижнего идут поверх верхнего. */
-    if(RP.pos === 'back'){ order = [RP.top, bot]; wrap = {b:RP.top, leg:false, arm:true}; }
-    else {
-      order = [bot, RP.top];
-      if(RP.pos === 'guard')     wrap = {b:bot, leg:true,  arm:true};
-      else if(RP.pos === 'side') wrap = {b:bot, leg:false, arm:true};
-    }
-  }
   for(i = 0; i < 2; i++) if(B[i].gh && B[i].gh.length) drawGhosts(B[i]);
-  drawBoxer(B[order[0]]); drawBoxer(B[order[1]]);
-  if(wrap) drawWrap(B[wrap.b], wrap.leg, wrap.arm);
+  drawPair();
 
   for(i = 0; i < rays.length; i++){                 // лучи от точки контакта
     var r = rays[i], e = r.life / r.max, sp = 1 + e * 2.2, al = (1 - e) * (1 - e);
@@ -2479,26 +2658,6 @@ function drawStage(){
   if(flashA > 0){ cx.fillStyle = 'rgba(255,255,255,' + flashA + ')'; cx.fillRect(0, 0, VW, VH); }
   drawCut();                                         // врезка ложится поверх сцены,
   drawKoCard();                                      // но «НОКАУТ» остаётся читаемым
-}
-
-/* Переплетение тел. Монолитный drawBoxer знает ровно две глубины, поэтому
-   конечность, которая ОБХВАТЫВАЕТ чужое тело — нога вокруг пояса, душащая
-   рука на шее — доводится вторым проходом поверх пары. */
-function drawWrap(b, wLeg, wArm){
-  var s = SKIN[b.i], J = b.drawJ || poseOf(b), f = b.face;
-  var dim = b.down ? 0.55 : 1;
-  function mix(c){ return dim < 1 ? shadeHex(c, dim) : c; }
-  cx.lineCap = 'round'; cx.lineJoin = 'round';
-  if(wLeg){
-    leg(J.legs[0], 5.1, 3.6, 2.6, mix(s.body), mix(s.bodyD));
-    cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
-    boot(J.legs[0], f, 4.8, 2.6, mix(s.trunkL));
-  }
-  if(wArm){
-    arm(J.arms[0], 4.8, 3.3, 2.5, mix(s.body), mix(s.bodyD));
-    glove(J.arms[0].hand, b.trail[0][0], unitV(J.arms[0].el, J.arms[0].hand), f,
-          mix(s.glove), mix(s.gloveD), mix(s.trunkL), gloveR());
-  }
 }
 
 /* шлейф падающего тела: несколько прошлых поз с затуханием */
@@ -3549,7 +3708,7 @@ function screenStart(){
     '<details><summary>Правила бокса</summary><div class="body">' +
       '<div><b>Атаки</b><br>' +
       '👊 <span class="k">Прямой</span> — 20 урона, сразу. Голова или корпус.<br>' +
-      '🥊 <span class="k">Апперкот</span> — 35 урона, сразу. В голову пробивает нырок насквозь, но гасится высоким блоком. В корпус проходит сквозь блок.<br>' +
+      '🥊 <span class="k">Апперкот</span> — 32 урона, сразу. В голову пробивает нырок насквозь, но гасится высоким блоком. В корпус проходит сквозь блок. За промах доплачивает выносливостью.<br>' +
       '💥 <span class="k">Кросс</span> — 50 урона с замахом: объявляется сейчас, прилетает в следующем раунде. Соперник видит замах. Сильно выматывает.</div>' +
       '<div><b>Защиты</b><br>' +
       '🛡️ <span class="k">Высокий блок</span> — гасит удары в голову, корпус открыт. Кросс режет вдвое.<br>' +
@@ -3681,7 +3840,7 @@ function screenLevel(){
   var dh = a.dmg, db = Math.round(a.dmg * BODY_DMG), col = active === 0 ? 'blue' : 'red';
   return '<h2>' + a.em + ' ' + a.name.toUpperCase() + '<br>КУДА БЬЁШЬ?</h2>' +
     '<div class="sub">' + (pendLevel === 'uppercut'
-      ? 'В голову — пробивает нырок, но гасится высоким блоком. В корпус — проходит сквозь высокий блок.'
+      ? 'В голову — пробивает нырок, но гасится высоким блоком. В корпус — проходит сквозь высокий блок. Промах дорого стоит.'
       : pendLevel === 'kick'
       ? 'В голову — высокий блок гасит только половину, но нырок уводит из-под ноги. В корпус — проходит сквозь высокий блок.'
       : pendLevel === 'spin'
