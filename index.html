@@ -413,9 +413,167 @@ var ACT = {
   crossLand:{id:'crossLand',kind:'attack', name:'Кросс',        em:'💥', dmg:50, st:6,   level:false, hint:''}
 };
 
-/* Урон удара с учётом уровня: в корпус слабее. Кросс уровня не имеет. */
+/* Урон удара с учётом уровня: в корпус слабее. Кросс уровня не имеет.
+   raw — урон приёма ММА окончателен: уровень уже зашит в сам приём. */
 function dmgOf(c){
-  return Math.round(ACT[c.id].dmg * (c.lvl === 'body' ? BODY_DMG : 1));
+  var a = ACT[c.id];
+  if(a.raw) return a.dmg;
+  return Math.round(a.dmg * (c.lvl === 'body' ? BODY_DMG : 1));
+}
+/* Бьёт ли действие по низу — для выносливости и печени. У приёмов ММА
+   уровень зашит в сам приём, у ударов бокса выбирается игроком. */
+function isBody(c){ return c ? (ACT[c.id].body || c.lvl === 'body') : false; }
+
+/* =========================================================================
+   1b. ММА: ХАРАКТЕРИСТИКИ, ПОЗИЦИИ, ПРИЁМЫ
+   -------------------------------------------------------------------------
+   Режим «Клинч» (бокс в стойке) остаётся ровно таким, каким был: всё, что
+   ниже, включается только при game === 'mma', а множители характеристик в
+   режиме бокса возвращают нейтральные значения. Это позволяет держать две
+   игры в одном файле, не размазывая правила одной по другой.
+   ========================================================================= */
+var game = 'klinch';                // 'klinch' — бокс в стойке, 'mma' — полный бой
+
+/* --- характеристики --- */
+/* Бюджет у всех архетипов одинаковый (24), поэтому сильная сторона всегда
+   оплачена слабой. Профильный стат удешевляет СВОИ действия: борец дёшево
+   борется, ударник дёшево бьёт — и каждый дорого платит в чужой игре. */
+var ARCH = [
+  {id:'striker', name:'УДАРНИК',  em:'🥊', str:9, grap:3, def:6, sta:6,
+   note:'Бьёт тяжелее всех и дёшево. В партере вязнет.'},
+  {id:'wrestler',name:'БОРЕЦ',    em:'🤼', str:4, grap:9, def:6, sta:5,
+   note:'Переводит и проходит позиции лучше всех, борьба обходится дёшево.'},
+  {id:'grap',    name:'ГРЭППЛЕР', em:'🦾', str:3, grap:8, def:5, sta:8,
+   note:'Живёт на приёмах и почти не устаёт. Ударов боится.'},
+  {id:'allrnd',  name:'УНИВЕРСАЛ',em:'⚖️', str:6, grap:6, def:6, sta:6,
+   note:'Ровный везде, лучший нигде.'},
+  {id:'tank',    name:'ТАНК',     em:'🛡️', str:5, grap:5, def:9, sta:5,
+   note:'Держит удар как никто. Сам добивает долго.'}
+];
+function archOf(id){ for(var i = 0; i < ARCH.length; i++) if(ARCH[i].id === id) return ARCH[i]; return ARCH[3]; }
+
+function statOf(i){ return F[i].S || ARCH[3]; }
+/* Все множители в режиме бокса нейтральны — старый баланс не сдвигается ни на очко. */
+function dmgMul(i){ return game === 'mma' ? 0.85 + statOf(i).str * 0.03 : 1; }
+function takeMul(i){ return game === 'mma' ? 1.15 - statOf(i).def * 0.03 : 1; }
+function restOf(i){ return game === 'mma' ? REST + statOf(i).sta * 0.4 : REST; }
+function grapEdge(i){ return game === 'mma' ? (statOf(i).grap - statOf(1 - i).grap) * 0.03 : 0; }
+function costOf(i, id){
+  var a = ACT[id];
+  if(game !== 'mma') return a.st;
+  var S = statOf(i), prof = 1;
+  if(a.kind === 'grap' || a.ground) prof = 1.3 - S.grap * 0.05;   // борьба — по борьбе
+  else if(a.kind === 'attack')      prof = 1.3 - S.str * 0.05;    // удары — по удару
+  return Math.round(a.st * prof * (1.2 - S.sta * 0.04));
+}
+function clamp(v, lo, hi){ return v < lo ? lo : (v > hi ? hi : v); }
+
+/* --- состояние ПАРЫ ---------------------------------------------------
+   Позиция партера — свойство пары, а не бойца, поэтому живёт отдельно от F[].
+   top — кто доминирует (в клинче: у кого захват), -1 — нейтрально.
+   ctrl — сколько раундов подряд позиция удерживается: питает шанс приёма и
+   мешает выходу. turned — боец подставил спину (неудачная попытка встать). */
+var GR = null;
+function newGrapple(){ return {pos:'stand', top:-1, ctrl:0, sub:null, turned:[false,false]}; }
+var POS_NAME = {stand:'СТОЙКА', clinch:'КЛИНЧ', guard:'ГАРД', side:'САЙД-КОНТРОЛЬ',
+                mount:'МАУНТ', back:'СПИНА'};
+var POS_RANK = {guard:1, side:2, mount:3, back:4};
+/* На ступень вниз: сорванный приём стоит верхнему позиции. */
+var POS_DOWN = {back:'mount', mount:'side', side:'guard', guard:'guard'};
+
+function posLabel(i){
+  var g = GR;
+  if(g.pos === 'stand') return 'СТОЙКА';
+  if(g.pos === 'clinch') return 'КЛИНЧ' + (g.top === i ? ' · захват твой' : (g.top === 1 - i ? ' · захват у соперника' : ''));
+  return (g.top === i ? 'СВЕРХУ · ' : 'СНИЗУ · ') + POS_NAME[g.pos];
+}
+
+/* --- баланс ММА --- */
+var TD_BASE = 0.55, TD_FAIL_ST = 26, TD_DMG = 8;
+var TD_MIN = 0.15, TD_MAX = 0.80;   // проход в ноги НИКОГДА не бывает гарантированным
+var ESC_FLOOR = 0.15;               // и выход снизу никогда не бывает невозможным
+var SUB_ENDURE = 10;                // «терпеть» стоит здоровья сустава
+var CTRL_REST = 6;                  // контроль/блок сверх обычного отдыха
+
+/* --- действия ММА. Кладутся в общий ACT, доступность решает legal(). ------
+   raw:true — урон уже окончательный (уровень зашит в приём, BODY_DMG не
+   применяется повторно). ground:true — действие партера: дорожает и дешевеет
+   по борьбе, как и kind:'grap'. */
+var MMA_ACT = {
+  /* --- стойка --- */
+  shoot:   {id:'shoot',   kind:'grap',   name:'Проход в ноги',   em:'🤼', dmg:TD_DMG, st:24, raw:true, hint:'перевести в партер'},
+  clinchIn:{id:'clinchIn',kind:'grap',   name:'Войти в клинч',   em:'🫱', dmg:0,  st:12, hint:'сократить дистанцию'},
+  sprawl:  {id:'sprawl',  kind:'defense',name:'Спраул',          em:'🛑', dmg:0,  st:16, hint:'глушит проход в ноги'},
+  /* --- клинч --- */
+  cpunch:  {id:'cpunch',  kind:'attack', name:'Короткие в голову',em:'🥊', dmg:16, st:12, raw:true, hint:'в упор · 16'},
+  cknee:   {id:'cknee',   kind:'attack', name:'Колено в корпус', em:'🦿', dmg:24, st:18, raw:true, body:true, hint:'корпус · выносливость'},
+  throw:   {id:'throw',   kind:'grap',   name:'Бросок',          em:'🌀', dmg:10, st:26, raw:true, hint:'сразу в сайд-контроль'},
+  frame:   {id:'frame',   kind:'defense',name:'Упереться',       em:'🧱', dmg:0,  st:4,  hint:'рамка: гасит колено и бросок'},
+  breakout:{id:'breakout',kind:'grap',   name:'Разорвать клинч', em:'👣', dmg:0,  st:8,  hint:'обратно в стойку'},
+  /* --- гард, сверху --- */
+  gpunch:  {id:'gpunch',  kind:'attack', name:'Удар в голову',   em:'👊', dmg:14, st:12, raw:true, ground:true, hint:'сверху · 14'},
+  gbody:   {id:'gbody',   kind:'attack', name:'Удар по корпусу', em:'🫃', dmg:12, st:11, raw:true, body:true, ground:true, hint:'корпус · выносливость'},
+  pass:    {id:'pass',    kind:'grap',   name:'Пройти гард',     em:'🤼', dmg:0,  st:20, hint:'в сайд-контроль'},
+  kimura:  {id:'kimura',  kind:'grap',   name:'Кимура',          em:'🦾', dmg:0,  st:22, sub:true, hint:'болевой на руку'},
+  leglock: {id:'leglock', kind:'grap',   name:'Узел на ногу',    em:'🦵', dmg:0,  st:22, sub:true, hint:'болевой · при срыве ты внизу'},
+  hold:    {id:'hold',    kind:'defense',name:'Придавить',       em:'🧱', dmg:0,  st:4,  ground:true, hint:'контроль и отдых'},
+  /* --- гард, снизу --- */
+  sweep:   {id:'sweep',   kind:'grap',   name:'Пытаться выйти',  em:'💪', dmg:0,  st:22, hint:'свип: перевернуть его'},
+  standup: {id:'standup', kind:'grap',   name:'Встать в стойку', em:'🚪', dmg:0,  st:20, hint:'подняться на ноги'},
+  gblock:  {id:'gblock',  kind:'defense',name:'Блокироваться',   em:'🛡️', dmg:0,  st:5,  ground:true, hint:'закрыться и отдышаться'},
+  tri:     {id:'tri',     kind:'grap',   name:'Треугольник',     em:'🦾', dmg:0,  st:24, sub:true, hint:'удушение снизу'},
+  upkick:  {id:'upkick',  kind:'attack', name:'Удар с низа',     em:'🦶', dmg:8,  st:8,  raw:true, ground:true, hint:'дёшево · не даёт сидеть'},
+  /* --- сайд-контроль --- */
+  elbow:   {id:'elbow',   kind:'attack', name:'Локти в голову',  em:'💢', dmg:18, st:13, raw:true, ground:true, hint:'сверху · 18'},
+  sbody:   {id:'sbody',   kind:'attack', name:'Колено по корпусу',em:'🦿',dmg:14, st:12, raw:true, body:true, ground:true, hint:'корпус · выносливость'},
+  tomount: {id:'tomount', kind:'grap',   name:'Перейти в маунт', em:'⬆️', dmg:0,  st:18, hint:'сесть верхом'},
+  takeback:{id:'takeback',kind:'grap',   name:'Зайти за спину',  em:'🌀', dmg:0,  st:18, hint:'вдвое вернее, если он отвернулся'},
+  armbar:  {id:'armbar',  kind:'grap',   name:'Рычаг локтя',     em:'🦾', dmg:0,  st:22, sub:true, hint:'болевой на руку'},
+  reguard: {id:'reguard', kind:'grap',   name:'Вернуть гард',    em:'💪', dmg:0,  st:18, hint:'вернуть его в гард'},
+  /* --- маунт --- */
+  pound:   {id:'pound',   kind:'attack', name:'Град ударов',     em:'💥', dmg:26, st:18, raw:true, ground:true, hint:'сверху · 26'},
+  bridge:  {id:'bridge',  kind:'grap',   name:'Мост',            em:'💪', dmg:0,  st:24, hint:'свип: перевернуть его'},
+  toguard: {id:'toguard', kind:'grap',   name:'Уйти в гард',     em:'🔄', dmg:0,  st:16, hint:'сбросить в гард'},
+  /* --- спина --- */
+  rnc:     {id:'rnc',     kind:'grap',   name:'Удушение сзади',  em:'🪢', dmg:0,  st:20, sub:true, hint:'самый верный приём'},
+  bpunch:  {id:'bpunch',  kind:'attack', name:'Удары сзади',     em:'👊', dmg:16, st:12, raw:true, ground:true, hint:'сзади · 16'},
+  hooks:   {id:'hooks',   kind:'defense',name:'Крюки',           em:'🧱', dmg:0,  st:4,  ground:true, hint:'контроль и отдых'},
+  shed:    {id:'shed',    kind:'grap',   name:'Снять руку',      em:'💪', dmg:0,  st:18, hint:'сбросить спину — он останется сверху'},
+  neckdef: {id:'neckdef', kind:'defense',name:'Защита шеи',      em:'🛡️', dmg:0,  st:6,  ground:true, hint:'удушение не пройдёт'},
+  spinout: {id:'spinout', kind:'grap',   name:'Выкрутиться',     em:'🔄', dmg:0,  st:26, hint:'дорого, но сразу в гард'},
+  /* --- активный приём: меню подменяется целиком --- */
+  cinch:   {id:'cinch',   kind:'grap',   name:'Дожать',          em:'🔩', dmg:0,  st:14, hint:'затянуть приём'},
+  release: {id:'release', kind:'grap',   name:'Бросить приём',   em:'↩️', dmg:0,  st:4,  hint:'отпустить и не терять позицию'},
+  endure:  {id:'endure',  kind:'defense',name:'Терпеть',         em:'🩸', dmg:0,  st:6,  hint:'сустав держит, но это больно'},
+  escape:  {id:'escape',  kind:'grap',   name:'Вырваться',       em:'💪', dmg:0,  st:26, hint:'дорого, но шанс есть всегда'}
+};
+for(var _mk in MMA_ACT) if(MMA_ACT.hasOwnProperty(_mk)) ACT[_mk] = MMA_ACT[_mk];
+
+/* --- ЕДИНЫЙ ИСТОЧНИК ПРАВДЫ О ДОСТУПНЫХ ДЕЙСТВИЯХ ----------------------
+   И экран выбора, и бот спрашивают только здесь. Раньше список кнопок был
+   захардкожен в разметке экрана, а веса бота — отдельно; ситуативное меню
+   при такой двойной записи неизбежно бы разъехалось. */
+var KLINCH_SET = ['jab','uppercut','kick','spin','cross','block','bblock','slip','step'];
+function legal(i){
+  if(game !== 'mma') return KLINCH_SET.slice();
+  var g = GR, top = (g.top === i), L;
+  if(g.sub) L = (g.sub.by === i) ? ['cinch','release'] : ['endure','escape'];
+  else if(g.pos === 'stand')
+    L = ['jab','uppercut','kick','spin','cross','shoot','clinchIn','block','bblock','slip','step','sprawl'];
+  else if(g.pos === 'clinch') L = ['cpunch','cknee','throw','frame','breakout'];
+  else if(g.pos === 'guard')  L = top ? ['gpunch','gbody','pass','kimura','leglock','hold']
+                                      : ['upkick','sweep','standup','tri','gblock'];
+  else if(g.pos === 'side')   L = top ? ['elbow','sbody','tomount','takeback','armbar','hold']
+                                      : ['reguard','standup','gblock'];
+  else if(g.pos === 'mount')  L = top ? ['pound','armbar','takeback','hold']
+                                      : ['bridge','toguard','gblock'];
+  else if(g.pos === 'back')   L = top ? ['rnc','bpunch','hooks'] : ['shed','spinout','neckdef'];
+  else L = KLINCH_SET.slice();
+  /* Печень: дыхание перехватило — раунд нельзя защищаться, только терпеть
+     или лезть вперёд. Работает и в стойке, и в партере. */
+  if(F[i].winded) L = L.filter(function(id){ return ACT[id].kind !== 'defense' || id === 'endure' || id === 'slip'; });
+  if(!L.length) L = ['endure'];
+  return L;
 }
 
 var F, round, phase, active, choices, pendLevel, lastRec, revealDone, bouts, eyesDone;
@@ -423,11 +581,14 @@ var EYES_HP = 25;                   // ниже этого начинается 
 var disp = [{hp:MAX_HP,st:MAX_ST},{hp:MAX_HP,st:MAX_ST}];
 var mode = 'pvp';                   // 'pvp' — два игрока на одном экране, 'cpu' — против бота
 
+var pick = ['allrnd','allrnd'];      // выбранные архетипы (только ММА)
 function newFight(){
   F = [
-    {i:0, name:'СИНИЙ', cls:'b', ico:'🔵', hp:MAX_HP, st:MAX_ST, pending:null, winded:false, ko:false},
-    {i:1, name:(mode === 'cpu' ? 'CPU' : 'КРАСНЫЙ'), cls:'r', ico:'🔴', hp:MAX_HP, st:MAX_ST, pending:null, winded:false, ko:false}
+    {i:0, name:'СИНИЙ', cls:'b', ico:'🔵', hp:MAX_HP, st:MAX_ST, pending:null, winded:false, ko:false, tap:false},
+    {i:1, name:(mode === 'cpu' ? 'CPU' : 'КРАСНЫЙ'), cls:'r', ico:'🔴', hp:MAX_HP, st:MAX_ST, pending:null, winded:false, ko:false, tap:false}
   ];
+  for(var q = 0; q < 2; q++){ F[q].S = archOf(pick[q]); F[q].arch = F[q].S; }
+  GR = newGrapple(); setRP('stand', -1);
   round = 1; choices = [null,null]; pendLevel = null; lastRec = null; revealDone = false;
   bouts = []; eyesDone = false; botLastKey = null;
   syncDisp();
@@ -516,6 +677,7 @@ function label(c){
 
 /* просчёт раунда: оба удара считаются от состояния НА НАЧАЛО раунда */
 function resolveRound(){
+  if(game === 'mma'){ resolveRoundMMA(); return; }
   var i, before = {hp:[F[0].hp,F[1].hp], st:[F[0].st,F[1].st],
                    pending:[F[0].pending,F[1].pending], winded:[F[0].winded,F[1].winded]};
   var tired = [F[0].st < LOW_ST, F[1].st < LOW_ST];
@@ -581,6 +743,336 @@ function resolveRound(){
 }
 
 /* =========================================================================
+   1c. ММА: РАЗРЕШЕНИЕ РАУНДА
+   -------------------------------------------------------------------------
+   Тот же контракт, что и в боксе: ОДИН бросок кубика на событие, и он
+   оседает в записи раунда. Пересмотр раунда и повтор боя читают запись и
+   поэтому показывают ровно тот бой, который был. Ни одного Math.random()
+   за пределами этой функции.
+   ========================================================================= */
+
+/* Ударная таблица с поправкой на позицию. В стойке переиспользуется боксёрская
+   resolve() целиком — она уже правильная, ММА лишь добавляет две поправки. */
+function resolveM(atk, def){
+  var g = GR, d = def ? def.id : null, dk = d ? ACT[d].kind : null;
+  if(g.pos === 'stand'){
+    var r = resolve(atk, def);
+    if(!r) return null;
+    /* Спраул уводит вниз таз, а не голову: проход он глушит намертво, но за
+       это ловит встречный. Это и есть цена «всегда доступного» спасения. */
+    if(d === 'sprawl') return {mult:r.mult * 1.3, why:'спраул раскрыл верх — встречный прошёл чисто'};
+    if(dk === 'grap' && r.mult > 0) return {mult:r.mult * 1.25, why:'встречный на входе в приём'};
+    return r;
+  }
+  if(g.pos === 'clinch'){
+    if(atk.id === 'cknee'){
+      if(d === 'frame')    return {mult:0,  why:'рамка не пустила колено'};
+      if(d === 'breakout') return {mult:.6, why:'колено догнало на разрыве'};
+      return {mult:1, why:'колено вошло в корпус'};
+    }
+    if(d === 'frame')    return {mult:.5, why:'рамка приняла половину коротких'};
+    if(d === 'breakout') return {mult:.7, why:'поймал короткий на разрыве'};
+    return {mult:1, why:'короткие в упор'};
+  }
+  if(atk.id === 'upkick'){
+    if(d === 'hold') return {mult:.5, why:'придавил — с низа бьётся вполсилы'};
+    return {mult:1, why:'удар с низа достал'};
+  }
+  if(d === 'gblock' || d === 'neckdef'){
+    /* Из гарда и сайда нижний ставит рамки и до него не достать. Из-под маунта
+       и со спины закрыться можно только частично — в этом и вся разница между
+       проигранной позицией и проигранным боем. */
+    if(g.pos === 'mount' || g.pos === 'back') return {mult:.5, why:'закрылся, но сверху пробивает половина'};
+    return {mult:0, why:'закрылся — сверху не достать'};
+  }
+  return {mult:1, why:'сверху бьёт свободно'};
+}
+
+/* Шанс приёма: база + разница в борьбе, всегда зажатая в коридор.
+   Верхняя граница — гарантия пользователя «спастись можно всегда»,
+   нижняя — «выйти можно всегда». */
+function grapChance(i, base, lo, hi){
+  return clamp(base + grapEdge(i) + statOf(i).def * 0.005, lo == null ? ESC_FLOOR : lo, hi == null ? 0.85 : hi);
+}
+
+/* Попытка приёма. Возвращает объект исхода; позицию меняет сама.
+   Единственный источник случайности — ровно один Math.random() на попытку. */
+function tryGrap(i, out){
+  var g = GR, j = 1 - i, id = choices[i].id, oc = choices[j];
+  var d = oc ? oc.id : null, dk = d ? ACT[d].kind : null;
+  var ch = 0, o = {type:'grap', dmg:0, id:id, ok:false, note:''};
+
+  if(id === 'release'){ g.sub = null; o.ok = true; o.note = 'отпустил приём'; return o; }
+
+  if(id === 'escape'){                       // выход из захвата
+    var t = g.sub ? g.sub.tight : 1;
+    ch = grapChance(i, 0.45 - t * 0.10, ESC_FLOOR, 0.90);
+    o.chance = ch; o.ok = Math.random() < ch;
+    if(o.ok){
+      var was = g.pos;
+      g.sub = null; g.pos = POS_DOWN[was] || 'guard'; g.ctrl = 0;
+      o.note = 'вырвался из приёма — соперник потерял позицию';
+    } else o.note = 'вырваться не вышло, приём затягивается';
+    return o;
+  }
+
+  if(id === 'cinch'){                        // дожать
+    ch = grapChance(i, 0.55 + g.ctrl * 0.02, 0.25, 0.85);
+    if(d === 'endure') ch *= 0.7;            // терпит — держит защиту сустава
+    o.chance = ch; o.ok = Math.random() < ch;
+    if(o.ok){ g.sub.tight = Math.min(3, g.sub.tight + 1); o.note = 'приём затянулся туже'; }
+    else o.note = 'дожать не дал';
+    return o;
+  }
+
+  if(ACT[id].sub){                           // взять приём
+    ch = grapChance(i, 0.55 + g.ctrl * 0.03, 0.20, 0.85);
+    if(d === 'gblock' || d === 'neckdef' || d === 'hold') ch *= 0.4;
+    o.chance = ch; o.ok = Math.random() < ch;
+    if(o.ok){
+      g.sub = {by:i, kind:id, tight:g.pos === 'mount' ? 2 : 1};
+      o.note = ACT[id].name + ' взят';
+    } else {
+      o.note = ACT[id].name + ' сорвался';
+      /* Срыв приёма стоит позиции — иначе болевой был бы бесплатной лотереей. */
+      if(id === 'leglock'){ g.top = j; g.ctrl = 0; o.note += ' — и он оказался сверху'; }
+      else if(id === 'armbar'){ g.pos = POS_DOWN[g.pos] || 'guard'; g.ctrl = 0; o.note += ' — позиция потеряна'; }
+      else if(id === 'rnc'){ g.ctrl = 0; }
+    }
+    return o;
+  }
+
+  if(id === 'shoot'){                        // проход в ноги
+    ch = TD_BASE + grapEdge(i);
+    if(d === 'sprawl')                       ch = 0;      // спраул спасает ВСЕГДА
+    else if(d === 'step')                    ch *= 0.45;
+    else if(d === 'block' || d === 'bblock') ch *= 0.90;
+    else if(d === 'slip')                    ch *= 1.15;
+    else if(dk === 'attack')                 ch *= 1.25;
+    ch = ch <= 0 ? 0 : clamp(ch, TD_MIN, TD_MAX);
+    o.chance = ch; o.ok = ch > 0 && Math.random() < ch;
+    if(o.ok){
+      g.pos = 'guard'; g.top = i; g.ctrl = 0; g.sub = null;
+      o.dmg = Math.round(TD_DMG * dmgMul(i) * takeMul(j));
+      o.note = 'перевёл бой в партер';
+    } else o.note = d === 'sprawl' ? 'спраул погасил проход' : 'проход в ноги провалился';
+    return o;
+  }
+
+  if(id === 'clinchIn'){
+    ch = d === 'sprawl' ? 0 : (d === 'step' ? 0.5 : 1);
+    o.chance = ch; o.ok = ch >= 1 || (ch > 0 && Math.random() < ch);
+    if(o.ok){ g.pos = 'clinch'; g.top = i; g.ctrl = 0; o.note = 'вошёл в клинч, захват его'; }
+    else o.note = 'в клинч не пустили';
+    return o;
+  }
+
+  if(id === 'throw'){
+    ch = grapChance(i, 0.40 + (g.top === i ? 0.12 : 0), 0.15, 0.80);
+    if(d === 'frame')    ch *= 0.5;
+    if(d === 'breakout') ch *= 1.15;
+    o.chance = ch; o.ok = Math.random() < ch;
+    if(o.ok){
+      g.pos = 'side'; g.top = i; g.ctrl = 0;
+      o.dmg = Math.round(10 * dmgMul(i) * takeMul(j));
+      o.note = 'бросок — сразу в сайд-контроль';
+    } else { g.top = j; o.note = 'бросок не пошёл, захват перешёл к сопернику'; }
+    return o;
+  }
+
+  if(id === 'breakout'){ g.pos = 'stand'; g.top = -1; g.ctrl = 0; o.ok = true; o.note = 'разорвал клинч'; return o; }
+
+  if(id === 'pass'){
+    ch = grapChance(i, 0.45 + g.ctrl * 0.04 + (d === 'gblock' ? 0.10 : 0), 0.15, 0.85);
+    o.chance = ch; o.ok = Math.random() < ch;
+    if(o.ok){ g.pos = 'side'; g.ctrl = 0; o.note = 'прошёл гард'; } else o.note = 'гард не пройден';
+    return o;
+  }
+  if(id === 'tomount'){
+    ch = grapChance(i, 0.50 + g.ctrl * 0.03, 0.15, 0.85);
+    o.chance = ch; o.ok = Math.random() < ch;
+    if(o.ok){ g.pos = 'mount'; g.ctrl = 0; o.note = 'сел верхом'; } else o.note = 'в маунт не пустили';
+    return o;
+  }
+  if(id === 'takeback'){
+    var open = g.turned[j] || d === 'standup' || d === 'reguard';
+    ch = grapChance(i, (open ? 0.60 : 0.30) + g.ctrl * 0.02, 0.15, 0.85);
+    o.chance = ch; o.ok = Math.random() < ch;
+    if(o.ok){ g.pos = 'back'; g.ctrl = 0; o.note = open ? 'соперник отвернулся — спина взята' : 'зашёл за спину'; }
+    else o.note = 'за спину зайти не дал';
+    return o;
+  }
+
+  /* --- выходы снизу: у каждого есть пол ESC_FLOOR --- */
+  if(id === 'sweep'){
+    ch = grapChance(i, 0.35 - g.ctrl * 0.05 - (d === 'hold' ? 0.12 : 0), ESC_FLOOR, 0.80);
+    o.chance = ch; o.ok = Math.random() < ch;
+    if(o.ok){ g.top = i; g.ctrl = 0; o.note = 'свип — теперь он сверху'; } else o.note = 'свип не прошёл';
+    return o;
+  }
+  if(id === 'bridge'){
+    ch = grapChance(i, 0.22 - g.ctrl * 0.03, ESC_FLOOR, 0.70);
+    o.chance = ch; o.ok = Math.random() < ch;
+    if(o.ok){ g.pos = 'guard'; g.top = i; g.ctrl = 0; o.note = 'мост — перевернул и оказался сверху'; }
+    else o.note = 'мост не вышел';
+    return o;
+  }
+  if(id === 'toguard'){
+    ch = grapChance(i, 0.45 - g.ctrl * 0.03, ESC_FLOOR, 0.85);
+    o.chance = ch; o.ok = Math.random() < ch;
+    if(o.ok){ g.pos = 'guard'; g.ctrl = 0; o.note = 'вернул его в гард'; } else o.note = 'из-под маунта не выбрался';
+    return o;
+  }
+  if(id === 'reguard'){
+    ch = grapChance(i, 0.42 - g.ctrl * 0.03, ESC_FLOOR, 0.85);
+    o.chance = ch; o.ok = Math.random() < ch;
+    if(o.ok){ g.pos = 'guard'; g.ctrl = 0; o.note = 'вернул гард'; } else o.note = 'гард вернуть не дал';
+    return o;
+  }
+  if(id === 'shed'){
+    ch = grapChance(i, 0.35 - g.ctrl * 0.03, ESC_FLOOR, 0.80);
+    o.chance = ch; o.ok = Math.random() < ch;
+    if(o.ok){ g.pos = 'mount'; g.ctrl = 0; o.note = 'сбросил спину — но он остался сверху'; }
+    else o.note = 'со спины не сбросил';
+    return o;
+  }
+  if(id === 'spinout'){
+    ch = grapChance(i, 0.20, ESC_FLOOR, 0.70);
+    o.chance = ch; o.ok = Math.random() < ch;
+    if(o.ok){ g.pos = 'guard'; g.top = 1 - i; g.ctrl = 0; o.note = 'выкрутился в гард'; }
+    else o.note = 'выкрутиться не удалось';
+    return o;
+  }
+  if(id === 'standup'){
+    ch = grapChance(i, (g.pos === 'side' ? 0.25 : 0.40) - g.ctrl * 0.03 - (d === 'hold' ? 0.10 : 0), ESC_FLOOR, 0.80);
+    o.chance = ch; o.ok = Math.random() < ch;
+    if(o.ok){ g.pos = 'stand'; g.top = -1; g.ctrl = 0; g.sub = null; o.note = 'поднялся в стойку'; }
+    else { o.turned = true; o.note = 'встать не дал — и спина открылась'; }
+    return o;
+  }
+  o.ok = true; return o;
+}
+
+function resolveRoundMMA(){
+  var i, g = GR;
+  var before = {hp:[F[0].hp, F[1].hp], st:[F[0].st, F[1].st],
+                pending:[F[0].pending, F[1].pending], winded:[F[0].winded, F[1].winded],
+                pos:g.pos, top:g.top, ctrl:g.ctrl,
+                sub:g.sub ? {by:g.sub.by, kind:g.sub.kind, tight:g.sub.tight} : null,
+                turned:[g.turned[0], g.turned[1]]};
+  var tired = [F[0].st < LOW_ST, F[1].st < LOW_ST];
+  var out = [null, null], subActive = !!g.sub;
+
+  /* --- 1. Удары. Считаются от позиции НА НАЧАЛО раунда, до её смены. --- */
+  for(i = 0; i < 2; i++){
+    var mine = choices[i], A = ACT[mine.id];
+    if(A.kind !== 'attack'){ out[i] = {type:A.kind === 'grap' ? 'pend' : 'def', dmg:0}; continue; }
+    if(mine.id === 'cross' || mine.id === 'spin'){ out[i] = {type:'windup', dmg:0}; continue; }
+    var r = resolveM(mine, choices[1 - i]);
+    out[i] = {type:'atk',
+              dmg:Math.round(dmgOf(mine) * dmgMul(i) * takeMul(1 - i) * (tired[i] ? TIRED_MULT : 1) * r.mult),
+              mult:r.mult, why:r.why, tired:tired[i]};
+  }
+
+  /* --- 2. Приёмы. Если оба лезут в борьбу — один встречный бросок решает,
+         чья попытка вообще состоится. Это та инициатива, которой в боксе нет:
+         «я прохожу гард» и «я делаю свип» не могут случиться оба. --- */
+  var wants = [ACT[choices[0].id].kind === 'grap', ACT[choices[1].id].kind === 'grap'];
+  var order = [0, 1];
+  if(subActive){
+    /* Под приёмом попытка вырваться считается ПЕРВОЙ и считается всегда.
+       Иначе встречный бросок мог отдать ход атакующему, тот дожал бы до
+       трёх — и защищающийся сдался бы, ни разу не получив шанса. */
+    order = [1 - g.sub.by, g.sub.by];
+  } else if(wants[0] && wants[1]){
+    var p = clamp(0.5 + (statOf(0).grap - statOf(1).grap) * 0.04, 0.15, 0.85);
+    order = Math.random() < p ? [0, 1] : [1, 0];
+  }
+  var moved = false, turnedNow = [false, false];
+  for(var k = 0; k < 2; k++){
+    var w = order[k];
+    if(!wants[w]) continue;
+    if(moved){ out[w] = {type:'grap', dmg:0, id:choices[w].id, ok:false, note:'не успел — соперник опередил'}; continue; }
+    var go = tryGrap(w, out[w]);
+    out[w] = go;
+    if(go.turned) turnedNow[w] = true;
+    if(go.ok) moved = true;
+  }
+
+  /* --- 3. Приём на добивание: тугость 3 — сдача. --- */
+  var tapped = -1;
+  if(g.sub && g.sub.tight >= 3) tapped = 1 - g.sub.by;
+  /* «Терпеть» стоит здоровья сустава — приём и без затяжки разрушает. */
+  for(i = 0; i < 2; i++)
+    if(subActive && choices[i].id === 'endure'){
+      out[i] = {type:'def', dmg:0, endure:true};
+      out[i].self = Math.round(SUB_ENDURE * takeMul(i));
+    }
+
+  /* --- 4. Урон. --- */
+  F[1].hp = Math.max(0, F[1].hp - (out[0].dmg || 0));
+  F[0].hp = Math.max(0, F[0].hp - (out[1].dmg || 0));
+  for(i = 0; i < 2; i++) if(out[i].self) F[i].hp = Math.max(0, F[i].hp - out[i].self);
+
+  /* --- 5. Печень: один бросок здесь, результат в записи. --- */
+  var winded = [false, false];
+  for(i = 0; i < 2; i++)
+    if(out[i].type === 'atk' && out[i].dmg > 0 && isBody(choices[i]) && Math.random() < LIVER_CHANCE){
+      out[i].liver = true; winded[1 - i] = true;
+    }
+
+  /* --- 6. Выносливость. Профильный стат удешевляет свои действия. --- */
+  var spend = [costOf(0, choices[0].id), costOf(1, choices[1].id)], drain = [0, 0];
+  for(i = 0; i < 2; i++){
+    if(out[i].type === 'atk' && out[i].dmg > 0 && isBody(choices[i])){
+      drain[1 - i] = Math.round(dmgOf(choices[i]) * BODY_ST * dmgMul(i));
+      out[i].stHit = drain[1 - i];
+    }
+    if(out[i].type === 'atk' && out[i].dmg === 0 && choices[i].id === 'kick') spend[i] += KICK_WHIFF;
+    if(out[i].type === 'grap' && choices[i].id === 'shoot' && !out[i].ok) spend[i] += TD_FAIL_ST;
+  }
+  var bonus = [0, 0];
+  for(i = 0; i < 2; i++){
+    var cid = choices[i].id;
+    if(cid === 'hold' || cid === 'hooks' || cid === 'gblock' || cid === 'frame' || cid === 'neckdef') bonus[i] = CTRL_REST;
+  }
+
+  /* --- 7. Контроль и открытая спина. --- */
+  if(g.pos === before.pos && g.top === before.top){
+    var holder = -1;
+    for(i = 0; i < 2; i++){
+      var ci = choices[i].id;
+      if((g.top === i && (ci === 'hold' || ci === 'hooks')) || (g.top === 1 - i && ci === 'gblock')) holder = g.top;
+    }
+    if(holder >= 0) g.ctrl = Math.min(6, g.ctrl + 1);
+  } else g.ctrl = 0;
+  g.turned = [turnedNow[0], turnedNow[1]];
+  if(g.pos === 'stand'){ g.top = -1; g.sub = null; }
+
+  for(i = 0; i < 2; i++){
+    F[i].st = Math.max(0, Math.min(MAX_ST, F[i].st - spend[i] - drain[i] + restOf(i) + bonus[i]));
+    if(g.pos !== 'stand')                   F[i].pending = null;   // с земли заряженный удар не летит
+    else if(choices[i].id === 'cross')      F[i].pending = {id:'crossLand'};
+    else if(choices[i].id === 'spin')       F[i].pending = {id:'spinLand', lvl:choices[i].lvl || 'head'};
+    else                                    F[i].pending = null;
+    F[i].winded = winded[i];
+    if(F[i].hp <= 0) F[i].ko = true;
+  }
+  if(tapped >= 0){ F[tapped].tap = true; F[tapped].ko = true; }
+
+  lastRec = {round:round, mma:true, choices:[choices[0], choices[1]], out:out, tired:tired,
+             before:before, hp:[F[0].hp, F[1].hp], st:[F[0].st, F[1].st],
+             winded:[F[0].winded, F[1].winded], ko:[F[0].ko, F[1].ko],
+             after:{pos:g.pos, top:g.top, ctrl:g.ctrl,
+                    sub:g.sub ? {by:g.sub.by, kind:g.sub.kind, tight:g.sub.tight} : null},
+             tap:tapped};
+  if(round === 1) lastRec.eyes = 'gong';
+  else if(!eyesDone && Math.min(before.hp[0], before.hp[1]) <= EYES_HP){ lastRec.eyes = 'decisive'; eyesDone = true; }
+  bouts.push(lastRec);
+  pushLog(lastRec);
+}
+
+/* =========================================================================
    2. ФИЗИКА: пружины, скелет, инверсная кинематика
    ========================================================================= */
 var STAGE_W = 168, STAGE_H = 106, FLOOR = 97;
@@ -603,7 +1095,7 @@ Sp.prototype.step = function(dt){
 Sp.prototype.reset = function(v){ this.x = v; this.t = v; this.v = 0; };
 
 function Boxer(i){
-  this.i = i; this.face = i === 0 ? 1 : -1; this.base = POS[i];
+  this.i = i; this.face0 = i === 0 ? 1 : -1; this.face = this.face0; this.base = POS[i];
   this.hx = new Sp(POS[i], 130, 21);
   this.hy = new Sp(HIP_Y, 220, 27);
   this.lean = new Sp(0, 150, 22);
@@ -628,7 +1120,9 @@ function Boxer(i){
   this.solve();
 }
 Boxer.prototype.reset = function(){
+  this.face = this.face0;
   var f = this.face;
+  this.base = POS[this.i];
   this.hx.reset(this.base); this.hy.reset(HIP_Y); this.lean.reset(0); this.head.reset(0);
   this.twist.reset(0);
   this.foot[0].reset(this.base + 10 * f); this.foot[1].reset(this.base - 11 * f);
@@ -727,7 +1221,216 @@ function lungeLeg(b, p, hipY, sep){
 /* =========================================================================
    3. СТОЙКА И ДЕЙСТВИЯ
    ========================================================================= */
+
+/* =========================================================================
+   3b. ММА: ПОЗЫ КЛИНЧА И ПАРТЕРА
+   -------------------------------------------------------------------------
+   RP — позиция, в которой пара РИСУЕТСЯ. Она живёт отдельно от боевого
+   состояния GR: повтор боя и пересмотр раунда читают позицию из записи,
+   иначе сцена показала бы не тот бой, который был.
+   ========================================================================= */
+var RP = {pos:'stand', top:-1};
+function onGround(){ return RP.pos !== 'stand' && RP.pos !== 'clinch'; }
+function setRP(pos, top){ RP.pos = pos; RP.top = top; }
+
+/* bHy/tHy — насколько таз выше настила; tOff — где верхний относительно
+   лежащего, по направлению его ног; bFoot/bFy — куда уходят ступни нижнего. */
+var GPOSE = {
+  guard:{bLean:-1.40, bHy:8,  bFoot:[14, 10], bFy:[14, 18], tOff: 11, tLean:0.44, tHy:18},
+  side: {bLean:-1.50, bHy:6,  bFoot:[21, 17], bFy:[1, 4],   tOff:  4, tLean:0.82, tHy:13},
+  mount:{bLean:-1.52, bHy:5,  bFoot:[23, 19], bFy:[0, 1],   tOff: -3, tLean:0.08, tHy:20},
+  back: {bLean:-0.48, bHy:14, bFoot:[17, 12], bFy:[0, 0],   tOff:-14, tLean:0.14, tHy:16}
+};
+var GCX = 84;                                  // середина партера на настиле
+
+function driveGround(b){
+  var g = GPOSE[RP.pos] || GPOSE.guard, bot = 1 - RP.top;
+  /* Разворот перестал быть свойством индекса бойца: тот, кто взял спину,
+     смотрит В ТУ ЖЕ сторону, что и соперник, а не ему в лицо. */
+  B[bot].face = B[bot].face0;
+  var bf = B[bot].face, bx = GCX + 6 * bf, n;
+  if(b.i !== bot) b.face = (RP.pos === 'back') ? bf : b.face0;
+  var br = Math.sin(b.breath) * (b.tired ? 1.5 : .6) * (b.winded ? 2 : 1);
+  b.twist.set(0, 170, 24); b.turned = 0;
+  if(b.i === bot){                              // нижний: спина на настиле, колени к сопернику
+    b.base = bx;
+    b.hx.set(bx, 120, 20);
+    b.hy.set(FLOOR - g.bHy + br, 170, 24);
+    b.lean.set(g.bLean, 120, 20);
+    b.head.set(RP.pos === 'back' ? -0.08 : 0.58, 200, 17);   // подбородок прижат, смотрит на верхнего
+    b.solve(); n = b.J.neck;
+    handTo(b, 0, n.x + 10 * bf, n.y - 2, 170, 24);
+    handTo(b, 1, n.x + 5 * bf,  n.y - 6, 170, 24);
+    footToXY(b, 0, bx + g.bFoot[0] * bf, FLOOR - g.bFy[0], 160, 23);
+    footToXY(b, 1, bx + g.bFoot[1] * bf, FLOOR - g.bFy[1], 160, 23);
+    return;
+  }
+  var tx = bx + g.tOff * bf, f = b.face;        // верхний: над ним, вес на руках и коленях
+  if(RP.pos === 'back'){ tx = bx + g.tOff * bf; }
+  b.base = tx;
+  b.hx.set(tx, 120, 20);
+  b.hy.set(FLOOR - g.tHy + br * .6, 170, 24);
+  b.lean.set(g.tLean, 120, 20);
+  b.head.set(0.20, 200, 17);
+  b.solve(); n = b.J.neck;
+  if(RP.pos === 'back'){
+    /* Руки идут не вниз, а вперёд через шею: это и есть заход на удушение. */
+    var oh = B[bot].J.head;
+    handTo(b, 0, oh.x + 1 * f, oh.y + 8, 170, 24);
+    handTo(b, 1, oh.x - 7 * f, oh.y + 9, 170, 24);
+    footToXY(b, 0, tx + 13 * f, FLOOR, 160, 23);
+    footToXY(b, 1, tx - 6 * f, FLOOR, 160, 23);
+    return;
+  }
+  handTo(b, 0, n.x + 12 * f, n.y + 7, 170, 24);
+  handTo(b, 1, n.x + 6 * f,  n.y + 4, 170, 24);
+  footToXY(b, 0, tx + 9 * f, FLOOR, 160, 23);
+  footToXY(b, 1, tx - 8 * f, FLOOR, 160, 23);
+}
+
+function driveClinchPose(b){
+  b.face = b.face0;
+  var f = b.face, cx = GCX - 11 * f, n;
+  var br = Math.sin(b.breath) * (b.tired ? 1.6 : .7);
+  b.base = cx;
+  b.hx.set(cx, 130, 21);
+  b.hy.set(HIP_Y + br + (b.winded ? 5 : 0), 200, 26);
+  b.lean.set(0.16 + (b.winded ? .2 : 0), 150, 22);   // лбы упёрты — оба наклонены вперёд
+  b.head.set(0.10, 240, 18);
+  b.twist.set(0, 180, 24);
+  b.turned = 0;
+  b.solve(); n = b.J.neck;
+  handTo(b, 0, n.x + 16 * f, n.y - 5, 180, 24);      // захват за шею соперника
+  handTo(b, 1, n.x + 12 * f, n.y + 1, 180, 24);
+  footTo(b, 0, cx + 8 * f, 170, 24);
+  footTo(b, 1, cx - 9 * f, 170, 24);
+}
+
+/* --- движения приёмов ---------------------------------------------------
+   Общая форма у всех: подготовка до T_IMPACT, всплеск в контакт, возврат
+   в позу позиции. Удары и попытки отличаются тем, ЧТО именно выносится
+   вперёд — рука, колено или весь таз. */
+function driveMMA(i, t, rec){
+  var b = B[i], f = b.face, c = rec.choices[i], o = rec.out[i], id = c.id;
+  var op = B[1 - i], A = ACT[id], n = b.J.neck;
+  var pre = clamp(t / T_IMPACT, 0, 1);
+  var out = t <= T_IMPACT ? 0 : clamp((t - T_IMPACT) / 380, 0, 1);
+  var punch = pre < 1 ? pre * pre : 1 - out;          // 0 → 1 → 0
+  var ok = o && o.ok;
+  /* Как только позиция сменилась на партер, движение стойки должно отпустить
+     тело: иначе удачно прошедший в ноги остаётся стоять в боксёрском гарде
+     над лежащим соперником. Поза позиции из driveGuard уже выставлена. */
+  if(onGround() && (id === 'shoot' || id === 'clinchIn' || id === 'sprawl' ||
+                    id === 'breakout' || id === 'frame')) return;
+  if(RP.pos === 'clinch' && (id === 'shoot' || id === 'sprawl')) return;
+
+  if(id === 'shoot'){                                 // проход в ноги: уровень вниз, таз вперёд
+    var k = punch;
+    b.hy.set(HIP_Y + 16 * k, 190, 24);
+    b.lean.set(0.30 + 0.75 * k, 150, 21);
+    b.hx.set(b.base + (ok ? 26 : 17) * k * f, 140, 20);
+    b.head.set(-0.18 * k, 240, 18);
+    handTo(b, 0, n.x + (14 + 20 * k) * f, n.y + 18 * k, 200, 25);
+    handTo(b, 1, n.x + (9 + 16 * k) * f,  n.y + 20 * k, 200, 25);
+    footTo(b, 0, b.base + (10 + 14 * k) * f, 180, 24);
+    footTo(b, 1, b.base - (11 - 4 * k) * f, 180, 24);
+    return;
+  }
+  if(id === 'sprawl'){                                // спраул: таз в пол, ноги назад
+    var s = punch;
+    b.hy.set(HIP_Y + 20 * s, 190, 24);
+    b.lean.set(0.20 + 0.95 * s, 150, 21);
+    b.hx.set(b.base - 5 * s * f, 140, 20);
+    handTo(b, 0, n.x + (16 + 14 * s) * f, n.y + 24 * s, 200, 25);
+    handTo(b, 1, n.x + (10 + 12 * s) * f, n.y + 26 * s, 200, 25);
+    footTo(b, 0, b.base - (4 + 16 * s) * f, 180, 24);
+    footTo(b, 1, b.base - (11 + 20 * s) * f, 180, 24);
+    return;
+  }
+  if(id === 'clinchIn'){
+    var q = punch;
+    b.hx.set(b.base + 16 * q * f, 140, 20);
+    b.lean.set(0.10 + .28 * q, 150, 21);
+    handTo(b, 0, n.x + (12 + 16 * q) * f, n.y - 4 * q, 200, 25);
+    handTo(b, 1, n.x + (7 + 13 * q) * f,  n.y - 2 * q, 200, 25);
+    return;
+  }
+  if(id === 'breakout'){
+    b.hx.set(b.base - 13 * punch * f, 140, 20);
+    handTo(b, 0, n.x + (14 + 8 * punch) * f, n.y + 3, 200, 25);
+    handTo(b, 1, n.x + (9 + 7 * punch) * f,  n.y + 5, 200, 25);
+    return;
+  }
+  if(id === 'frame'){
+    handTo(b, 0, n.x + (14 + 7 * punch) * f, n.y + 2, 210, 25);
+    handTo(b, 1, n.x + (10 + 6 * punch) * f, n.y + 6, 210, 25);
+    b.lean.set(0.06 - .12 * punch, 150, 22);
+    return;
+  }
+
+  /* --- удары в клинче и партере --- */
+  if(A.kind === 'attack'){
+    var tgt = (o && o.dmg > 0)
+      ? (A.body ? {x:op.J.hip.x, y:op.J.hip.y - 9} : {x:op.J.head.x, y:op.J.head.y + 1})
+      : {x:op.J.head.x - 9 * f, y:op.J.head.y + 7};
+    if(id === 'cknee' || id === 'sbody'){             // колено: работает нога, не рука
+      var kn = punch;
+      b.hy.set((onGround() ? b.hy.t : HIP_Y) - 5 * kn, 190, 25);
+      b.lean.set(b.lean.t + .18 * kn, 150, 22);
+      footToXY(b, 1, b.base + (10 + 16 * kn) * f, FLOOR - 26 * kn, 220, 25);
+      handTo(b, 0, n.x + 15 * f, n.y - 4, 200, 25);
+      handTo(b, 1, n.x + 11 * f, n.y - 1, 200, 25);
+      return;
+    }
+    if(id === 'upkick'){
+      var uk = punch;
+      footToXY(b, 0, b.base + (14 + 20 * uk) * f, FLOOR - (14 + 16 * uk), 220, 25);
+      return;
+    }
+    var hx = n.x + (tgt.x - n.x) * punch, hy2 = n.y + (tgt.y - n.y) * punch;
+    handTo(b, 1, hx, hy2, 250, 26);
+    handTo(b, 0, n.x + (12 - 3 * punch) * f, n.y + (onGround() ? 6 : -2), 200, 25);
+    b.twist.set(0.45 * punch, 200, 25);
+    if(!onGround()) b.lean.set(0.14 + .16 * punch, 150, 22);
+    return;
+  }
+
+  /* --- попытки приёмов: рывок всем телом --- */
+  if(A.kind === 'grap'){
+    var h = punch * (ok ? 1 : .6);
+    if(A.sub || id === 'cinch'){                      // болевой: руки тянут, корпус подкручен
+      var pull = {x:op.J.arms[0].hand.x, y:op.J.arms[0].hand.y};
+      if(id === 'rnc' || ACT[id].kind === 'grap' && id === 'rnc') pull = {x:op.J.head.x, y:op.J.head.y + 3};
+      handTo(b, 1, n.x + (pull.x - n.x) * h, n.y + (pull.y - n.y) * h, 230, 26);
+      handTo(b, 0, n.x + (pull.x - n.x) * h * .8 + 4 * f, n.y + (pull.y - n.y) * h * .8, 230, 26);
+      b.twist.set(0.5 * h, 200, 25);
+      b.lean.set(b.lean.t + .22 * h, 150, 22);
+      return;
+    }
+    /* свипы, проходы, выходы — это работа таза и упор ногами */
+    b.hy.set(b.hy.t - 7 * h, 180, 24);
+    b.hx.set(b.hx.t + (RP.top === i ? 7 : -6) * h * f, 130, 20);
+    b.lean.set(b.lean.t + (RP.top === i ? .30 : -.26) * h, 140, 21);
+    b.twist.set(-0.35 * h, 190, 25);
+    handTo(b, 0, n.x + (13 + 9 * h) * f, n.y + (onGround() ? 5 : 0) - 4 * h, 200, 25);
+    handTo(b, 1, n.x + (8 + 7 * h) * f,  n.y + (onGround() ? 3 : -3) - 3 * h, 200, 25);
+    return;
+  }
+
+  /* --- терпеть / блокироваться: мелкая дрожь усилия --- */
+  var sh2 = Math.sin(t / 42) * (id === 'endure' ? 1.8 : 1.0);
+  b.hx.set(b.hx.t + sh2 * .5 * f, 150, 21);
+  b.lean.set(b.lean.t + (id === 'endure' ? .10 : -.06), 150, 22);
+  handTo(b, 0, n.x + 8 * f, n.y - 3 + sh2, 210, 25);
+  handTo(b, 1, n.x + 4 * f, n.y - 5 - sh2, 210, 25);
+}
+
 function driveGuard(b){
+  if(game === 'mma' && RP.pos !== 'stand'){
+    if(RP.pos === 'clinch') driveClinchPose(b); else driveGround(b);
+    return;
+  }
+  b.base = POS[b.i]; b.face = b.face0;
   var f = b.face, n = b.J.neck;
   /* Печень: дыхание перехватило — боец складывается вперёд, руки уходят вниз.
      Внешне это сильнее обычной усталости, потому что это и есть её предел. */
@@ -806,6 +1509,7 @@ function driveActor(i, t, rec){
   if(b.rd){ driveGuard(b); return; }
   if(b.down){ driveDown(b); return; }
   driveGuard(b);
+  if(game === 'mma' && MMA_ACT[c.id]){ driveMMA(i, t, rec); return; }
 
   switch(c.id){
     case 'jab':
@@ -993,7 +1697,8 @@ function driveActor(i, t, rec){
 function heavyMode(rec, i){
   var o = rec.out[i], c = rec.choices[i], j = 1 - i;
   if(o.type !== 'atk' || o.dmg <= 0) return null;
-  if(rec.hp[j] <= 0) return 'down';
+  if(rec.hp[j] <= 0) return game === 'mma' && onGround() ? null : 'down';
+  if(game === 'mma' && onGround()) return null;
   if(o.mult === 1 && (c.id === 'uppercut' || c.id === 'crossLand' || c.id === 'kick' || c.id === 'spinLand')) return 'stagger';
   if(rec.hp[j] < 20) return 'stagger';
   return null;
@@ -1005,6 +1710,24 @@ function applyImpact(rec){
   for(i = 0; i < 2; i++){
     var o = rec.out[i], j = 1 - i, a = B[i], d = B[j], c = rec.choices[i];
     if(o.type === 'windup'){ popAt(a.J.arms[1].hand.x, a.J.arms[1].hand.y - 12, 'ЗАМАХ', 'info'); continue; }
+    if(o.type === 'grap'){
+      var gp = {x:a.J.hip.x, y:a.J.hip.y - 20};
+      popAt(gp.x, gp.y, (o.ok ? '✔ ' : '✖ ') + ACT[c.id].name.toUpperCase(), o.ok ? 'good' : 'info');
+      if(o.ok){
+        sndBlock(); crowdCheer(ACT[c.id].sub ? 1.1 : .7);
+        shake = Math.max(shake, 2.2); freeze += 45;
+        if(o.dmg > 0){                                  // бросок и перевод сами по себе бьют
+          sndHit(.7, true); burst(gp.x, gp.y + 12, 14, .5);
+          popAt(d.J.hip.x, d.J.hip.y - 26, '−' + o.dmg, 'dmg');
+          for(var pq = 0; pq < 10; pq++)
+            parts.push({x:d.J.hip.x + (Math.random() * 22 - 11), y:FLOOR - 1,
+                        vx:(Math.random() * 2 - 1) * 26, vy:-10 - Math.random() * 18,
+                        r:.9 + Math.random() * 1.7, life:0, max:.5 + Math.random() * .5, c:'#5b6579'});
+        }
+      }
+      continue;
+    }
+    if(o.endure){ popAt(a.J.head.x, a.J.head.y - 22, '−' + o.self, 'half'); sndHit(.5, true); continue; }
     if(o.type !== 'atk') continue;
     var lvl = c.lvl || 'head', f = a.face, kick = c.id === 'kick' || c.id === 'spinLand';
     var hp = kick ? a.J.legs[1].foot : a.J.arms[c.id === 'jab' ? 0 : 1].hand;
@@ -1692,8 +2415,24 @@ function drawStage(){
   drawArena();
 
   var order = drawOrder, i;
+  /* В партере глубина задаётся позицией, а не силой удара: верхний всегда
+     поверх нижнего, иначе тела читаются наизнанку. */
+  var wrap = null;
+  if(game === 'mma' && onGround() && RP.top >= 0){
+    var bot = 1 - RP.top;
+    /* Взявший спину находится ПОЗАДИ — его и рисуем первым, а душащую руку
+       доводим поверх. В остальных позициях верхний закрывает нижнего, но
+       обхватывающая нога и рамка нижнего идут поверх верхнего. */
+    if(RP.pos === 'back'){ order = [RP.top, bot]; wrap = {b:RP.top, leg:false, arm:true}; }
+    else {
+      order = [bot, RP.top];
+      if(RP.pos === 'guard')     wrap = {b:bot, leg:true,  arm:true};
+      else if(RP.pos === 'side') wrap = {b:bot, leg:false, arm:true};
+    }
+  }
   for(i = 0; i < 2; i++) if(B[i].gh && B[i].gh.length) drawGhosts(B[i]);
   drawBoxer(B[order[0]]); drawBoxer(B[order[1]]);
+  if(wrap) drawWrap(B[wrap.b], wrap.leg, wrap.arm);
 
   for(i = 0; i < rays.length; i++){                 // лучи от точки контакта
     var r = rays[i], e = r.life / r.max, sp = 1 + e * 2.2, al = (1 - e) * (1 - e);
@@ -1716,6 +2455,26 @@ function drawStage(){
   if(flashA > 0){ cx.fillStyle = 'rgba(255,255,255,' + flashA + ')'; cx.fillRect(0, 0, VW, VH); }
   drawCut();                                         // врезка ложится поверх сцены,
   drawKoCard();                                      // но «НОКАУТ» остаётся читаемым
+}
+
+/* Переплетение тел. Монолитный drawBoxer знает ровно две глубины, поэтому
+   конечность, которая ОБХВАТЫВАЕТ чужое тело — нога вокруг пояса, душащая
+   рука на шее — доводится вторым проходом поверх пары. */
+function drawWrap(b, wLeg, wArm){
+  var s = SKIN[b.i], J = b.drawJ || poseOf(b), f = b.face;
+  var dim = b.down ? 0.55 : 1;
+  function mix(c){ return dim < 1 ? shadeHex(c, dim) : c; }
+  cx.lineCap = 'round'; cx.lineJoin = 'round';
+  if(wLeg){
+    leg(J.legs[0], 5.6, 3.9, 2.8, mix(s.body), mix(s.bodyD));
+    cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
+    boot(J.legs[0], f, 5.2, 2.8, mix(s.trunkL));
+  }
+  if(wArm){
+    arm(J.arms[0], 5.2, 3.6, 2.7, mix(s.body), mix(s.bodyD));
+    glove(J.arms[0].hand, b.trail[0][0], unitV(J.arms[0].el, J.arms[0].hand), f,
+          mix(s.glove), mix(s.gloveD), mix(s.trunkL), GLOVE);
+  }
 }
 
 /* шлейф падающего тела: несколько прошлых поз с затуханием */
@@ -2514,6 +3273,15 @@ function frame(now){
       for(var q = 0; q < 2; q++){ disp[q].hp = seq.rec.hp[q]; disp[q].st = seq.rec.st[q]; }
       paintHud(true);
     }
+    if(!seq.posDone && seq.t >= T_IMPACT + 200){
+      seq.posDone = true;
+      var ra = seq.rec.after;
+      if(ra && (ra.pos !== RP.pos || ra.top !== RP.top)){
+        setRP(ra.pos, ra.top);
+        if(ra.pos !== 'stand') shake = Math.max(shake, 3.4);
+        seqExtend(360);
+      }
+    }
     if(seqDark && seq.t >= seqDark){ seqDark = 0; darkT = .42; }
     if(!seq.koDone && seq.t >= T_IMPACT + 240){
       seq.koDone = true;
@@ -2614,8 +3382,9 @@ function playRound(rec, done){
   crowdLevel(.022);
   clearPops(); parts.length = 0; rays.length = 0; freeze = 0; slowT = 0;
   rec._air = [airPoint(0, rec), airPoint(1, rec)];
+  if(rec.mma) setRP(rec.before.pos, rec.before.top);
   drawOrder = (rec.out[0].dmg || 0) >= (rec.out[1].dmg || 0) ? [1, 0] : [0, 1];
-  seq = {t:0, rec:rec, hit:false, swung:false, koDone:false,
+  seq = {t:0, rec:rec, hit:false, swung:false, koDone:false, posDone:false,
          end:(phase === 'replay' ? REPLAY_END : SEQ_END), done:done};
   animating = true;
 }
@@ -2623,6 +3392,7 @@ function playRound(rec, done){
 /* мгновенно доиграть раунд до конца — по тапу или при «меньше движения» */
 function snapEnd(rec){
   var i;
+  if(rec.mma && rec.after) setRP(rec.after.pos, rec.after.top);
   freeze = 0; slowT = 0; parts.length = 0; rays.length = 0; clearPops();
   dark = 0; darkT = 0; cineT = 0; cineFollow = -1; koCardT = 0; cut = null; cutQ = null;
   for(i = 0; i < 2; i++) B[i].gh = [];
@@ -2717,7 +3487,9 @@ function pushLog(rec){
   var txt = '<div class="rn">РАУНД ' + rec.round + '</div>';
   for(var i = 0; i < 2; i++){
     var o = rec.out[i], tag;
-    if(o.type === 'def')         tag = 'защита';
+    if(o.type === 'grap')        tag = (o.ok ? '✔ ' : '✖ ') + o.note + (o.dmg ? ' (−' + o.dmg + ')' : '');
+    else if(o.endure)            tag = 'терпит приём (−' + o.self + ' hp)';
+    else if(o.type === 'def')    tag = 'защита';
     else if(o.type === 'windup') tag = '⚡ замах кроссом — сработает в раунде ' + (rec.round + 1);
     else if(o.dmg === 0)         tag = 'мимо (' + o.why + ')';
     else                         tag = '−' + o.dmg + (o.stHit ? ' и −' + o.stHit + ' вын.' : '') +
@@ -2725,6 +3497,13 @@ function pushLog(rec){
                                        ' (' + o.why + ')' + (o.tired ? ' [выдохся]' : '');
     txt += '<div class="l"><b class="' + F[i].cls + '">' + F[i].ico + ' ' + F[i].name + '</b>: ' +
            label(rec.choices[i]) + ' → ' + tag + '</div>';
+  }
+  if(rec.mma && rec.after){
+    var af = rec.after, ps = af.pos === 'stand' ? 'стойка'
+      : af.pos === 'clinch' ? 'клинч'
+      : POS_NAME[af.pos].toLowerCase() + ', сверху ' + F[af.top].ico + ' ' + F[af.top].name;
+    if(af.sub) ps += ' · ' + ACT[af.sub.kind].name.toLowerCase() + ' ' + af.sub.tight + '/3';
+    txt += '<div class="l sm">позиция: ' + ps + '</div>';
   }
   txt += '<div class="l sm">итог: 🔵 ' + rec.hp[0] + ' hp / ' + rec.st[0] +
          ' вын.  ·  🔴 ' + rec.hp[1] + ' hp / ' + rec.st[1] + ' вын.</div>';
@@ -2738,10 +3517,10 @@ var P = document.getElementById('panel');
 
 function screenStart(){
   return '<h1>КЛИНЧ</h1>' +
-    '<div class="sub">Пошаговый бокс. Ход выбирается втайне, ходы вскрываются одновременно и разыгрываются на ринге.</div>' +
-    '<button class="btn gold big" data-go="begin-cpu">🤖 ПРОТИВ CPU</button>' +
-    '<button class="btn big" data-go="begin-pvp">👥 ДВА ИГРОКА</button>' +
-    '<details><summary>Правила</summary><div class="body">' +
+    '<div class="sub">Две игры в одном ринге. Ход выбирается втайне, ходы вскрываются одновременно и разыгрываются на ринге.</div>' +
+    '<button class="btn gold big" data-go="game-klinch">🥊 КЛИНЧ<br><span class="s">бокс в стойке</span></button>' +
+    '<button class="btn big" data-go="game-mma">🤼 ММА<br><span class="s">удары, клинч, партер и приёмы</span></button>' +
+    '<details><summary>Правила бокса</summary><div class="body">' +
       '<div><b>Атаки</b><br>' +
       '👊 <span class="k">Прямой</span> — 20 урона, сразу. Голова или корпус.<br>' +
       '🥊 <span class="k">Апперкот</span> — 35 урона, сразу. В голову пробивает нырок насквозь, но гасится высоким блоком. В корпус проходит сквозь блок.<br>' +
@@ -2753,7 +3532,50 @@ function screenStart(){
       '<div><b>Выносливость</b><br>Тратится на атаки, возвращается от пассивных действий и от ударов по корпусу соперника. Ниже <span class="k">' + LOW_ST +
       '</span> — твоя атака бьёт на треть слабее.</div>' +
       '<div><b>Конец боя</b><br>Нокаут или ' + MAX_ROUNDS + ' раундов, дальше побеждает тот, у кого больше здоровья. В конце можно пересмотреть весь бой целиком.</div>' +
+    '</div></details>' +
+    '<details><summary>Правила ММА</summary><div class="body">' +
+      '<div><b>Позиции</b><br>Бой идёт в одной из шести позиций, и в каждой у тебя СВОИ действия — отдельные у верхнего и у нижнего.<br>' +
+      '🥊 <span class="k">Стойка</span> — весь бокс плюс проход в ноги, вход в клинч и спраул.<br>' +
+      '🫱 <span class="k">Клинч</span> — короткие, колено, бросок, рамка, разрыв.<br>' +
+      '🤼 <span class="k">Гард</span> — сверху бьёшь и проходишь, снизу выходишь, встаёшь или ловишь треугольник.<br>' +
+      '↔️ <span class="k">Сайд-контроль</span> → <span class="k">маунт</span> → <span class="k">спина</span> — чем выше позиция, тем больнее сверху и тяжелее снизу.</div>' +
+      '<div><b>Перевод в партер</b><br>Проход в ноги удаётся тем вернее, чем выше борьба. Но <span class="k">спраул</span> глушит его всегда и у любого бойца — за это ловишь встречный удар. Шаг назад срезает проход вдвое, а удар в момент прохода наоборот его облегчает. Гарантированного перевода не бывает.</div>' +
+      '<div><b>Приёмы</b><br>Болевой или удушение берётся, затягивается и на третьей ступени — сдача. Под приёмом остаётся два выхода: <span class="k">терпеть</span> (стоит здоровья, но держит сустав) и <span class="k">вырваться</span> (дорого по выносливости). Шанс вырваться никогда не падает ниже 15%, как бы туго ни было.</div>' +
+      '<div><b>Бойцы</b><br>Удар, борьба, защита, выносливость — сумма у всех одна. Профильная характеристика не только усиливает свои действия, но и делает их дешевле: борец борется дёшево, ударник дёшево бьёт, и каждый дорого платит в чужой игре.</div>' +
     '</div></details>';
+}
+
+function screenOpp(){
+  return '<h2>' + (game === 'mma' ? '🤼 ММА' : '🥊 КЛИНЧ') + '</h2>' +
+    '<div class="sub">' + (game === 'mma'
+      ? 'Полный бой: стойка, проход в ноги, клинч, партер и приёмы. У каждого бойца свои характеристики.'
+      : 'Чистый бокс в стойке — правила прежние.') + '</div><div class="spacer"></div>' +
+    '<button class="btn gold big" data-go="opp-cpu">🤖 ПРОТИВ CPU</button>' +
+    '<button class="btn big" data-go="opp-pvp">👥 ДВА ИГРОКА</button>' +
+    '<button class="btn ghost" data-go="home">← Назад</button>';
+}
+
+/* Выбор бойца. Бюджет характеристик у всех одинаковый, поэтому экран честно
+   показывает и сильную сторону, и её цену. */
+function statBar(v, col){
+  return '<span style="display:inline-block;width:52px;height:6px;border-radius:3px;background:#1d2735;vertical-align:middle;overflow:hidden">' +
+         '<span style="display:block;height:100%;width:' + (v * 10) + '%;background:' + col + '"></span></span>';
+}
+function screenPick(){
+  var col = active === 0 ? 'var(--blueL)' : 'var(--redL)', h = '', i, a;
+  for(i = 0; i < ARCH.length; i++){
+    a = ARCH[i];
+    h += '<button class="act def wide" data-arch="' + a.id + '">' +
+         '<span class="em">' + a.em + '</span><span class="col">' +
+         '<span class="t">' + a.name + '</span>' +
+         '<span class="s">удар ' + statBar(a.str, '#ff7a1a') + ' борьба ' + statBar(a.grap, '#35b6dd') +
+         '<br>защита ' + statBar(a.def, '#37d178') + ' вынос ' + statBar(a.sta, '#ffb020') + '</span>' +
+         '<span class="s">' + a.note + '</span></span></button>';
+  }
+  return '<h2>' + F[active].ico + ' <span style="color:' + col + '">' + F[active].name +
+    '</span><br>ВЫБЕРИ БОЙЦА</h2>' +
+    '<div class="sub">Сумма характеристик у всех одна. Профильный стат не только усиливает свои приёмы, но и делает их дешевле по выносливости.</div>' +
+    '<div class="grid">' + h + '</div>';
 }
 
 function screenHandoff(){
@@ -2779,6 +3601,38 @@ function actBtn(id, wide, off){
          (off ? ' off' : '') + '"' + (off ? '' : ' data-pick="' + id + '"') + '>' + inner + '</button>';
 }
 
+/* Экран выбора строится ИЗ legal(): один источник правды и для кнопок,
+   и для бота. Именно это делает меню ситуативным. */
+function groupBtns(ids, kind, wd){
+  var h = '', i;
+  for(i = 0; i < ids.length; i++){
+    var a = ACT[ids[i]];
+    if(a.kind !== kind) continue;
+    h += actBtn(ids[i], a.kind === 'grap' && ids.length < 7);
+  }
+  return h;
+}
+function screenChooseMMA(me, warn){
+  var g = GR, ids = legal(active), h = '';
+  var col = active === 0 ? 'blueL' : 'redL';
+  var sub = g.sub, mine = sub && sub.by === active;
+  var band = '<div class="card"><div style="text-align:center;font-family:var(--disp);letter-spacing:.06em;font-weight:700;color:var(--' + col + ')">' +
+    posLabel(active) + '</div>' +
+    (g.ctrl > 0 && g.pos !== 'stand' && g.pos !== 'clinch'
+      ? '<div class="sub" style="margin:4px 0 0">Контроль держится ' + g.ctrl + ' р. — приёмы сверху идут вернее, выход снизу тяжелее.</div>' : '') +
+    (sub ? '<div class="warnline" style="margin-top:6px">' + ACT[sub.kind].em + ' ' +
+            (mine ? 'Ты держишь ' : 'На тебе ') + ACT[sub.kind].name.toLowerCase() +
+            ' — тугость ' + sub.tight + '/3. ' +
+            (mine ? 'Дожмёшь до трёх — сдача.' : 'Дойдёт до трёх — ты сдался.') + '</div>' : '') +
+    '</div>';
+  var groups = [['Удары', 'attack'], ['Борьба', 'grap'], ['Защита', 'defense']];
+  for(var k = 0; k < groups.length; k++){
+    var body = groupBtns(ids, groups[k][1]);
+    if(body) h += '<div class="hdr">' + groups[k][0] + '</div><div class="grid">' + body + '</div>';
+  }
+  return '<h2>' + me.ico + ' ' + me.name + ' · ' + me.arch.em + ' ' + me.arch.name + '</h2>' + band + warn + h;
+}
+
 function screenChoose(){
   var me = F[active];
   var warn = me.st < LOW_ST
@@ -2788,6 +3642,7 @@ function screenChoose(){
   var wd = me.winded;
   if(wd) warn += '<div class="card"><div class="warnline">🫁 Удар в печень — дыхание перехватило. ' +
                  'В этом раунде не закрыться и не отойти, только нырок или атака.</div></div>';
+  if(game === 'mma') return screenChooseMMA(me, warn);
   return '<h2>' + me.ico + ' ' + me.name + ', ТВОЙ ХОД</h2>' + warn +
     '<div class="hdr">Атака</div><div class="grid">' + actBtn('jab') + actBtn('uppercut') +
       actBtn('kick') + actBtn('spin') + actBtn('cross', true) + '</div>' +
@@ -2824,7 +3679,14 @@ function screenConfirm(){
 
 function resRow(i, rec, full){
   var o = rec.out[i], c = rec.choices[i], badge = '', why = '';
-  if(o.type === 'def'){ why = 'Уходит в защиту — ' + ACT[c.id].hint + '.'; }
+  if(o.type === 'grap'){
+    why = (o.ok ? '' : 'Не вышло: ') + o.note.charAt(0).toUpperCase() + o.note.slice(1) + '.';
+    badge = o.dmg ? '<span class="hit">−' + o.dmg + '</span>'
+                  : '<span class="hit' + (o.ok ? '' : ' zero') + '">' + (o.ok ? '✔' : '✖') + '</span>';
+  }
+  else if(o.endure){ why = 'Терпит приём — сустав выдержал, но это стоило ' + o.self + ' здоровья.';
+                     badge = '<span class="hit half">−' + o.self + '</span>'; }
+  else if(o.type === 'def'){ why = 'Уходит в защиту — ' + ACT[c.id].hint + '.'; }
   else if(o.type === 'windup'){ why = 'Замах. Удар прилетит в следующем раунде.'; badge = '<span class="hit half">⚡</span>'; }
   else if(o.dmg === 0){ why = 'Мимо: ' + o.why + '.'; badge = '<span class="hit zero">0</span>'; }
   else { why = (o.mult < 1 ? 'Частично: ' : 'Попал: ') + o.why + '.';
@@ -2835,7 +3697,7 @@ function resRow(i, rec, full){
     (full ? '<div class="why">' + why + '</div>' : '') + '</div>';
 }
 
-function isOver(){ return F[0].hp <= 0 || F[1].hp <= 0 || round >= MAX_ROUNDS; }
+function isOver(){ return F[0].ko || F[1].ko || F[0].hp <= 0 || F[1].hp <= 0 || round >= MAX_ROUNDS; }
 
 function screenReveal(){
   if(!revealDone)                                   // во время размена панель не мешает сцене
@@ -2849,6 +3711,8 @@ function screenReveal(){
 function winTitle(i){ return F[i].ico + ' ' + F[i].name + ' ПОБЕДИЛ'; }
 function verdict(){
   var a = F[0].hp, b = F[1].hp;
+  if(F[0].tap) return {t:winTitle(1), s:'Сдача болевым в раунде ' + round + '. ' + F[0].ico + ' ' + F[0].name + ' постучал.'};
+  if(F[1].tap) return {t:winTitle(0), s:'Сдача болевым в раунде ' + round + '. ' + F[1].ico + ' ' + F[1].name + ' постучал.'};
   if(a <= 0 && b <= 0) return {t:'ДВОЙНОЙ НОКАУТ', s:'Оба на настиле. Ничья.'};
   if(a <= 0) return {t:winTitle(1), s:'Нокаут в раунде ' + round + '.'};
   if(b <= 0) return {t:winTitle(0), s:'Нокаут в раунде ' + round + '.'};
@@ -3230,6 +4094,8 @@ var TAG = [];
 function render(){
   var h = '';
   if(phase === 'start')        h = screenStart();
+  else if(phase === 'opp')     h = screenOpp();
+  else if(phase === 'pick')    h = screenPick();
   else if(phase === 'handoff') h = screenHandoff();
   else if(phase === 'choose')  h = screenChoose();
   else if(phase === 'level')   h = screenLevel();
@@ -3325,10 +4191,81 @@ function botChoose(){
   return keyToChoice(key);
 }
 
+/* Бот ММА. Тот же принцип, что и в боксе: взвешенный выбор ПО СОСТОЯНИЮ,
+   без подглядывания в ход игрока. Список кандидатов берётся из legal(1) —
+   поэтому бот физически не может выбрать действие, недоступное в позиции. */
+var MMA_W = {
+  jab:20, uppercut:11, kick:7, spin:4, cross:7, shoot:15, clinchIn:8,
+  block:11, bblock:9, slip:11, step:7, sprawl:10,
+  cpunch:16, cknee:16, throw:14, frame:10, breakout:7,
+  gpunch:16, gbody:14, pass:18, kimura:9, leglock:6, hold:9,
+  upkick:8, sweep:18, standup:14, tri:8, gblock:12,
+  elbow:16, sbody:13, tomount:18, takeback:12, armbar:10, reguard:18,
+  pound:20, bridge:14, toguard:16,
+  rnc:26, bpunch:12, hooks:8, shed:16, spinout:9, neckdef:16,
+  cinch:28, release:3, endure:9, escape:24
+};
+function botChooseMMA(){
+  var me = F[1], op = F[0], g = GR, ids = legal(1), w = {}, i, id, S = statOf(1);
+  var tiredMe = me.st < LOW_ST, amTop = g.top === 1;
+  for(i = 0; i < ids.length; i++) w[ids[i]] = MMA_W[ids[i]] || 8;
+
+  /* Характер бойца: борец идёт в борьбу, ударник держит дистанцию. */
+  for(i = 0; i < ids.length; i++){
+    id = ids[i]; var A = ACT[id];
+    if(A.kind === 'grap' || A.ground) w[id] *= 0.55 + S.grap * 0.09;
+    else if(A.kind === 'attack')      w[id] *= 0.55 + S.str * 0.09;
+  }
+  if(w.sprawl != null && S.str > S.grap) w.sprawl *= 1.6;          // ударник бережёт стойку
+
+  if(tiredMe){                                    // на нуле борьба и тяжёлые удары не окупаются
+    for(i = 0; i < ids.length; i++){
+      id = ids[i];
+      if(ACT[id].kind === 'grap')        w[id] *= 0.35;
+      else if(ACT[id].kind === 'attack') w[id] *= 0.45;
+      else                               w[id] *= 2.2;
+    }
+    if(w.step != null) w.step *= 2.2;
+  } else if(me.st < 45){
+    if(w.shoot != null) w.shoot *= .55; if(w.spin != null) w.spin *= .4;
+    if(w.kick != null) w.kick *= .5;    if(w.cross != null) w.cross *= .7;
+    if(w.pound != null) w.pound *= .8;
+  }
+  if(me.hp <= 30){ if(w.block != null) w.block *= 1.5; if(w.slip != null) w.slip *= 1.5;
+                   if(w.step != null) w.step *= 1.5; if(w.gblock != null) w.gblock *= 1.6; }
+  if(op.winded){                                  // соперник не закроется — давить
+    for(i = 0; i < ids.length; i++){ id = ids[i]; if(ACT[id].kind === 'attack') w[id] *= 1.6; }
+    if(w.shoot != null) w.shoot *= 1.4;
+  }
+  if(g.sub && g.sub.by === 1) w.cinch *= (g.sub.tight >= 2 ? 2.2 : 1.4);
+  if(g.sub && g.sub.by === 0){ w.escape *= (g.sub.tight >= 2 ? 2.6 : 1.2);
+                               if(me.hp <= 35) w.escape *= 1.5; }
+  if(!amTop && g.pos !== 'stand' && g.pos !== 'clinch'){
+    if(me.hp <= 45){ if(w.sweep != null) w.sweep *= 1.5; if(w.standup != null) w.standup *= 1.5;
+                     if(w.toguard != null) w.toguard *= 1.4; if(w.shed != null) w.shed *= 1.4; }
+  }
+  if(amTop && g.ctrl >= 2){                       // устоялся — пора идти вперёд
+    if(w.pass != null) w.pass *= 1.4; if(w.tomount != null) w.tomount *= 1.4;
+    if(w.armbar != null) w.armbar *= 1.4; if(w.rnc != null) w.rnc *= 1.5;
+  }
+  if(g.turned[0]){ if(w.takeback != null) w.takeback *= 2.4; }
+  if(choices[0] && (choices[0].id === 'crossLand' || choices[0].id === 'spinLand')){
+    if(w.block != null) w.block *= 3.2; if(w.slip != null) w.slip *= 2.2;
+    if(w.bblock != null) w.bblock *= 2.2; if(w.sprawl != null) w.sprawl *= .3;
+  }
+  if(botLastKey && w[botLastKey] != null) w[botLastKey] *= .6;
+  var key = pickWeightedKey(w);
+  botLastKey = key;
+  if(!ACT[key].level) return {id:key};
+  /* Куда бить: корпус, пока соперник свеж, голову — когда пора добивать. */
+  var pb = op.st > 55 && op.hp > 40 ? .5 : .28;
+  return {id:key, lvl:Math.random() < pb ? 'body' : 'head'};
+}
+
 function startRound(){
   choices = [null,null]; pendLevel = null; revealDone = false;
   for(var i = 0; i < 2; i++) if(F[i].pending) choices[i] = F[i].pending;
-  if(mode === 'cpu' && !choices[1]) choices[1] = botChoose();
+  if(mode === 'cpu' && !choices[1]) choices[1] = (game === 'mma' ? botChooseMMA() : botChoose());
   nextChooser(0);
 }
 function nextChooser(from){
@@ -3377,6 +4314,7 @@ function rewatchRound(){
     B[i].winded = !!rec.before.winded[i];
     disp[i].hp = rec.before.hp[i]; disp[i].st = rec.before.st[i];
   }
+  if(rec.mma) setRP(rec.before.pos, rec.before.top);
   for(i = 0; i < 14; i++){ driveIdle(); settle(1 / 60); }
   ragResetAll();
   paintHud(false);
@@ -3387,6 +4325,7 @@ function rewatchRound(){
         B[j].down = !!F[j].ko; B[j].charge = chargeKind(F[j].pending);
         B[j].tired = F[j].st < LOW_ST; B[j].winded = F[j].winded;
       }
+      setRP(GR.pos, GR.top);
       syncDisp();
       revealDone = true; render();
     });
@@ -3415,6 +4354,7 @@ function replayNext(){
     B[i].winded = !!rec.before.winded[i];
     disp[i].hp = rec.before.hp[i]; disp[i].st = rec.before.st[i];
   }
+  if(rec.mma) setRP(rec.before.pos, rec.before.top);
   /* Никакого досаживания в стойку: бойцы продолжают из той позы, в которой их
      застал конец прошлого размена, а пружины driveActor доведут их до новой
      цели сами. Прежние 14 кадров settle() возвращали обоих на исходные метки —
@@ -3435,6 +4375,7 @@ function replayStop(){
   ragResetAll();
   for(var i = 0; i < 2; i++){ B[i].down = !!F[i].ko; B[i].charge = false;
                               B[i].tired = F[i].st < LOW_ST; B[i].winded = F[i].winded; }
+  setRP(GR.pos, GR.top);
   syncDisp();
   for(var n = 0; n < 40; n++){ driveIdle(); settle(1/60); }
   phase = 'over'; musicPlay('ko'); render();
@@ -3447,7 +4388,7 @@ document.getElementById('snd').addEventListener('click', function(ev){
 try { muted = localStorage.getItem('klinch.muted') === '1'; } catch(e){}
 
 P.addEventListener('click', function(ev){
-  var t = ev.target.closest('[data-go],[data-pick],[data-lvl]');
+  var t = ev.target.closest('[data-go],[data-pick],[data-lvl],[data-arch]');
   if(!t) return;
   sndTap();
   if(t.dataset.pick){
@@ -3457,10 +4398,25 @@ P.addEventListener('click', function(ev){
     render(); return;
   }
   if(t.dataset.lvl){ choices[active] = {id:pendLevel, lvl:t.dataset.lvl}; phase = 'confirm'; render(); return; }
+  if(t.dataset.arch){                      // выбор бойца в ММА
+    pick[active] = t.dataset.arch;
+    if(mode === 'cpu'){                    // CPU берёт своего сам
+      pick[1] = ARCH[Math.floor(Math.random() * ARCH.length)].id;
+      beginFight();
+    } else if(active === 0){ active = 1; newFight(); render(); }
+    else beginFight();
+    return;
+  }
   var go = t.dataset.go;
-  if(go === 'begin-pvp' || go === 'begin-cpu'){
-    mode = go === 'begin-cpu' ? 'cpu' : 'pvp';
-    newFight(); resetRing(); startRound(); musicPlay('fight');
+  if(go === 'game-klinch' || go === 'game-mma'){
+    game = go === 'game-mma' ? 'mma' : 'klinch';
+    phase = 'opp'; render();
+  }
+  else if(go === 'home'){ game = 'klinch'; phase = 'start'; render(); }
+  else if(go === 'opp-cpu' || go === 'opp-pvp'){
+    mode = go === 'opp-cpu' ? 'cpu' : 'pvp';
+    if(game === 'mma'){ pick = ['allrnd','allrnd']; newFight(); active = 0; phase = 'pick'; render(); }
+    else beginFight();
   }
   else if(go === 'choose'){ phase = 'choose'; render(); }
   else if(go === 'done'){ nextChooser(active + 1); }
@@ -3473,7 +4429,12 @@ P.addEventListener('click', function(ev){
   else if(go === 'rpClose'){ replayStop(); }
 });
 
+function beginFight(){
+  newFight(); resetRing(); startRound(); musicPlay('fight');
+}
+
 function resetRing(){
+  setRP(GR ? GR.pos : 'stand', GR ? GR.top : -1);
   clearTimeout(rpTimer); clearTimeout(openT); replay = null; paused = false;
   seq = null; animating = false; skipEl.classList.add('off'); musicStop();
   clearPops(); parts.length = 0; rays.length = 0; freeze = 0; slowT = 0; shake = 0; flashA = 0;
