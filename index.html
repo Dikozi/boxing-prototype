@@ -718,6 +718,11 @@ function targetPoint(i, rec){
 }
 
 var SEQ_END = 1520, T_IMPACT = 520;
+/* В повторе боя размен обрывается сразу за реакцией на удар: дальше бойцы
+   всё равно просто стоят в гарде, а следующий размен начинается вплотную.
+   Тяжёлые моменты это не режет — seqExtend ставит максимум, поэтому нокаут,
+   рэгдолл и врезки продлевают размен как и раньше. */
+var REPLAY_END = 1060;
 
 function driveActor(i, t, rec){
   var b = B[i], f = b.face, c = rec.choices[i], n = b.J.neck, p, kl = c.lvl || 'head';
@@ -2527,12 +2532,14 @@ function airPoint(i, rec){
 }
 
 function playRound(rec, done){
-  sndBell(.42, true);                               // короткий гонг открывает размен
+  if(phase !== 'replay' || !replay || replay.idx === 0)
+    sndBell(.42, true);                             // короткий гонг открывает размен
   crowdLevel(.022);
   clearPops(); parts.length = 0; rays.length = 0; freeze = 0; slowT = 0;
   rec._air = [airPoint(0, rec), airPoint(1, rec)];
   drawOrder = (rec.out[0].dmg || 0) >= (rec.out[1].dmg || 0) ? [1, 0] : [0, 1];
-  seq = {t:0, rec:rec, hit:false, swung:false, koDone:false, end:SEQ_END, done:done};
+  seq = {t:0, rec:rec, hit:false, swung:false, koDone:false,
+         end:(phase === 'replay' ? REPLAY_END : SEQ_END), done:done};
   animating = true;
 }
 
@@ -3331,13 +3338,16 @@ function replayNext(){
     B[i].winded = !!rec.before.winded[i];
     disp[i].hp = rec.before.hp[i]; disp[i].st = rec.before.st[i];
   }
-  for(i = 0; i < 14; i++) { driveIdle(); settle(1/60); }
+  /* Никакого досаживания в стойку: бойцы продолжают из той позы, в которой их
+     застал конец прошлого размена, а пружины driveActor доведут их до новой
+     цели сами. Прежние 14 кадров settle() возвращали обоих на исходные метки —
+     отсюда и брался разрыв движения между разменами. */
   ragResetAll();
   paintHud(false); render();
   runRound(rec, function(){
     replay.idx++;
     render();
-    rpTimer = setTimeout(replayNext, 620);
+    rpTimer = setTimeout(replayNext, 0);            // встык, без паузы на раздумья
   });
 }
 function replayStop(){
