@@ -47,7 +47,7 @@ body{
 .lab b{font-family:var(--disp);color:var(--txt);font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
 .bar{position:relative;height:11px;border-radius:6px;background:#04060a;border:1px solid #2c3547;overflow:hidden;margin-left:6px}
 .bar i{position:absolute;inset:0 auto 0 0;display:block;height:100%;width:0;transition:width .3s cubic-bezier(.3,0,.2,1),background .3s ease}
-.bar u{position:absolute;top:0;bottom:0;left:80%;width:2px;background:#ffffff4d}
+.bar u{position:absolute;top:0;bottom:0;left:20%;width:2px;background:#ffffff4d}
 .bar.flash{animation:barFlash .45s ease-out}
 @keyframes barFlash{0%{box-shadow:inset 0 0 0 0 #fff0}25%{box-shadow:inset 0 0 12px 2px #ffffff9e}100%{box-shadow:inset 0 0 0 0 #fff0}}
 
@@ -240,14 +240,14 @@ details .body b{color:var(--txt)} details .body .k{color:var(--gold);font-weight
     <div class="cname" id="cn0">СИНИЙ УГОЛ</div>
     <div class="lab"><span>ЗДОРОВЬЕ</span><b id="hp0v">100</b></div>
     <div class="bar"><i id="hp0"></i></div>
-    <div class="lab"><span>УСТАЛОСТЬ</span><b id="fa0v">0</b></div>
+    <div class="lab"><span>ВЫНОСЛИВОСТЬ</span><b id="fa0v">100</b></div>
     <div class="bar"><i id="fa0"></i><u></u></div>
   </div>
   <div class="corner r">
     <div class="cname" id="cn1">КРАСНЫЙ УГОЛ</div>
     <div class="lab"><span>ЗДОРОВЬЕ</span><b id="hp1v">100</b></div>
     <div class="bar"><i id="hp1"></i></div>
-    <div class="lab"><span>УСТАЛОСТЬ</span><b id="fa1v">0</b></div>
+    <div class="lab"><span>ВЫНОСЛИВОСТЬ</span><b id="fa1v">100</b></div>
     <div class="bar"><i id="fa1"></i><u></u></div>
   </div>
 </div>
@@ -282,10 +282,21 @@ details .body b{color:var(--txt)} details .body .k{color:var(--gold);font-weight
 /* =========================================================================
    1. ПРАВИЛА И БАЛАНС
    ========================================================================= */
-var MAX_HP = 100, MAX_FAT = 100, MAX_ROUNDS = 10;
-var TIRED_AT = 80;      // усталость ВЫШЕ этого значения — штраф к урону
-var TIRED_MULT = 2/3;   // «на треть меньше»
-var REST = 8;           // пассивное восстановление за раунд
+var MAX_HP = 100, MAX_ST = 100, MAX_ROUNDS = 10;
+/* Выносливость: 100 — свежий боец, 0 — выжат. Считается «сколько осталось»,
+   а не «сколько накопилось»: полоска у обоих показателей убывает в одну
+   сторону, и её не нужно читать наоборот. */
+var LOW_ST = 28;        // выносливость НИЖЕ этого — штраф к урону
+var TIRED_MULT = 0.55;  // выдохшийся бьёт почти вдвое слабее — иначе измор корпусом не окупается
+var REST = 8;           // сколько выносливости возвращается за раунд
+
+/* Голова и корпус перестали быть одинаковыми. В голову урон полный, в корпус
+   меньше — но корпус выбивает из соперника выносливость, а на низкой
+   выносливости он сам бьёт на треть слабее. Это две разные стратегии:
+   добить сейчас или измотать. */
+var BODY_DMG = 0.72;
+var BODY_ST  = 1.1;     // доля урона удара, которую корпус снимает выносливостью
+var KICK_WHIFF = 12;    // промах ногой дороже промаха рукой — за это её и держим в узде
 
 /* Спорные места правил вынесены сюда — переключаются одной строкой.
    1) В ТЗ две взаимоисключающие фразы про апперкот в голову против высокого
@@ -299,24 +310,30 @@ var UPPERCUT_PIERCES_SLIP_HEAD_ONLY = true;
 var CROSS_BLOCK_MULT = 0.5;
 
 var ACT = {
-  jab:      {id:'jab',      kind:'attack', name:'Прямой',       em:'👊', dmg:20, fat:14,  level:true,  hint:'20 урона · сразу'},
-  uppercut: {id:'uppercut', kind:'attack', name:'Апперкот',     em:'🥊', dmg:35, fat:22,  level:true,  hint:'35 урона · пробивает нырок'},
-  cross:    {id:'cross',    kind:'attack', name:'Кросс',        em:'💥', dmg:50, fat:32,  level:false, hint:'50 урона · замах на раунд'},
-  block:    {id:'block',    kind:'defense',name:'Высокий блок', em:'🛡️', dmg:0,  fat:6,   level:false, hint:'закрывает голову'},
-  slip:     {id:'slip',     kind:'defense',name:'Нырок',        em:'🌀', dmg:0,  fat:8,   level:false, hint:'закрывает корпус'},
-  step:     {id:'step',     kind:'defense',name:'Шаг назад',    em:'👣', dmg:0,  fat:-10, level:false, hint:'уход + отдых'},
-  crossLand:{id:'crossLand',kind:'attack', name:'Кросс',        em:'💥', dmg:50, fat:6,   level:false, hint:''}
+  jab:      {id:'jab',      kind:'attack', name:'Прямой',       em:'👊', dmg:20, st:14,  level:true,  hint:'быстрый · 20/13'},
+  uppercut: {id:'uppercut', kind:'attack', name:'Апперкот',     em:'🥊', dmg:35, st:22,  level:true,  hint:'бьёт нырок · 35/23'},
+  kick:     {id:'kick',     kind:'attack', name:'Удар ногой',   em:'🦵', dmg:32, st:30,  level:true,  hint:'ломает блок · 32/21'},
+  cross:    {id:'cross',    kind:'attack', name:'Кросс',        em:'💥', dmg:50, st:32,  level:false, hint:'замах на раунд · 50'},
+  block:    {id:'block',    kind:'defense',name:'Высокий блок', em:'🛡️', dmg:0,  st:6,   level:false, hint:'закрывает голову'},
+  slip:     {id:'slip',     kind:'defense',name:'Нырок',        em:'🌀', dmg:0,  st:8,   level:false, hint:'закрывает корпус'},
+  step:     {id:'step',     kind:'defense',name:'Шаг назад',    em:'👣', dmg:0,  st:-10, level:false, hint:'уход + отдых'},
+  crossLand:{id:'crossLand',kind:'attack', name:'Кросс',        em:'💥', dmg:50, st:6,   level:false, hint:''}
 };
+
+/* Урон удара с учётом уровня: в корпус слабее. Кросс уровня не имеет. */
+function dmgOf(c){
+  return Math.round(ACT[c.id].dmg * (c.lvl === 'body' ? BODY_DMG : 1));
+}
 
 var F, round, phase, active, choices, pendLevel, lastRec, revealDone, bouts, eyesDone;
 var EYES_HP = 25;                   // ниже этого начинается «решающий» размен
-var disp = [{hp:MAX_HP,fat:0},{hp:MAX_HP,fat:0}];
+var disp = [{hp:MAX_HP,st:MAX_ST},{hp:MAX_HP,st:MAX_ST}];
 var mode = 'pvp';                   // 'pvp' — два игрока на одном экране, 'cpu' — против бота
 
 function newFight(){
   F = [
-    {i:0, name:'СИНИЙ', cls:'b', ico:'🔵', hp:MAX_HP, fat:0, pending:false, ko:false},
-    {i:1, name:(mode === 'cpu' ? 'CPU' : 'КРАСНЫЙ'), cls:'r', ico:'🔴', hp:MAX_HP, fat:0, pending:false, ko:false}
+    {i:0, name:'СИНИЙ', cls:'b', ico:'🔵', hp:MAX_HP, st:MAX_ST, pending:false, ko:false},
+    {i:1, name:(mode === 'cpu' ? 'CPU' : 'КРАСНЫЙ'), cls:'r', ico:'🔴', hp:MAX_HP, st:MAX_ST, pending:false, ko:false}
   ];
   round = 1; choices = [null,null]; pendLevel = null; lastRec = null; revealDone = false;
   bouts = []; eyesDone = false; botLastKey = null;
@@ -325,7 +342,7 @@ function newFight(){
   document.getElementById('cn1').textContent = F[1].name + ' УГОЛ';
   document.getElementById('log').innerHTML = '<div class="empty">Бой ещё не начался.</div>';
 }
-function syncDisp(){ for(var i=0;i<2;i++){ disp[i].hp = F[i].hp; disp[i].fat = F[i].fat; } }
+function syncDisp(){ for(var i=0;i<2;i++){ disp[i].hp = F[i].hp; disp[i].st = F[i].st; } }
 
 function resolve(atk, def){
   var d = def ? def.id : null;
@@ -344,6 +361,16 @@ function resolve(atk, def){
       return {mult:1, why:'соперник не защищался'};
     }
     if(d === 'slip')  return {mult:0, why:'нырок увёл корпус из-под удара'};
+    if(d === 'block') return {mult:1, why:'высокий блок держал голову — корпус открыт'};
+    return {mult:1, why:'соперник не защищался'};
+  }
+  if(atk.id === 'kick'){
+    if(atk.lvl === 'head'){
+      if(d === 'block') return {mult:.5, why:'высокий блок принял ногу, но погасил только половину'};
+      if(d === 'slip')  return {mult:0, why:'нырок ушёл прямо под ногу'};
+      return {mult:1, why:'соперник не защищался'};
+    }
+    if(d === 'slip')  return {mult:0, why:'нырок закрыл корпус'};
     if(d === 'block') return {mult:1, why:'высокий блок держал голову — корпус открыт'};
     return {mult:1, why:'соперник не защищался'};
   }
@@ -374,8 +401,8 @@ function label(c){
 
 /* просчёт раунда: оба удара считаются от состояния НА НАЧАЛО раунда */
 function resolveRound(){
-  var i, before = {hp:[F[0].hp,F[1].hp], fat:[F[0].fat,F[1].fat], pending:[F[0].pending,F[1].pending]};
-  var tired = [F[0].fat > TIRED_AT, F[1].fat > TIRED_AT];
+  var i, before = {hp:[F[0].hp,F[1].hp], st:[F[0].st,F[1].st], pending:[F[0].pending,F[1].pending]};
+  var tired = [F[0].st < LOW_ST, F[1].st < LOW_ST];
   var out = [null,null];
 
   for(i = 0; i < 2; i++){
@@ -383,22 +410,33 @@ function resolveRound(){
     if(A.kind !== 'attack'){ out[i] = {type:'def', dmg:0}; continue; }
     if(mine.id === 'cross'){ out[i] = {type:'windup', dmg:0}; continue; }
     var r = resolve(mine, choices[1-i]);
-    out[i] = {type:'atk', dmg:Math.round(A.dmg * (tired[i] ? TIRED_MULT : 1) * r.mult),
+    out[i] = {type:'atk', dmg:Math.round(dmgOf(mine) * (tired[i] ? TIRED_MULT : 1) * r.mult),
               mult:r.mult, why:r.why, tired:tired[i]};
   }
 
   F[1].hp = Math.max(0, F[1].hp - out[0].dmg);
   F[0].hp = Math.max(0, F[0].hp - out[1].dmg);
 
+  /* Выносливость: своя трата за действие, чужая — выбитая ударом по корпусу.
+     Считается от состояния на начало раунда, как и урон. */
+  var spend = [ACT[choices[0].id].st, ACT[choices[1].id].st], drain = [0, 0];
   for(i = 0; i < 2; i++){
-    F[i].fat = Math.max(0, Math.min(MAX_FAT, F[i].fat + ACT[choices[i].id].fat - REST));
+    if(out[i].type !== 'atk') continue;
+    if(out[i].dmg > 0 && choices[i].lvl === 'body'){
+      drain[1-i] = Math.round(dmgOf(choices[i]) * BODY_ST);
+      out[i].stHit = drain[1-i];
+    }
+    if(out[i].dmg === 0 && choices[i].id === 'kick') spend[i] += KICK_WHIFF;   // провалился за ногой
+  }
+  for(i = 0; i < 2; i++){
+    F[i].st = Math.max(0, Math.min(MAX_ST, F[i].st - spend[i] - drain[i] + REST));
     if(choices[i].id === 'cross')          F[i].pending = true;
     else if(choices[i].id === 'crossLand') F[i].pending = false;
     if(F[i].hp <= 0) F[i].ko = true;
   }
 
   lastRec = {round:round, choices:[choices[0], choices[1]], out:out, tired:tired,
-             before:before, hp:[F[0].hp,F[1].hp], fat:[F[0].fat,F[1].fat],
+             before:before, hp:[F[0].hp,F[1].hp], st:[F[0].st,F[1].st],
              ko:[F[0].ko, F[1].ko]};
   /* Сплит «глаза в глаза»: перед первым разменом и один раз перед решающим.
      Признак живёт в самой записи — пересмотр раунда и повтор боя показывают
@@ -448,6 +486,9 @@ function Boxer(i){
     {x:new Sp(POS[i], 200, 25), y:new Sp(HIP_Y - 27, 200, 25)}
   ];
   this.foot = [new Sp(POS[i] + 10 * this.face, 170, 24), new Sp(POS[i] - 11 * this.face, 170, 24)];
+  /* Раньше ступня жила только по горизонтали и была прибита к настилу.
+     Для удара ногой ей нужна вертикаль. */
+  this.footY = [new Sp(FLOOR, 190, 25), new Sp(FLOOR, 190, 25)];
   this.trail = [[], []];
   this.breath = Math.random() * 6;
   this.charge = false; this.down = false; this.tired = false;
@@ -459,6 +500,7 @@ Boxer.prototype.reset = function(){
   this.hx.reset(this.base); this.hy.reset(HIP_Y); this.lean.reset(0); this.head.reset(0);
   this.twist.reset(0);
   this.foot[0].reset(this.base + 10 * f); this.foot[1].reset(this.base - 11 * f);
+  this.footY[0].reset(FLOOR); this.footY[1].reset(FLOOR);
   this.charge = false; this.down = false; this.tired = false;
   this.trail = [[], []];
   this.solve();
@@ -502,7 +544,7 @@ Boxer.prototype.solve = function(){
   }
   for(k = 0; k < 2; k++){
     var hipK = {x:hip.x + fw.x * (k === 0 ? 2 : -2), y:hip.y + 1};
-    var ft = {x:this.foot[k].x, y:FLOOR};
+    var ft = {x:this.foot[k].x, y:this.footY[k].x};
     var kn = ik(hipK.x, hipK.y, ft.x, ft.y, THIGH, SHIN, f > 0 ? -1 : 1);
     legs.push({hip:hipK, knee:{x:kn.x, y:kn.y}, foot:{x:kn.ex, y:kn.ey}});
   }
@@ -513,7 +555,8 @@ var B = [new Boxer(0), new Boxer(1)];
 
 /* --- удобные сеттеры целей --- */
 function handTo(b, k, x, y, kk, dd){ b.hand[k].x.set(x, kk, dd); b.hand[k].y.set(y, kk, dd); }
-function footTo(b, k, x, kk, dd){ b.foot[k].set(x, kk, dd); }
+function footTo(b, k, x, kk, dd){ b.foot[k].set(x, kk, dd); b.footY[k].set(FLOOR, kk, dd); }
+function footToXY(b, k, x, y, kk, dd){ b.foot[k].set(x, kk, dd); b.footY[k].set(y, kk, dd); }
 function headPt(o){ return {x:o.J.head.x + 5.5 * o.face, y:o.J.head.y + 2.2}; }
 function bodyPt(o){ return {x:o.J.hip.x + 5.5 * o.face, y:o.J.hip.y - 12}; }
 function guardPt(o){
@@ -532,6 +575,19 @@ function lungeX(b, k, p, extra, cap, sep){
   var d = Math.max(0, need) + (extra || 0);
   var x = b.base + Math.min(d, cap == null ? 26 : cap) * b.face;
   var lim = B[1 - b.i].hx.x - (sep == null ? 29 : sep) * b.face;
+  return b.face > 0 ? Math.min(x, lim) : Math.max(x, lim);
+}
+
+var LEG_REACH = THIGH + SHIN;
+/* Нога длиннее руки, но и цель у неё выше. Считаем, сколько остаётся
+   по горизонтали после вертикального просвета до цели: без этого боец
+   на удар в голову шагает столько, что въезжает в соперника. */
+function lungeLeg(b, p, hipY, sep){
+  var dy = p.y - hipY;
+  var maxDx = Math.sqrt(Math.max(1, LEG_REACH * LEG_REACH * .86 - dy * dy));
+  var need = Math.abs(p.x - b.base) - maxDx;
+  var x = b.base + Math.max(0, need) * b.face;
+  var lim = B[1 - b.i].hx.x - sep * b.face;
   return b.face > 0 ? Math.min(x, lim) : Math.max(x, lim);
 }
 
@@ -586,7 +642,7 @@ function targetPoint(i, rec){
 var SEQ_END = 1520, T_IMPACT = 520;
 
 function driveActor(i, t, rec){
-  var b = B[i], f = b.face, c = rec.choices[i], n = b.J.neck, p;
+  var b = B[i], f = b.face, c = rec.choices[i], n = b.J.neck, p, kl = c.lvl || 'head';
   if(b.rd){ driveGuard(b); return; }
   if(b.down){ driveDown(b); return; }
   driveGuard(b);
@@ -664,6 +720,32 @@ function driveActor(i, t, rec){
       }
       break;
 
+    case 'kick':
+      if(t < 340){                                   // замах: вес на опорную, корпус закручивается назад
+        b.twist.set(-0.5, 200, 24);
+        b.lean.set(-0.17, 170, 22);
+        b.hy.set(HIP_Y + 3, 200, 25);
+        footTo(b, 1, b.base - 16 * f, 200, 24);
+        handTo(b, 0, n.x + 8 * f, n.y - 2, 220, 25);
+        handTo(b, 1, n.x + 2 * f, n.y - 4, 220, 25);
+      } else if(t < 790){                            // нога выносится, корпус отклоняется ей в противовес
+        p = targetPoint(i, rec);
+        var hiK = HIP_Y + (kl === 'head' ? -7 : 1);
+        var kx = lungeLeg(b, p, hiK, kl === 'head' ? 22 : 30);
+        b.hy.set(hiK, 260, 24);
+        b.hx.set(kx, 240, 23);
+        b.twist.set(0.8, 300, 22);
+        b.lean.set(kl === 'head' ? -0.44 : -0.22, 250, 21);
+        footToXY(b, 1, p.x, p.y, 900, 39);
+        footTo(b, 0, kx + 5 * f, 220, 24);           // опорная уходит под таз
+        handTo(b, 0, n.x + 12 * f, n.y + 5, 230, 25);   // руки разводятся на равновесие
+        handTo(b, 1, n.x - 14 * f, n.y - 2, 230, 25);
+      } else if(t < 1160){                           // нога возвращается на настил
+        b.twist.set(0, 240, 24);
+        footToXY(b, 1, b.base - 12 * f, FLOOR, 420, 30);
+      }
+      break;
+
     case 'block':
       if(t > 90 && t < 980){                         // обе перчатки к лицу, локти внутрь
         handTo(b, 0, n.x + 5.5 * f, n.y - 3.5, 330, 27);
@@ -700,7 +782,7 @@ function heavyMode(rec, i){
   var o = rec.out[i], c = rec.choices[i], j = 1 - i;
   if(o.type !== 'atk' || o.dmg <= 0) return null;
   if(rec.hp[j] <= 0) return 'down';
-  if(o.mult === 1 && (c.id === 'uppercut' || c.id === 'crossLand')) return 'stagger';
+  if(o.mult === 1 && (c.id === 'uppercut' || c.id === 'crossLand' || c.id === 'kick')) return 'stagger';
   if(rec.hp[j] < 20) return 'stagger';
   return null;
 }
@@ -712,7 +794,8 @@ function applyImpact(rec){
     var o = rec.out[i], j = 1 - i, a = B[i], d = B[j], c = rec.choices[i];
     if(o.type === 'windup'){ popAt(a.J.arms[1].hand.x, a.J.arms[1].hand.y - 12, 'ЗАМАХ', 'info'); continue; }
     if(o.type !== 'atk') continue;
-    var lvl = c.lvl || 'head', f = a.face, hp = a.J.arms[c.id === 'jab' ? 0 : 1].hand;
+    var lvl = c.lvl || 'head', f = a.face, kick = c.id === 'kick';
+    var hp = kick ? a.J.legs[1].foot : a.J.arms[c.id === 'jab' ? 0 : 1].hand;
 
     if(o.dmg > 0){
       var k = o.dmg / 50;                            // сила удара 0..1
@@ -741,7 +824,8 @@ function applyImpact(rec){
         }
       }
       a.hx.v -= f * 26 * k;                          // отдача бьющему
-      a.hand[c.id === 'jab' ? 0 : 1].x.v -= f * 40 * k;
+      if(kick) a.foot[1].v -= f * 34 * k;
+      else     a.hand[c.id === 'jab' ? 0 : 1].x.v -= f * 40 * k;
       sndHit(Math.min(1, .45 + k * .75), lvl === 'body');
       crowdCheer(k);
       burst(hp.x, hp.y, 16 + (k * 20 | 0), k);
@@ -764,7 +848,8 @@ function applyImpact(rec){
       if(dd === 'block'){
         sndBlock();
         d.hx.v += f * 26; d.hand[0].x.v += f * 55; d.hand[1].x.v += f * 42;
-        a.hand[c.id === 'jab' ? 0 : 1].x.v -= f * 90;
+        if(c.id === 'kick') a.foot[1].v -= f * 70;
+        else                a.hand[c.id === 'jab' ? 0 : 1].x.v -= f * 90;
         burst(hp.x, hp.y, 8, .25, '#cfe6ff');
         freeze += 45; shake = Math.max(shake, 1.8);
       }
@@ -910,6 +995,10 @@ function impulseFor(id, lvl, mode, back){
     return lvl === 'body'                          // в корпус — складывается вперёд
       ? {head:{x:back * 2.0, y:.4}, hspin:-back * .70, torso:{x:back * 4.6, y:1.4}, tspin:-back * .75, sup:[.05, .005], feet:.20}
       : {head:{x:back * 5.5, y:-1.0}, hspin:back * 1.1, torso:{x:back * 4.5, y:-.5}, tspin:back * .60, sup:[.022, .0035], feet:.10};
+  if(id === 'kick')                                // нога тяжелее руки: сносит целиком, а не крутит голову
+    return lvl === 'body'
+      ? {head:{x:back * 2.4, y:.2}, hspin:-back * .5, torso:{x:back * 5.4, y:1.0}, tspin:-back * .6, sup:[.05, .006], feet:.22}
+      : {head:{x:back * 6.2, y:-1.4}, hspin:back * 1.3, torso:{x:back * 4.2, y:-.8}, tspin:back * .7, sup:[.02, .003], feet:.09};
   if(id === 'uppercut')                            // снизу вверх: голову подбрасывает и заваливает назад
     return {head:{x:back * 2.0, y:-3.0}, hspin:back * 1.8, torso:{x:back * 1.6, y:-5.5}, tspin:back * .30, sup:[.014, .0028], feet:.06};
   return {head:{x:back * 3.0, y:-1.0}, hspin:back * .60, torso:{x:back * 2.4, y:0}, tspin:back * .30, sup:[.04, .005], feet:.16};
@@ -1258,9 +1347,12 @@ function drawBoxer(b){
   cx.globalAlpha = 1;
 
   // дальние конечности
-  leg(J.legs[1], 5.1, 3.6, 2.6, mix(s.dark), mix(s.dark));
-  cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
-  boot(J.legs[1], f, 5, 2.7, mix(s.dark));
+  var legOut = J.legs[1].foot.y < FLOOR - 5;                // задняя нога пошла в удар
+  if(!legOut){
+    leg(J.legs[1], 5.1, 3.6, 2.6, mix(s.dark), mix(s.dark));
+    cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
+    boot(J.legs[1], f, 5, 2.7, mix(s.dark));
+  }
   var rearOut = (J.arms[1].hand.x - J.neck.x) * f > 7;      // задняя рука вылетела вперёд
   if(!rearOut){
     arm(J.arms[1], 4.6, 3.2, 2.4, mix(s.dark), mix(s.dark));
@@ -1304,10 +1396,15 @@ function drawBoxer(b){
   line(p(6, 7.5), p(6, -6.8), 1.8, mix(s.trunkL), 1);
   line(p(5.4, 7.0), p(-2.2, 6.6), 1.5, mix(s.trunkL), 1);   // лампас
 
-  // ближняя нога
+  // ближняя нога, а следом бьющая задняя — поверх корпуса, чтобы удар было видно
   leg(J.legs[0], 5.6, 3.9, 2.8, mix(s.body), mix(s.bodyD));
   cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
   boot(J.legs[0], f, 5.2, 2.8, mix(s.trunkL));
+  if(legOut){
+    leg(J.legs[1], 5.3, 3.7, 2.7, mix(s.body), mix(s.bodyD));
+    cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
+    boot(J.legs[1], f, 5.1, 2.75, mix(s.trunkL));
+  }
 
   // шея и голова одним силуэтом: череп + челюсть вперёд
   line(J.neck, {x:J.head.x, y:J.head.y + HEAD_R * .6}, 6.2, mix(s.bodyD));
@@ -2178,7 +2275,7 @@ function frame(now){
     if(!seq.hit && seq.t >= T_IMPACT){
       seq.hit = true;
       applyImpact(seq.rec);
-      for(var q = 0; q < 2; q++){ disp[q].hp = seq.rec.hp[q]; disp[q].fat = seq.rec.fat[q]; }
+      for(var q = 0; q < 2; q++){ disp[q].hp = seq.rec.hp[q]; disp[q].st = seq.rec.st[q]; }
       paintHud(true);
     }
     if(seqDark && seq.t >= seqDark){ seqDark = 0; darkT = .42; }
@@ -2206,7 +2303,7 @@ function frame(now){
     var b = B[i], k;
     b.breath += dt * (b.tired ? 3.2 : 1.9);
     b.hx.step(dt); b.hy.step(dt); b.lean.step(dt); b.head.step(dt); b.twist.step(dt);
-    for(k = 0; k < 2; k++){ b.hand[k].x.step(dt); b.hand[k].y.step(dt); b.foot[k].step(dt); }
+    for(k = 0; k < 2; k++){ b.hand[k].x.step(dt); b.hand[k].y.step(dt); b.foot[k].step(dt); b.footY[k].step(dt); }
     for(k = 0; k < 2; k++){
       b.trail[k].unshift({x:b.J.arms[k].hand.x, y:b.J.arms[k].hand.y});
       if(b.trail[k].length > 2) b.trail[k].pop();
@@ -2293,10 +2390,10 @@ function snapEnd(rec){
   for(i = 0; i < 2; i++) B[i].gh = [];
   ragResetAll();
   for(i = 0; i < 2; i++){
-    disp[i].hp = rec.hp[i]; disp[i].fat = rec.fat[i];
+    disp[i].hp = rec.hp[i]; disp[i].st = rec.st[i];
     B[i].charge = (rec.choices[i].id === 'cross');
     B[i].down = !!rec.ko[i];
-    B[i].tired = rec.fat[i] > TIRED_AT;
+    B[i].tired = rec.st[i] < LOW_ST;
   }
   for(var n = 0; n < 40; n++){ driveIdle(); settle(1 / 60); }
   ragResetAll();
@@ -2306,7 +2403,7 @@ function settle(dt){
   for(var i = 0; i < 2; i++){
     var b = B[i], k;
     b.hx.step(dt); b.hy.step(dt); b.lean.step(dt); b.head.step(dt); b.twist.step(dt);
-    for(k = 0; k < 2; k++){ b.hand[k].x.step(dt); b.hand[k].y.step(dt); b.foot[k].step(dt); }
+    for(k = 0; k < 2; k++){ b.hand[k].x.step(dt); b.hand[k].y.step(dt); b.foot[k].step(dt); b.footY[k].step(dt); }
     b.solve();
   }
 }
@@ -2329,18 +2426,18 @@ againEl.addEventListener('click', function(ev){
    6. ШАПКА
    ========================================================================= */
 function hpColor(p){ return p > 50 ? '#37d178' : (p > 25 ? '#ffb020' : '#ff4d5e'); }
-function faColor(v){ return v > TIRED_AT ? '#ff7a1a' : (v > 55 ? '#ffb020' : '#35b6dd'); }
+function faColor(v){ return v < LOW_ST ? '#ff7a1a' : (v < 45 ? '#ffb020' : '#35b6dd'); }
 
 function paintHud(withFlash){
   for(var i = 0; i < 2; i++){
-    var hp = disp[i].hp, fa = disp[i].fat;
+    var hp = disp[i].hp, fa = disp[i].st;
     var hb = document.getElementById('hp' + i), fb = document.getElementById('fa' + i);
     var was = hb.style.width;
     hb.style.width = (hp / MAX_HP * 100) + '%'; hb.style.background = hpColor(hp / MAX_HP * 100);
-    fb.style.width = (fa / MAX_FAT * 100) + '%'; fb.style.background = faColor(fa);
+    fb.style.width = (fa / MAX_ST * 100) + '%'; fb.style.background = faColor(fa);
     document.getElementById('hp' + i + 'v').textContent = hp;
     var fv = document.getElementById('fa' + i + 'v');
-    fv.textContent = fa; fv.style.color = fa > TIRED_AT ? '#ff7a1a' : '';
+    fv.textContent = fa; fv.style.color = fa < LOW_ST ? '#ff7a1a' : '';
     if(withFlash && was !== hb.style.width){
       var bar = hb.parentNode;
       bar.classList.remove('flash'); void bar.offsetWidth; bar.classList.add('flash');
@@ -2358,7 +2455,7 @@ function paintRounds(){
   el.innerHTML = h;
 }
 function paintRing(){
-  if(phase !== 'replay') for(var i = 0; i < 2; i++) B[i].tired = F[i].fat > TIRED_AT && !F[i].ko;
+  if(phase !== 'replay') for(var i = 0; i < 2; i++) B[i].tired = F[i].st < LOW_ST && !F[i].ko;
   ring.classList.toggle('full', (phase === 'reveal' && revealDone) || phase === 'over');
   ring.classList.toggle('cinema', phase === 'replay' || (phase === 'reveal' && !revealDone));
   ring.classList.toggle('slim', phase === 'choose');
@@ -2382,12 +2479,13 @@ function pushLog(rec){
     if(o.type === 'def')         tag = 'защита';
     else if(o.type === 'windup') tag = '⚡ замах кроссом — сработает в раунде ' + (rec.round + 1);
     else if(o.dmg === 0)         tag = 'мимо (' + o.why + ')';
-    else                         tag = '−' + o.dmg + ' (' + o.why + ')' + (o.tired ? ' [выдохся]' : '');
+    else                         tag = '−' + o.dmg + (o.stHit ? ' и −' + o.stHit + ' вын.' : '') +
+                                       ' (' + o.why + ')' + (o.tired ? ' [выдохся]' : '');
     txt += '<div class="l"><b class="' + F[i].cls + '">' + F[i].ico + ' ' + F[i].name + '</b>: ' +
            label(rec.choices[i]) + ' → ' + tag + '</div>';
   }
-  txt += '<div class="l sm">итог: 🔵 ' + rec.hp[0] + ' hp / ' + rec.fat[0] +
-         ' уст.  ·  🔴 ' + rec.hp[1] + ' hp / ' + rec.fat[1] + ' уст.</div>';
+  txt += '<div class="l sm">итог: 🔵 ' + rec.hp[0] + ' hp / ' + rec.st[0] +
+         ' вын.  ·  🔴 ' + rec.hp[1] + ' hp / ' + rec.st[1] + ' вын.</div>';
   d.innerHTML = txt; log.appendChild(d); log.scrollTop = log.scrollHeight;
 }
 
@@ -2410,7 +2508,7 @@ function screenStart(){
       '🛡️ <span class="k">Высокий блок</span> — гасит удары в голову, корпус открыт. Кросс режет вдвое.<br>' +
       '🌀 <span class="k">Нырок</span> — гасит удары в корпус, подставляет голову под апперкот.<br>' +
       '👣 <span class="k">Шаг назад</span> — уводит от любого мгновенного удара и хорошо снимает усталость, но не спасает от объявленного кросса.</div>' +
-      '<div><b>Усталость</b><br>Растёт от атак, падает от пассивных действий. Выше <span class="k">' + TIRED_AT +
+      '<div><b>Выносливость</b><br>Тратится на атаки, возвращается от пассивных действий и от ударов по корпусу соперника. Ниже <span class="k">' + LOW_ST +
       '</span> — твоя атака бьёт на треть слабее.</div>' +
       '<div><b>Конец боя</b><br>Нокаут или ' + MAX_ROUNDS + ' раундов, дальше побеждает тот, у кого больше здоровья. В конце можно пересмотреть весь бой целиком.</div>' +
     '</div></details>';
@@ -2440,21 +2538,26 @@ function actBtn(id, wide){
 
 function screenChoose(){
   var me = F[active];
-  var warn = me.fat > TIRED_AT
-    ? '<div class="card"><div class="warnline">😮‍💨 Усталость ' + me.fat + ' — атака в этом раунде бьёт на треть слабее. Стоит отдохнуть.</div></div>' : '';
+  var warn = me.st < LOW_ST
+    ? '<div class="card"><div class="warnline">😮‍💨 Выносливость ' + me.st + ' — атака в этом раунде бьёт на треть слабее. Стоит отдохнуть.</div></div>' : '';
   return '<h2>' + me.ico + ' ' + me.name + ', ТВОЙ ХОД</h2>' + warn +
-    '<div class="hdr">Атака</div><div class="grid">' + actBtn('jab') + actBtn('uppercut') + actBtn('cross', true) + '</div>' +
+    '<div class="hdr">Атака</div><div class="grid">' + actBtn('jab') + actBtn('uppercut') +
+      actBtn('kick') + actBtn('cross') + '</div>' +
     '<div class="hdr">Защита</div><div class="grid">' + actBtn('block') + actBtn('slip') + actBtn('step', true) + '</div>';
 }
 
 function screenLevel(){
   var a = ACT[pendLevel];
+  var dh = a.dmg, db = Math.round(a.dmg * BODY_DMG), col = active === 0 ? 'blue' : 'red';
   return '<h2>' + a.em + ' ' + a.name.toUpperCase() + '<br>КУДА БЬЁШЬ?</h2>' +
-    '<div class="sub">' + a.dmg + ' урона. ' + (pendLevel === 'uppercut'
+    '<div class="sub">' + (pendLevel === 'uppercut'
       ? 'В голову — пробивает нырок, но гасится высоким блоком. В корпус — проходит сквозь высокий блок.'
+      : pendLevel === 'kick'
+      ? 'В голову — высокий блок гасит только половину, но нырок уводит из-под ноги. В корпус — проходит сквозь блок.'
       : 'В голову — гасится высоким блоком. В корпус — гасится нырком.') + '</div>' +
-    '<button class="btn ' + (active === 0 ? 'blue' : 'red') + ' big" data-lvl="head">В ГОЛОВУ</button>' +
-    '<button class="btn ' + (active === 0 ? 'blue' : 'red') + ' big" data-lvl="body">В КОРПУС</button>' +
+    '<button class="btn ' + col + ' big" data-lvl="head">В ГОЛОВУ<br><span class="s">' + dh + ' урона</span></button>' +
+    '<button class="btn ' + col + ' big" data-lvl="body">В КОРПУС<br><span class="s">' + db +
+      ' урона и −' + Math.round(db * BODY_ST) + ' выносливости сопернику</span></button>' +
     '<button class="btn ghost" data-go="choose">← Назад к действиям</button>';
 }
 
@@ -2914,6 +3017,8 @@ function keyToChoice(k){
   if(k === 'jabB') return {id:'jab', lvl:'body'};
   if(k === 'upH')  return {id:'uppercut', lvl:'head'};
   if(k === 'upB')  return {id:'uppercut', lvl:'body'};
+  if(k === 'kickH') return {id:'kick', lvl:'head'};
+  if(k === 'kickB') return {id:'kick', lvl:'body'};
   return {id:k};                                   // cross / block / slip / step
 }
 function pickWeightedKey(w){
@@ -2927,14 +3032,16 @@ function pickWeightedKey(w){
   return keys[keys.length - 1];
 }
 function botChoose(){
-  var me = F[1], op = F[0], tiredMe = me.fat > TIRED_AT;
-  var w = {jabH:22, jabB:16, upH:11, upB:8, cross:7, block:16, slip:12, step:8};
+  var me = F[1], op = F[0], tiredMe = me.st < LOW_ST;
+  var w = {jabH:20, jabB:14, upH:10, upB:7, kickH:7, kickB:6, cross:7, block:16, slip:12, step:8};
   if(tiredMe){                                     // свои удары всё равно бьют на треть слабее — беречь силы
     w.jabH *= .5; w.jabB *= .5; w.upH *= .4; w.upB *= .4; w.cross *= .25;
+    w.kickH *= .15; w.kickB *= .15;                // нога дороже всего, на нуле её не бросают
     w.step *= 2.6; w.block *= 1.15; w.slip *= 1.15;
-  }
+  } else if(me.st < 45){ w.kickH *= .5; w.kickB *= .5; w.cross *= .7; }
   if(me.hp <= 30){ w.block *= 1.5; w.slip *= 1.5; w.step *= 1.5; w.cross *= .5; w.upH *= .75; w.upB *= .75; }
-  if(op.hp <= 30 && !tiredMe){ w.upH *= 1.7; w.upB *= 1.3; w.cross *= 1.6; w.jabH *= 1.2; }
+  if(op.hp <= 30 && !tiredMe){ w.upH *= 1.7; w.upB *= 1.3; w.cross *= 1.6; w.jabH *= 1.2; w.kickH *= 1.4; }
+  if(op.st > 60 && me.st > 55){ w.jabB *= 1.5; w.upB *= 1.5; w.kickB *= 1.5; }   // соперник свеж — вымотать корпусом
   botHistoryBias(w);
   if(choices[0] && choices[0].id === 'crossLand'){   // публично видимый замах — честная реакция, не подглядывание
     var k = pickWeightedKey({block:w.block * 4.2, slip:w.slip * .5, step:w.step * .5, jabH:w.jabH * .3, jabB:w.jabB * .3});
@@ -2994,8 +3101,8 @@ function rewatchRound(){
   for(i = 0; i < 2; i++){
     B[i].charge = rec.before.pending[i];
     B[i].down = false;
-    B[i].tired = rec.before.fat[i] > TIRED_AT;
-    disp[i].hp = rec.before.hp[i]; disp[i].fat = rec.before.fat[i];
+    B[i].tired = rec.before.st[i] < LOW_ST;
+    disp[i].hp = rec.before.hp[i]; disp[i].st = rec.before.st[i];
   }
   for(i = 0; i < 14; i++){ driveIdle(); settle(1 / 60); }
   ragResetAll();
@@ -3004,7 +3111,7 @@ function rewatchRound(){
   openT = setTimeout(function(){
     runRound(rec, function(){
       for(var j = 0; j < 2; j++){                    // возвращаем настоящее состояние боя
-        B[j].down = !!F[j].ko; B[j].charge = F[j].pending; B[j].tired = F[j].fat > TIRED_AT;
+        B[j].down = !!F[j].ko; B[j].charge = F[j].pending; B[j].tired = F[j].st < LOW_ST;
       }
       syncDisp();
       revealDone = true; render();
@@ -3030,8 +3137,8 @@ function replayNext(){
   for(i = 0; i < 2; i++){
     B[i].charge = rec.before.pending[i];
     B[i].down = false;
-    B[i].tired = rec.before.fat[i] > TIRED_AT;
-    disp[i].hp = rec.before.hp[i]; disp[i].fat = rec.before.fat[i];
+    B[i].tired = rec.before.st[i] < LOW_ST;
+    disp[i].hp = rec.before.hp[i]; disp[i].st = rec.before.st[i];
   }
   for(i = 0; i < 14; i++) { driveIdle(); settle(1/60); }
   ragResetAll();
@@ -3048,7 +3155,7 @@ function replayStop(){
   dark = 0; darkT = 0; cineT = 0; cineFollow = -1; koCardT = 0; lb = 0; cut = null; cutQ = null;
   for(var g = 0; g < 2; g++) B[g].gh = [];
   ragResetAll();
-  for(var i = 0; i < 2; i++){ B[i].down = !!F[i].ko; B[i].charge = false; B[i].tired = F[i].fat > TIRED_AT; }
+  for(var i = 0; i < 2; i++){ B[i].down = !!F[i].ko; B[i].charge = false; B[i].tired = F[i].st < LOW_ST; }
   syncDisp();
   for(var n = 0; n < 40; n++){ driveIdle(); settle(1/60); }
   phase = 'over'; musicPlay('ko'); render();
