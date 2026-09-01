@@ -1077,9 +1077,18 @@ function resolveRoundMMA(){
    ========================================================================= */
 var STAGE_W = 168, STAGE_H = 106, FLOOR = 97;
 var POS = [63, 105];                      // 42 единицы между бойцами — дистанция удара
-var TORSO = 24, HEAD_UP = 9.4, HEAD_R = 7.0;
-var UPARM = 13.5, FOREARM = 13.5, THIGH = 16.5, SHIN = 16.5;
-var GLOVE = 5.6, HIP_Y = FLOOR - 31;
+/* Пропорции. Раньше боец был ростом в 5.1 головы — это пропорции игрушки,
+   а не человека: голова занимала больше половины корпуса. Голова уменьшена,
+   корпус, ноги и руки удлинены, рост в головах доведён до ~7. Правила это не
+   трогает: единственное, что зависит от геометрии, — насколько далеко шагнуть
+   до цели, а это lungeX/lungeLeg считают от REACH и пересчитывают сами. */
+var TORSO = 26.5, HEAD_UP = 8.4, HEAD_R = 5.3;
+var UPARM = 15.0, FOREARM = 14.5, THIGH = 19.0, SHIN = 18.5;
+var GLOVE = 4.3, HIP_Y = FLOOR - 35;
+function gloveR(){ return game === 'mma' ? 3.4 : GLOVE; }   // в ММА перчатки открытые
+var HS = HEAD_R / 7.0;                    // мелочи головы нарисованы в старом масштабе
+var TS = TORSO / 24;                      // и профиль корпуса тоже
+var TW = 0.94;                            // корпус чуть уже: фигура стала выше
 
 /* Пружина с полунеявным Эйлером и подшагами: держит жёсткие ударные
    пружины устойчивыми даже при просадке кадра. */
@@ -1104,11 +1113,14 @@ function Boxer(i){
      от тела: плечи стояли намертво, и вперёд уезжал только кулак.
      >0 — вперёд идёт заднее плечо (кросс, апперкот), <0 — переднее (джеб). */
   this.twist = new Sp(0, 200, 25);
+  /* Таз идёт против плеч. Без этого удар читался как работа одной руки:
+     плечи крутились, а низ стоял столбом — так не двигается ни один человек. */
+  this.pelvis = new Sp(0, 190, 24);
   this.hand = [
     {x:new Sp(POS[i], 200, 25), y:new Sp(HIP_Y - 27, 200, 25)},
     {x:new Sp(POS[i], 200, 25), y:new Sp(HIP_Y - 27, 200, 25)}
   ];
-  this.foot = [new Sp(POS[i] + 10 * this.face, 170, 24), new Sp(POS[i] - 11 * this.face, 170, 24)];
+  this.foot = [new Sp(POS[i] + 11 * this.face, 170, 24), new Sp(POS[i] - 12.5 * this.face, 170, 24)];
   /* Раньше ступня жила только по горизонтали и была прибита к настилу.
      Для удара ногой ей нужна вертикаль. */
   this.footY = [new Sp(FLOOR, 190, 25), new Sp(FLOOR, 190, 25)];
@@ -1124,8 +1136,8 @@ Boxer.prototype.reset = function(){
   var f = this.face;
   this.base = POS[this.i];
   this.hx.reset(this.base); this.hy.reset(HIP_Y); this.lean.reset(0); this.head.reset(0);
-  this.twist.reset(0);
-  this.foot[0].reset(this.base + 10 * f); this.foot[1].reset(this.base - 11 * f);
+  this.twist.reset(0); this.pelvis.reset(0);
+  this.foot[0].reset(this.base + 11 * f); this.foot[1].reset(this.base - 12.5 * f);
   this.footY[0].reset(FLOOR); this.footY[1].reset(FLOOR);
   this.charge = false; this.down = false; this.tired = false; this.winded = false;
   this.turned = 0;
@@ -1170,7 +1182,8 @@ Boxer.prototype.solve = function(){
     arms.push({sh:sh[k], el:{x:e.x, y:e.y}, hand:{x:e.ex, y:e.ey}});
   }
   for(k = 0; k < 2; k++){
-    var hipK = {x:hip.x + fw.x * (k === 0 ? 2 : -2), y:hip.y + 1};
+    var pv = this.pelvis.x;
+    var hipK = {x:hip.x + fw.x * ((k === 0 ? 2 : -2) + pv * (k === 0 ? 3.4 : -3.4)), y:hip.y + 1};
     var ft = {x:this.foot[k].x, y:this.footY[k].x};
     var kn = ik(hipK.x, hipK.y, ft.x, ft.y, THIGH, SHIN, f > 0 ? -1 : 1);
     legs.push({hip:hipK, knee:{x:kn.x, y:kn.y}, foot:{x:kn.ex, y:kn.ey}});
@@ -1181,6 +1194,15 @@ Boxer.prototype.solve = function(){
 var B = [new Boxer(0), new Boxer(1)];
 
 /* --- удобные сеттеры целей --- */
+/* Механика корпуса, общая для всех действий: таз контрвращается против плеч,
+   а задняя пятка отрывается на выпуске. Считается один раз за кадр, поэтому
+   действует и в бою, и в повторе, и не размазана по каждому удару. */
+function bodyMech(b){
+  b.pelvis.set(-b.twist.t * 0.55, 190, 24);
+  if(!b.rd && !b.down && b.footY[1].t >= FLOOR - 0.4)
+    b.footY[1].set(FLOOR - Math.max(0, b.twist.t) * 3.4, b.footY[1].k, b.footY[1].d);
+}
+
 function handTo(b, k, x, y, kk, dd){ b.hand[k].x.set(x, kk, dd); b.hand[k].y.set(y, kk, dd); }
 function footTo(b, k, x, kk, dd){ b.foot[k].set(x, kk, dd); b.footY[k].set(FLOOR, kk, dd); }
 function footToXY(b, k, x, y, kk, dd){ b.foot[k].set(x, kk, dd); b.footY[k].set(y, kk, dd); }
@@ -1445,8 +1467,8 @@ function driveGuard(b){
   handTo(b, 0, n.x + 10 * f, n.y - 1 + drop, 190, 25);
   handTo(b, 1, n.x + 5 * f, n.y - 3.5 + drop, 190, 25);
   b.twist.set(0, 190, 25);
-  footTo(b, 0, b.base + 10 * f, 170, 24);
-  footTo(b, 1, b.base - 11 * f, 170, 24);
+  footTo(b, 0, b.base + 11 * f, 170, 24);
+  footTo(b, 1, b.base - 12.5 * f, 170, 24);
 }
 
 function chargeKind(p){ return p ? (p.id === 'spinLand' ? 'spin' : 'cross') : false; }
@@ -1819,7 +1841,7 @@ function applyImpact(rec){
 var MJ = window.Matter;
 var eng = null, wrld = null, PGROUP = 0, pacc = 0;
 var GRAV = 0.46;                    // подобрано по времени падения с высоты стойки
-var ARM_L = 24, LEG_L = 30, TORSO_H = TORSO;
+var ARM_L = UPARM + FOREARM - 3, LEG_L = THIGH + SHIN - 3, TORSO_H = TORSO;
 var CAT_FLOOR = 0x0002, CAT_BODY = 0x0004;
 
 function initPhys(){
@@ -2254,7 +2276,8 @@ function face(J, f, s, mix, turned){
   cx.save();
   cx.translate(J.head.x, J.head.y);
   cx.rotate(J.ha * f);
-  cx.scale(f, 1);
+  cx.scale(f * HS, HS);                          // лицо нарисовано под HEAD_R = 7
+  var HEAD_R = 7.0;
   cx.lineJoin = 'round'; cx.lineCap = 'round';
 
   cx.save();                                     // причёска обрезается по черепу
@@ -2308,19 +2331,20 @@ function drawBoxer(b){
   // дальние конечности
   var legOut = J.legs[1].foot.y < FLOOR - 5;                // задняя нога пошла в удар
   if(!legOut){
-    leg(J.legs[1], 5.1, 3.6, 2.6, mix(s.dark), mix(s.dark));
+    leg(J.legs[1], 4.7, 3.3, 2.4, mix(s.dark), mix(s.dark));
     cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
-    boot(J.legs[1], f, 5, 2.7, mix(s.dark));
+    boot(J.legs[1], f, 4.6, 2.5, mix(s.dark));
   }
   var rearOut = (J.arms[1].hand.x - J.neck.x) * f > 7;      // задняя рука вылетела вперёд
   if(!rearOut){
-    arm(J.arms[1], 4.6, 3.2, 2.4, mix(s.dark), mix(s.dark));
+    arm(J.arms[1], 4.2, 2.9, 2.2, mix(s.dark), mix(s.dark));
     glove(J.arms[1].hand, b.trail[1][0], unitV(J.arms[1].el, J.arms[1].hand), f,
-          mix(s.gloveD), mix(s.dark), mix(s.dark), GLOVE * .93);
+          mix(s.gloveD), mix(s.dark), mix(s.dark), gloveR() * .93);
   }
 
   // корпус
-  var p = function(t, n){ return {x:J.hip.x + up.x * t + fw.x * n, y:J.hip.y + up.y * t + fw.y * n}; };
+  var p = function(t, n){ t *= TS; n *= TW;
+                          return {x:J.hip.x + up.x * t + fw.x * n, y:J.hip.y + up.y * t + fw.y * n}; };
   var g = cx.createLinearGradient(J.neck.x, J.neck.y, J.hip.x, J.hip.y + 6);
   g.addColorStop(0, mix(s.body)); g.addColorStop(1, mix(s.bodyD));
   cx.lineJoin = 'round';
@@ -2356,35 +2380,35 @@ function drawBoxer(b){
   line(p(5.4, 7.0), p(-2.2, 6.6), 1.5, mix(s.trunkL), 1);   // лампас
 
   // ближняя нога, а следом бьющая задняя — поверх корпуса, чтобы удар было видно
-  leg(J.legs[0], 5.6, 3.9, 2.8, mix(s.body), mix(s.bodyD));
+  leg(J.legs[0], 5.1, 3.6, 2.6, mix(s.body), mix(s.bodyD));
   cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
-  boot(J.legs[0], f, 5.2, 2.8, mix(s.trunkL));
+  boot(J.legs[0], f, 4.8, 2.6, mix(s.trunkL));
   if(legOut){
-    leg(J.legs[1], 5.3, 3.7, 2.7, mix(s.body), mix(s.bodyD));
+    leg(J.legs[1], 4.9, 3.4, 2.5, mix(s.body), mix(s.bodyD));
     cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
-    boot(J.legs[1], f, 5.1, 2.75, mix(s.trunkL));
+    boot(J.legs[1], f, 4.7, 2.55, mix(s.trunkL));
   }
 
   // шея и голова одним силуэтом: череп + челюсть вперёд
-  line(J.neck, {x:J.head.x, y:J.head.y + HEAD_R * .6}, 6.2, mix(s.bodyD));
+  line(J.neck, {x:J.head.x, y:J.head.y + HEAD_R * .6}, 5.6, mix(s.bodyD));
   cx.strokeStyle = INK; cx.lineWidth = 3.2; cx.fillStyle = mix(s.body);
-  cx.beginPath(); cx.ellipse(J.head.x + fw.x * 2.1, J.head.y + fw.y * 2.1 + 2.9, 4.3, 3.7, 0, 0, 6.284);
+  cx.beginPath(); cx.ellipse(J.head.x + fw.x * 2.1 * HS, J.head.y + fw.y * 2.1 * HS + 2.9 * HS, 4.3 * HS, 3.7 * HS, 0, 0, 6.284);
   cx.stroke(); cx.fill();
   cx.beginPath(); cx.ellipse(J.head.x, J.head.y, HEAD_R * 1.02, HEAD_R * .96, J.ha * f, 0, 6.284);
   cx.stroke(); cx.fill();
   cx.fillStyle = 'rgba(255,255,255,.13)';                       // мягкий блик от софита
-  cx.beginPath(); cx.ellipse(J.head.x - fw.x * 1.4, J.head.y - 2.3, HEAD_R * .6, HEAD_R * .46, 0, 0, 6.284); cx.fill();
+  cx.beginPath(); cx.ellipse(J.head.x - fw.x * 1.4 * HS, J.head.y - 2.3 * HS, HEAD_R * .6, HEAD_R * .46, 0, 0, 6.284); cx.fill();
   cx.fillStyle = mix(s.dark);                                   // узкая тень под скулой
-  cx.beginPath(); cx.ellipse(J.head.x + fw.x * .4, J.head.y + HEAD_R * .86, 2.4, .95, 0, 0, 6.284); cx.fill();
+  cx.beginPath(); cx.ellipse(J.head.x + fw.x * .4, J.head.y + HEAD_R * .86, 2.4 * HS, .95 * HS, 0, 0, 6.284); cx.fill();
   face(J, f, s, mix, b.turned > .5);
 
   // ближняя рука и вылетевшая задняя
-  if(rearOut) arm(J.arms[1], 4.9, 3.4, 2.6, mix(s.body), mix(s.bodyD));
-  arm(J.arms[0], 5.2, 3.6, 2.7, mix(s.body), mix(s.bodyD));
+  if(rearOut) arm(J.arms[1], 4.5, 3.1, 2.4, mix(s.body), mix(s.bodyD));
+  arm(J.arms[0], 4.8, 3.3, 2.5, mix(s.body), mix(s.bodyD));
   glove(J.arms[0].hand, b.trail[0][0], unitV(J.arms[0].el, J.arms[0].hand), f,
-        mix(s.glove), mix(s.gloveD), mix(s.trunkL), GLOVE);
+        mix(s.glove), mix(s.gloveD), mix(s.trunkL), gloveR());
   if(rearOut) glove(J.arms[1].hand, b.trail[1][0], unitV(J.arms[1].el, J.arms[1].hand), f,
-                    mix(s.glove), mix(s.gloveD), mix(s.trunkL), GLOVE);
+                    mix(s.glove), mix(s.gloveD), mix(s.trunkL), gloveR());
 }
 
 function boot(L, f, rx, ry, lace){   // ботинок едет за ступнёй и разворачивается с ногой
@@ -2466,14 +2490,14 @@ function drawWrap(b, wLeg, wArm){
   function mix(c){ return dim < 1 ? shadeHex(c, dim) : c; }
   cx.lineCap = 'round'; cx.lineJoin = 'round';
   if(wLeg){
-    leg(J.legs[0], 5.6, 3.9, 2.8, mix(s.body), mix(s.bodyD));
+    leg(J.legs[0], 5.1, 3.6, 2.6, mix(s.body), mix(s.bodyD));
     cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
-    boot(J.legs[0], f, 5.2, 2.8, mix(s.trunkL));
+    boot(J.legs[0], f, 4.8, 2.6, mix(s.trunkL));
   }
   if(wArm){
-    arm(J.arms[0], 5.2, 3.6, 2.7, mix(s.body), mix(s.bodyD));
+    arm(J.arms[0], 4.8, 3.3, 2.5, mix(s.body), mix(s.bodyD));
     glove(J.arms[0].hand, b.trail[0][0], unitV(J.arms[0].el, J.arms[0].hand), f,
-          mix(s.glove), mix(s.gloveD), mix(s.trunkL), GLOVE);
+          mix(s.glove), mix(s.gloveD), mix(s.trunkL), gloveR());
   }
 }
 
@@ -3306,7 +3330,8 @@ function frame(now){
   for(var i = 0; i < 2; i++){
     var b = B[i], k;
     b.breath += dt * (b.tired ? 3.2 : 1.9);
-    b.hx.step(dt); b.hy.step(dt); b.lean.step(dt); b.head.step(dt); b.twist.step(dt);
+    bodyMech(b);
+    b.hx.step(dt); b.hy.step(dt); b.lean.step(dt); b.head.step(dt); b.twist.step(dt); b.pelvis.step(dt);
     for(k = 0; k < 2; k++){ b.hand[k].x.step(dt); b.hand[k].y.step(dt); b.foot[k].step(dt); b.footY[k].step(dt); }
     for(k = 0; k < 2; k++){
       b.trail[k].unshift({x:b.J.arms[k].hand.x, y:b.J.arms[k].hand.y});
@@ -3411,7 +3436,8 @@ function snapEnd(rec){
 function settle(dt){
   for(var i = 0; i < 2; i++){
     var b = B[i], k;
-    b.hx.step(dt); b.hy.step(dt); b.lean.step(dt); b.head.step(dt); b.twist.step(dt);
+    bodyMech(b);
+    b.hx.step(dt); b.hy.step(dt); b.lean.step(dt); b.head.step(dt); b.twist.step(dt); b.pelvis.step(dt);
     for(k = 0; k < 2; k++){ b.hand[k].x.step(dt); b.hand[k].y.step(dt); b.foot[k].step(dt); b.footY[k].step(dt); }
     b.solve();
   }
