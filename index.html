@@ -25,7 +25,7 @@
   --disp:"Oswald","Haettenschweiler","Arial Narrow",system-ui,sans-serif;
   --body:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
 }
-html{height:100%}
+html{height:100%;background:var(--ink)}
 body{
   background:var(--bg); color:var(--txt); font-family:var(--body);
   display:flex; flex-direction:column;
@@ -235,6 +235,83 @@ details .body b{color:var(--txt)} details .body .k{color:var(--gold);font-weight
   .res{padding:5px 0}
   #panel{gap:5px}
   h1{font-size:24px} h2{font-size:17px}
+}
+/* ===================== ЭКРАН КОМПЬЮТЕРА ===================== */
+/* Ниже 900px — телефонная раскладка выше остаётся как есть, без изменений.
+   От 900px — не растянутый телефон, а настоящая раскладка под широкий экран:
+   сцена (шапка + ринг) слева, панель управления (табло + действия + журнал)
+   справа фиксированной шириной. HTML не меняется — только grid-area на тех же
+   пяти прямых детях body; #ring занимает оба ряда правой колонки одним item'ом,
+   поэтому JS-переключение классов full/cinema/slim (оно завязано на фазу боя,
+   не на ширину экрана) на десктопе просто перестаёт быть видимым — сцена всегда
+   большая, ей больше не нужно сжиматься под панель выбора хода, у панели теперь
+   своя колонка. drawArena() рисует фон и канаты по фактической ширине канваса,
+   а не по ширине STAGE_W, так что widescreen не даёт пустых полей по бокам —
+   просто видно больше арены. */
+@media (min-width:900px){
+  body{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) 420px;
+    grid-template-rows:auto 1fr 220px;
+    grid-template-areas:"hud rbar" "ring panel" "ring log";
+    max-width:1600px; margin-inline:auto;
+    box-shadow:0 0 0 1px var(--line),0 40px 100px -30px #000c;
+  }
+  #hud{grid-area:hud;padding:14px 16px;gap:12px}
+  .corner{padding:12px 15px 14px;gap:6px;border-radius:16px}
+  .cname{font-size:17px}
+  .lab{font-size:11px} .lab b{font-size:19px}
+  .bar{height:13px}
+
+  /* ринг всегда заполняет свою ячейку — фазовые классы перестают менять высоту */
+  #ring,#ring.full,#ring.cinema,#ring.slim{height:100%;border-bottom-width:2px;transition:none}
+
+  #rbar{grid-area:rbar;font-size:15px;gap:11px;border-left:2px solid var(--line)}
+  #snd{font-size:16px;padding:6px 10px}
+
+  /* min-height:0 — без него грид-ячейка не сжимается ниже высоты содержимого:
+     оверфлоу-скролл панели молча переставал работать, а девять кнопок с блоком
+     защиты наезжали на журнал вместо прокрутки. */
+  #panel{grid-area:panel;min-height:0;padding:20px;gap:13px;border-left:2px solid var(--line)}
+  h1{font-size:clamp(32px,4vw,46px)}
+  h2{font-size:clamp(22px,3vw,29px)}
+  .sub{font-size:15.5px}
+  .btn{font-size:21px;padding:18px 16px}
+  .btn.big{font-size:26px;padding:23px 16px}
+  .btn.ghost{font-size:17px}
+  .grid{gap:10px}
+  .act{min-height:80px;padding:10px 10px}
+  .act.wide{min-height:64px}
+  .act .em{font-size:24px}
+  .act .t{font-size:20px}
+  .act .s{font-size:12px}
+  .hdr{font-size:11px}
+  details{padding:14px 16px}
+  summary{font-size:18px}
+  details .body{font-size:14.5px}
+
+  #logWrap{grid-area:log;display:flex;flex-direction:column;border-left:2px solid var(--line)}
+  #logHead{padding:11px 18px 6px;font-size:11px}
+  #log{flex:1 1 auto;height:auto;min-height:0;max-height:none;padding:0 18px 16px;font-size:13.5px}
+}
+/* Ноутбучная высота (1366×768 и похожие): без этого девять кнопок выбора хода
+   не влезали в панель без прокрутки — тот же приём сжатия, что и в телефонных
+   max-height блоках выше, только числа десктопные, а не телефонные. */
+@media (min-width:900px) and (max-height:900px){
+  body{grid-template-rows:auto 1fr 170px}
+  #hud{padding:9px 12px;gap:8px}
+  .corner{padding:8px 12px 9px;gap:4px}
+  .cname{font-size:15px}
+  .lab{font-size:10px} .lab b{font-size:16px}
+  .bar{height:11px}
+  #panel{padding:14px;gap:8px}
+  h2{font-size:clamp(19px,2.6vw,23px)}
+  .grid{gap:7px}
+  .act{min-height:58px;padding:7px 8px}
+  .act.wide{min-height:46px}
+  .act .em{font-size:19px}
+  .act .t{font-size:16px}
+  .act .s{font-size:10px}
 }
 @media (prefers-reduced-motion:reduce){
   #panel>*,#log .ent,.tag,#again{animation-duration:.01ms!important;animation-iteration-count:1!important}
