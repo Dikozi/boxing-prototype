@@ -501,6 +501,10 @@ var TD_BASE = 0.55, TD_FAIL_ST = 26, TD_DMG = 8;
 var TD_MIN = 0.15, TD_MAX = 0.80;   // проход в ноги НИКОГДА не бывает гарантированным
 var ESC_FLOOR = 0.15;               // и выход снизу никогда не бывает невозможным
 var SUB_ENDURE = 10;                // «терпеть» стоит здоровья сустава
+/* Болевой на сустав добивает не только сдачей. В 30% соперник не успевает
+   постучать, и конечность ломается — бой останавливают. Удушения ломать
+   нечего, там всегда стук. */
+var BREAK_CHANCE = 0.30;
 var CTRL_REST = 6;                  // контроль/блок сверх обычного отдыха
 
 /* --- действия ММА. Кладутся в общий ACT, доступность решает legal(). ------
@@ -595,7 +599,7 @@ function newFight(){
     {i:0, name:'СИНИЙ', cls:'b', ico:'🔵', hp:MAX_HP, st:MAX_ST, pending:null, winded:false, ko:false, tap:false},
     {i:1, name:(mode === 'cpu' ? 'CPU' : 'КРАСНЫЙ'), cls:'r', ico:'🔴', hp:MAX_HP, st:MAX_ST, pending:null, winded:false, ko:false, tap:false}
   ];
-  for(var q = 0; q < 2; q++){ F[q].S = archOf(pick[q]); F[q].arch = F[q].S; }
+  for(var q = 0; q < 2; q++){ F[q].S = archOf(pick[q]); F[q].arch = F[q].S; F[q].broke = null; }
   GR = newGrapple(); setRP('stand', -1);
   round = 1; choices = [null,null]; pendLevel = null; lastRec = null; revealDone = false;
   bouts = []; eyesDone = false; botLastKey = null;
@@ -747,6 +751,7 @@ function resolveRound(){
   else if(!eyesDone && Math.min(before.hp[0], before.hp[1]) <= EYES_HP){
     lastRec.eyes = 'decisive'; eyesDone = true;
   }
+  rollFinish(lastRec);
   bouts.push(lastRec);
   pushLog(lastRec);
 }
@@ -1009,8 +1014,13 @@ function resolveRoundMMA(){
   }
 
   /* --- 3. Приём на добивание: тугость 3 — сдача. --- */
-  var tapped = -1;
-  if(g.sub && g.sub.tight >= 3) tapped = 1 - g.sub.by;
+  var tapped = -1, broke = null;
+  if(g.sub && g.sub.tight >= 3){
+    tapped = 1 - g.sub.by;
+    var sk2 = g.sub.kind;
+    if((sk2 === 'armbar' || sk2 === 'kimura' || sk2 === 'leglock') && Math.random() < BREAK_CHANCE)
+      broke = {i:tapped, limb:sk2 === 'leglock' ? 'leg' : 'arm'};
+  }
   /* «Терпеть» стоит здоровья сустава — приём и без затяжки разрушает. */
   for(i = 0; i < 2; i++)
     if(subActive && choices[i].id === 'endure'){
@@ -1068,16 +1078,18 @@ function resolveRoundMMA(){
     F[i].winded = winded[i];
     if(F[i].hp <= 0) F[i].ko = true;
   }
-  if(tapped >= 0){ F[tapped].tap = true; F[tapped].ko = true; }
+  if(tapped >= 0){ F[tapped].ko = true;
+                   if(broke) F[tapped].broke = broke.limb; else F[tapped].tap = true; }
 
   lastRec = {round:round, mma:true, choices:[choices[0], choices[1]], out:out, tired:tired,
              before:before, hp:[F[0].hp, F[1].hp], st:[F[0].st, F[1].st],
              winded:[F[0].winded, F[1].winded], ko:[F[0].ko, F[1].ko],
              after:{pos:g.pos, top:g.top, ctrl:g.ctrl,
                     sub:g.sub ? {by:g.sub.by, kind:g.sub.kind, tight:g.sub.tight} : null},
-             tap:tapped};
+             tap:tapped, broke:broke};
   if(round === 1) lastRec.eyes = 'gong';
   else if(!eyesDone && Math.min(before.hp[0], before.hp[1]) <= EYES_HP){ lastRec.eyes = 'decisive'; eyesDone = true; }
+  rollFinish(lastRec);
   bouts.push(lastRec);
   pushLog(lastRec);
 }
@@ -1146,6 +1158,7 @@ function Boxer(i){
   this.trail = [[], []];
   this.breath = Math.random() * 6;
   this.charge = false; this.down = false; this.tired = false; this.winded = false;
+  this.win = null; this.mood = 0; this.tapping = 0; this.broke = null;
   this.turned = 0;                              // 0 — лицом к сопернику, 1 — спиной
   this.J = null;
   this.solve();
@@ -1159,6 +1172,7 @@ Boxer.prototype.reset = function(){
   this.foot[0].reset(this.base + 11 * f); this.foot[1].reset(this.base - 12.5 * f);
   this.footY[0].reset(FLOOR); this.footY[1].reset(FLOOR);
   this.charge = false; this.down = false; this.tired = false; this.winded = false;
+  this.win = null; this.mood = 0; this.tapping = 0; this.broke = null;
   this.turned = 0;
   this.trail = [[], []];
   this.solve();
@@ -1201,10 +1215,14 @@ Boxer.prototype.solve = function(){
     {x:shB.x + fw1.x * o0, y:shB.y + fw1.y * o0},
     {x:shB.x + fw1.x * o1, y:shB.y + fw1.y * o1}
   ];
-  var arms = [], legs = [], k;
+  var arms = [], legs = [], k, bk = this.broke;
   for(k = 0; k < 2; k++){
     var h = {x:this.hand[k].x.x, y:this.hand[k].y.x};
-    var e = ik(sh[k].x, sh[k].y, h.x, h.y, UPARM, FOREARM, f > 0 ? 1 : -1);
+    /* Перелом: сустав выгибается в обратную сторону. Это и есть весь эффект —
+       знак сгиба у одной конечности инвертирован, остальное делает поза. */
+    var ba = f > 0 ? 1 : -1;
+    if(bk && bk.limb === 'arm' && bk.k === k) ba = -ba;
+    var e = ik(sh[k].x, sh[k].y, h.x, h.y, UPARM, FOREARM, ba);
     arms.push({sh:sh[k], el:{x:e.x, y:e.y}, hand:{x:e.ex, y:e.ey}});
   }
   for(k = 0; k < 2; k++){
@@ -1214,7 +1232,9 @@ Boxer.prototype.solve = function(){
     var spread = (k === 0 ? 2 : -2) * (1 + tn * 3.2);
     var hipK = {x:hip.x + fw.x * (spread + pv * (k === 0 ? 3.4 : -3.4)), y:hip.y + 1};
     var ft = {x:this.foot[k].x, y:this.footY[k].x};
-    var kn = ik(hipK.x, hipK.y, ft.x, ft.y, THIGH, SHIN, f > 0 ? -1 : 1);
+    var bl = f > 0 ? -1 : 1;
+    if(bk && bk.limb === 'leg' && bk.k === k) bl = -bl;
+    var kn = ik(hipK.x, hipK.y, ft.x, ft.y, THIGH, SHIN, bl);
     legs.push({hip:hipK, knee:{x:kn.x, y:kn.y}, foot:{x:kn.ex, y:kn.ey}});
   }
   this.J = {hip:hip, up:up, fw:fw, chest:chest, up1:up1, fw1:fw1, lo:lo, wd:wd,
@@ -1232,6 +1252,16 @@ function bodyMech(b){
   if(!b.rd && !b.down && b.footY[1].t >= FLOOR - 0.4)
     b.footY[1].set(FLOOR - Math.max(0, b.twist.t) * 3.4, b.footY[1].k, b.footY[1].d);
   if(RP.tk < 1 && RP.tm > 0 && !b.rd && !b.down) applyTrans(b);
+  if(b.tapping > 0 && !b.rd) applyTap(b);
+}
+
+/* Сдача: боец быстро и часто бьёт открытой ладонью по настилу. Это и есть
+   знак, что он сдался, — в жизни он именно такой, и без него сабмишен
+   заканчивается просто тем, что боец перестал двигаться. */
+function applyTap(b){
+  var ph = (b.tapping % 185) / 185;
+  var lift = Math.max(0, Math.sin(ph * Math.PI)) * 15;
+  handTo(b, 0, b.J.hip.x - 15 * b.face, FLOOR - 2 - lift, 470, 27);
 }
 
 function handTo(b, k, x, y, kk, dd){ b.hand[k].x.set(x, kk, dd); b.hand[k].y.set(y, kk, dd); }
@@ -1707,6 +1737,192 @@ function driveDown(b){                          // нокдаун: тело ос
   footTo(b, 1, b.J.hip.x - 4 * f, 80, 16);
   handTo(b, 0, b.J.hip.x - 6 * f, FLOOR - 4, 80, 17);
   handTo(b, 1, b.J.hip.x - 14 * f, FLOOR - 2, 80, 17);
+  if(b.broke){                                  // здоровая рука тянется к суставу
+    var jt = b.broke.limb === 'arm' ? b.J.arms[0].el : b.J.legs[0].knee;
+    handTo(b, 1, jt.x - 2 * f, jt.y - 3, 130, 20);
+  }
+}
+
+
+/* =========================================================================
+   ПОБЕДНЫЕ СЦЕНЫ
+   -------------------------------------------------------------------------
+   Финиш — то, что запоминается, поэтому после него камера наезжает на
+   победителя, и он принимает одну из поз. Какую именно — решает бросок при
+   расчёте последнего раунда, и он оседает в записи: повтор боя обязан
+   показать ту же самую сцену, что и живой бой.
+   down:true — поза требует лежащего соперника; после победы по очкам такие
+   в набор не попадают.
+   ========================================================================= */
+var WIN_MS = 2600;
+var WIN_POSE = [
+  {id:'foot_arm',  down:true,  name:'нога на поверженном, рука вверх',   say:'Кто следующий?'},
+  {id:'foot_cross',down:true,  name:'нога на поверженном, руки скрещены', say:'Вопросы ещё есть?'},
+  {id:'ropes',     down:false, name:'на канатах, рёв на трибуны',         say:'Я вас слышу!'},
+  {id:'cross',     down:false, name:'руки крестом, разворот',             say:'Это мой вечер.'},
+  {id:'chest',     down:false, name:'бьёт себя в грудь',                  say:'Ещё не наигрался.'},
+  {id:'point',     down:true,  name:'указывает вниз на лежащего',         say:'Лежать — тоже позиция.'},
+  {id:'sleep',     down:true,  name:'ложится рядом и «засыпает»',         say:'Тихо, ему снится реванш.'}
+];
+
+/* Кто победил и какую сцену показываем. Вызывается один раз в конце раунда,
+   если бой закончен; ничья и двойной нокаут сцены не получают. */
+function rollFinish(rec){
+  if(!(F[0].ko || F[1].ko || F[0].hp <= 0 || F[1].hp <= 0 || round >= MAX_ROUNDS)) return;
+  var d0 = F[0].ko || F[0].hp <= 0, d1 = F[1].ko || F[1].hp <= 0;
+  if(d0 && d1) return;                                   // двойной нокаут — не до поз
+  var w = d1 ? 0 : (d0 ? 1 : (F[0].hp > F[1].hp ? 0 : (F[1].hp > F[0].hp ? 1 : -1)));
+  if(w < 0) return;                                      // ничья
+  var downed = !!(w === 0 ? d1 : d0), pool = [], i;
+  for(i = 0; i < WIN_POSE.length; i++) if(!WIN_POSE[i].down || downed) pool.push(i);
+  rec.win = {i:w, pose:pool[Math.floor(Math.random() * pool.length)]};
+}
+
+/* После пересмотра раунда и после выхода из повтора сцена финиша должна
+   вернуться такой, какой была: победитель в своей позе, проигравший со
+   сломанной конечностью. Всё читается из последней записи боя. */
+function restoreFinish(){
+  var r = bouts.length ? bouts[bouts.length - 1] : null, i;
+  for(i = 0; i < 2; i++){ B[i].win = null; B[i].mood = 0; B[i].tapping = 0; B[i].broke = null; }
+  if(!r) return;
+  if(r.broke){ B[r.broke.i].broke = {limb:r.broke.limb, k:0}; B[r.broke.i].mood = 3; }
+  else if(r.tap >= 0) B[r.tap].mood = 3;
+  if(r.win){
+    B[r.win.i].win = {pose:r.win.pose, t:WIN_MS};
+    drawOrder = [1 - r.win.i, r.win.i];
+    for(i = 0; i < 40; i++){ driveIdle(); settle(1 / 60); }
+  }
+}
+
+function startWin(w){
+  var b = B[w.i];
+  b.win = {pose:w.pose, t:0};
+  setRP('stand', -1);
+  drawOrder = [1 - w.i, w.i];                            // победитель поверх лежащего
+  crowdCheer(1.9); sndBell(.8);
+  cinePush(b.J.head.x, b.J.head.y - 2, 1.34, WIN_MS, w.i);
+  seqExtend(WIN_MS + 200);
+}
+
+function driveWin(b){
+  var w = b.win, P = WIN_POSE[w.pose], id = P.id, t = w.t;
+  var f = b.face0, o = B[1 - b.i], e = clamp(t / 650, 0, 1), n;
+  b.face = f; b.turned = 0;
+  b.twist.set(0, 170, 24);
+
+  if(id === 'foot_arm' || id === 'foot_cross'){
+    /* Ставит ногу на поверженного и выпрямляется над ним. Опора идёт по
+       его тазу, поэтому поза держится, куда бы тот ни упал. */
+    b.base = o.J.hip.x - 17 * f;
+    b.hx.set(b.base, 110, 20);
+    b.hy.set(HIP_Y - 2 + Math.sin(t / 430) * .8, 150, 22);
+    b.lean.set(id === 'foot_arm' ? -0.12 : 0.03, 130, 20);
+    b.bend.set(-0.10, 150, 22);
+    b.turn3.set((id === 'foot_arm' ? 0.62 : 0.52) * e, 120, 20);
+    b.head.set(0.04, 200, 17);
+    b.solve(); n = b.J.neck;
+    if(id === 'foot_arm'){
+      handTo(b, 1, n.x + 4 * f, n.y - 31 * e, 150, 22);       // рука в небо
+      handTo(b, 0, n.x + 9 * f, n.y + 9, 170, 24);
+      b.mood = 1;                                            // улыбка во всю ширь
+    } else {
+      handTo(b, 0, n.x + 3 * f, n.y + 7, 165, 23);            // руки скрещены на груди
+      handTo(b, 1, n.x - 3 * f, n.y + 9, 165, 23);
+      b.mood = 0;
+    }
+    footToXY(b, 0, o.J.hip.x - 2 * f, o.J.hip.y - 7, 150, 22);
+    footTo(b, 1, b.base - 10 * f, 160, 23);
+    return;
+  }
+
+  if(id === 'ropes'){
+    /* Встаёт СТУПНЯМИ на нижний канат (он у drawArena на высоте 68) и ревёт
+       на трибуны. Пока ступни висели в воздухе, поза читалась как «парит». */
+    b.base = POS[b.i] + 15 * f;
+    b.hx.set(b.base, 95, 18);
+    b.hy.set(HIP_Y - 13 * e, 100, 18);
+    b.lean.set(-0.26, 120, 20);
+    b.bend.set(-0.24, 150, 22);
+    b.turn3.set(0.55 * e, 120, 20);
+    b.head.set(-0.36, 180, 17);
+    b.solve(); n = b.J.neck;
+    handTo(b, 0, n.x + 15 * f, n.y - (6 + 9 * e), 140, 21);
+    handTo(b, 1, n.x - 12 * f, n.y - (4 + 8 * e), 140, 21);
+    footToXY(b, 0, b.base + 9 * f, FLOOR - 29 * e, 140, 21);
+    footToXY(b, 1, b.base - 6 * f, FLOOR - 29 * e, 140, 21);
+    b.mood = 2;
+    return;
+  }
+
+  if(id === 'cross'){                                        // руки крестом, медленный разворот
+    b.base = POS[b.i];
+    b.hx.set(b.base, 110, 20);
+    b.hy.set(HIP_Y - 1, 150, 22);
+    b.lean.set(-0.06, 130, 20);
+    b.bend.set(-0.10, 150, 22);
+    b.turn3.set(0.5 + 0.5 * Math.sin(t / 780) * e, 90, 18);
+    b.head.set(-0.20, 190, 17);
+    b.solve(); n = b.J.neck;
+    handTo(b, 0, n.x + 26 * e * f, n.y + 2, 130, 21);
+    handTo(b, 1, n.x - 24 * e * f, n.y + 3, 130, 21);
+    footTo(b, 0, b.base + 10 * f, 160, 23);
+    footTo(b, 1, b.base - 11 * f, 160, 23);
+    b.mood = 2;
+    return;
+  }
+
+  if(id === 'chest'){                                        // бьёт себя кулаками в грудь
+    b.base = POS[b.i];
+    b.hx.set(b.base, 110, 20);
+    b.hy.set(HIP_Y - 1 + Math.sin(t / 225) * 1.5, 160, 22);
+    b.lean.set(0.06, 130, 20);
+    b.bend.set(0.05, 150, 22);
+    b.turn3.set(0.60 * e, 120, 20);
+    b.head.set(-0.08, 190, 17);
+    b.solve(); n = b.J.neck;
+    var k0 = Math.max(0, Math.sin(t / 112)) * e, k1 = Math.max(0, Math.sin(t / 112 + Math.PI)) * e;
+    handTo(b, 0, n.x + (14 - 9 * k0) * f, n.y + 4, 300, 24);
+    handTo(b, 1, n.x + (10 - 7 * k1) * f, n.y + 6, 300, 24);
+    footTo(b, 0, b.base + 10 * f, 160, 23);
+    footTo(b, 1, b.base - 11 * f, 160, 23);
+    b.mood = 2;
+    return;
+  }
+
+  if(id === 'point'){                                        // указывает пальцем вниз
+    /* Рука указывает НАПРАВЛЕНИЕ вниз-вперёд, а не тычет в конкретную точку:
+       стоящий боец физически не достаёт до головы лежащего, и цель на ней
+       всё равно обрезалась по длине руки — палец уходил в горизонт. */
+    b.base = o.J.hip.x - 24 * f;
+    b.hx.set(b.base, 110, 20);
+    b.hy.set(HIP_Y + 4, 150, 22);
+    b.lean.set(0.30 * e, 130, 20);
+    b.bend.set(0.18, 150, 22);
+    b.turn3.set(0.35 * e, 120, 20);
+    b.head.set(0.34, 190, 17);
+    b.solve(); n = b.J.neck;
+    handTo(b, 1, n.x + (10 + 6 * e) * f, n.y + 14 + 12 * e, 150, 22);
+    handTo(b, 0, n.x + 7 * f, n.y + 9, 170, 24);
+    footTo(b, 0, b.base + 10 * f, 160, 23);
+    footTo(b, 1, b.base - 11 * f, 160, 23);
+    b.mood = 0;
+    return;
+  }
+
+  /* sleep: ложится рядом с поверженным в той же позе — насмешка, а не отдых. */
+  b.base = o.J.hip.x - 30 * f;
+  b.hx.set(b.base, 100, 19);
+  b.hy.set(FLOOR - 9, 110, 19);
+  b.lean.set(-1.30, 90, 17);
+  b.bend.set(-0.14, 130, 20);
+  b.turn3.set(0.22, 120, 20);
+  b.head.set(0.50, 170, 17);
+  b.solve(); n = b.J.neck;
+  handTo(b, 0, n.x + 5 * f, n.y - 5, 140, 21);               // руки под голову
+  handTo(b, 1, n.x + 1 * f, n.y - 7, 140, 21);
+  footToXY(b, 0, b.base + 17 * f, FLOOR, 140, 21);
+  footToXY(b, 1, b.base + 12 * f, FLOOR, 140, 21);
+  b.mood = 0;
 }
 
 /* --- куда летит кулак: по живой цели, в блок или в пустоту --- */
@@ -1728,6 +1944,7 @@ var REPLAY_END = 1060;
 function driveActor(i, t, rec){
   var b = B[i], f = b.face, c = rec.choices[i], n = b.J.neck, p, kl = c.lvl || 'head';
   if(b.rd){ driveGuard(b); return; }
+  if(b.win){ driveWin(b); return; }
   if(b.down){ driveDown(b); return; }
   driveGuard(b);
   if(game === 'mma' && MMA_ACT[c.id]){ driveMMA(i, t, rec); return; }
@@ -2476,7 +2693,7 @@ function glove(p, prev, dir, f, col, colD, wrap, r){
 
 /* Лицо. Рисуется в системе координат головы: +x — вперёд, на противника,
    +y — вниз. Без него голова читалась просто кружком. */
-function face(J, f, s, mix, turned){
+function face(J, f, s, mix, turned, mood){
   cx.save();
   cx.translate(J.head.x, J.head.y);
   cx.rotate(J.ha * f);
@@ -2503,20 +2720,55 @@ function face(J, f, s, mix, turned){
     return;
   }
 
-  cx.strokeStyle = INK; cx.lineCap = 'round';    // бровь нависает прямо над глазом
+  /* Мимика. 0 — обычное лицо, 1 — улыбка во всю ширь, 2 — рёв на трибуны,
+     3 — гримаса боли. Победные сцены без этого не работают: поза уже
+     торжествующая, а лицо остаётся тем же, что и в бою. */
+  mood = mood || 0;
+  cx.strokeStyle = INK; cx.lineCap = 'round';    // бровь
   cx.lineWidth = 1.8;
-  cx.beginPath(); cx.moveTo(0.2, -2.7); cx.lineTo(3.7, -1.6); cx.stroke();
+  cx.beginPath();
+  if(mood === 1){ cx.moveTo(0.4, -3.5); cx.lineTo(3.8, -2.9); }          // поднята
+  else if(mood === 2){ cx.moveTo(0.2, -2.4); cx.lineTo(3.9, -1.0); }     // сведена в крик
+  else if(mood === 3){ cx.moveTo(0.1, -3.1); cx.lineTo(3.9, -0.8); }     // сведена от боли
+  else { cx.moveTo(0.2, -2.7); cx.lineTo(3.7, -1.6); }
+  cx.stroke();
 
-  cx.fillStyle = INK;                            // глаз
-  cx.beginPath(); cx.ellipse(2.5, .1, 1.25, 1.0, .2, 0, 6.284); cx.fill();
-  cx.fillStyle = 'rgba(255,255,255,.9)';
-  cx.beginPath(); cx.arc(2.9, -.3, .4, 0, 6.284); cx.fill();
+  if(mood === 1){                                // прищур радости
+    cx.lineWidth = 1.5;
+    cx.beginPath(); cx.moveTo(1.5, .3); cx.quadraticCurveTo(2.6, -1.3, 3.6, .2); cx.stroke();
+  } else if(mood === 3){                         // зажмурился
+    cx.lineWidth = 1.5;
+    cx.beginPath(); cx.moveTo(1.6, .1); cx.lineTo(3.5, .3); cx.stroke();
+  } else {
+    cx.fillStyle = INK;                          // глаз
+    var er = mood === 2 ? 1.45 : 1.25;
+    cx.beginPath(); cx.ellipse(2.5, .1, er, mood === 2 ? 1.25 : 1.0, .2, 0, 6.284); cx.fill();
+    cx.fillStyle = 'rgba(255,255,255,.9)';
+    cx.beginPath(); cx.arc(2.9, -.3, .4, 0, 6.284); cx.fill();
+  }
 
   cx.strokeStyle = INK; cx.lineWidth = 1.3;      // спинка носа
   cx.beginPath(); cx.moveTo(4.6, -.7); cx.quadraticCurveTo(5.6, .4, 4.4, 1.2); cx.stroke();
 
-  cx.lineWidth = 1.4;                            // сжатый рот
-  cx.beginPath(); cx.moveTo(1.9, 3.0); cx.lineTo(4.0, 2.6); cx.stroke();
+  if(mood === 1){                                // улыбка во всю ширь, с зубами
+    cx.beginPath(); cx.moveTo(1.1, 1.9); cx.quadraticCurveTo(3.0, 5.6, 5.0, 1.6);
+    cx.closePath();
+    cx.fillStyle = '#fff6ea'; cx.fill();
+    cx.strokeStyle = INK; cx.lineWidth = 1.3; cx.stroke();
+  } else if(mood === 2){                         // рот открыт в крике
+    cx.fillStyle = INK;
+    cx.beginPath(); cx.ellipse(3.2, 3.0, 1.85, 2.35, -.22, 0, 6.284); cx.fill();
+    cx.fillStyle = '#7a2530';
+    cx.beginPath(); cx.ellipse(3.3, 3.5, 1.15, 1.35, -.22, 0, 6.284); cx.fill();
+  } else if(mood === 3){                         // стиснутые зубы
+    cx.fillStyle = '#fff6ea';
+    cx.beginPath(); cx.ellipse(3.0, 2.9, 1.9, 1.05, -.1, 0, 6.284); cx.fill();
+    cx.strokeStyle = INK; cx.lineWidth = 1.1; cx.stroke();
+    cx.beginPath(); cx.moveTo(3.0, 1.9); cx.lineTo(3.0, 3.9); cx.stroke();
+  } else {
+    cx.lineWidth = 1.4;                          // сжатый рот
+    cx.beginPath(); cx.moveTo(1.9, 3.0); cx.lineTo(4.0, 2.6); cx.stroke();
+  }
   cx.restore();
 }
 
@@ -2660,7 +2912,7 @@ function boxerParts(b, out){
     cx.beginPath(); cx.ellipse(J.head.x - J.fw1.x * 1.4 * HS, J.head.y - 2.3 * HS, HEAD_R * .6, HEAD_R * .46, 0, 0, 6.284); cx.fill();
     cx.fillStyle = mix(s.dark);                                   // узкая тень под скулой
     cx.beginPath(); cx.ellipse(J.head.x + J.fw1.x * .4, J.head.y + HEAD_R * .86, 2.4 * HS, .95 * HS, 0, 0, 6.284); cx.fill();
-    face(J, f, s, mix, b.turned > .5);
+    face(J, f, s, mix, b.turned > .5, b.mood);
   });
 
   if(rearOut) put('rearArm', function(){ arm(J.arms[1], 4.5, 3.1, 2.4, mix(s.body), mix(s.bodyD)); });
@@ -3505,6 +3757,7 @@ function driveIdle(){
   for(var i = 0; i < 2; i++){
     var b = B[i];
     if(b.rd){ driveGuard(b); continue; }        // телом управляет физика, поза ждёт возврата
+    if(b.win){ driveWin(b); continue; }         // победная сцена перекрывает всё
     if(b.down){ driveDown(b); continue; }
     driveGuard(b);
     if(b.charge) applyCharge(b);
@@ -3547,7 +3800,28 @@ function frame(now){
     if(seqDark && seq.t >= seqDark){ seqDark = 0; darkT = .42; }
     if(!seq.koDone && seq.t >= T_IMPACT + 240){
       seq.koDone = true;
+      var brk = seq.rec.broke;
       for(var z = 0; z < 2; z++) if(seq.rec.ko[z] && !B[z].down){
+        if(brk && brk.i === z){                       // перелом: сустав выворачивает
+          B[z].broke = {limb:brk.limb, k:0}; B[z].mood = 3; B[z].down = true;
+          var jt = brk.limb === 'arm' ? B[z].J.arms[0].el : B[z].J.legs[0].knee;
+          sndSnap(); crowdCheer(1.3); musicKO();
+          shake = Math.max(shake, 9); freeze += 190; slowT = RM ? 0 : 900;
+          spawnRays(jt.x, jt.y, 12, 0, '#ff4d5e');
+          burst(jt.x, jt.y, 16, .8, '#ff6b78');
+          popAt(jt.x, jt.y - 16, brk.limb === 'leg' ? 'ПЕРЕЛОМ НОГИ!' : 'ПЕРЕЛОМ РУКИ!', 'dmg');
+          cinePush(jt.x, jt.y, 1.45, 1400, z);
+          seqExtend(1500);
+          continue;
+        }
+        if(seq.rec.tap === z){                        // сдача: сперва отстучит, потом ляжет
+          B[z].tapping = 1250; B[z].mood = 3;
+          popAt(B[z].J.head.x, B[z].J.head.y - 20, 'СДАЁТСЯ!', 'half');
+          crowdCheer(1.1); musicKO();
+          cinePush(B[z].J.hip.x, B[z].J.hip.y, 1.28, 1400, z);
+          seqExtend(1500);
+          continue;
+        }
         B[z].down = true; koCardT = 1500;
         sndDown(); crowdCheer(1.4); musicKO();
         if(!B[z].rd){ B[z].lean.v -= 3.6; B[z].hy.v += 30; }   // запасной путь без Matter
@@ -3559,11 +3833,29 @@ function frame(now){
       }
     }
     driveActor(0, seq.t, seq.rec); driveActor(1, seq.t, seq.rec);
+    if(!seq.winDone && seq.rec.win && seq.t >= seq.winAt){
+      seq.winDone = true; startWin(seq.rec.win);
+    }
     if(seq.t >= seq.end && !(B[0].rd && B[0].rd.mode === 'stagger') && !(B[1].rd && B[1].rd.mode === 'stagger')){
       var d = seq.done; seq = null; animating = false; skipEl.classList.add('off'); darkT = 0; seqDark = 0; if(d) d();
     }
   } else driveIdle();
 
+  for(var wi = 0; wi < 2; wi++){
+    if(B[wi].win) B[wi].win.t += raw;
+    if(B[wi].tapping > 0){
+      var pn = Math.floor(B[wi].tapping / 185);
+      B[wi].tapping -= raw;
+      if(Math.floor(B[wi].tapping / 185) !== pn){        // ладонь дошла до настила
+        sndMat(); shake = Math.max(shake, 1.1);
+        for(var dq = 0; dq < 4; dq++)
+          parts.push({x:B[wi].J.arms[0].hand.x + (Math.random() * 10 - 5), y:FLOOR - 1,
+                      vx:(Math.random() * 2 - 1) * 14, vy:-6 - Math.random() * 10,
+                      r:.6 + Math.random() * 1.1, life:0, max:.35 + Math.random() * .35, c:'#5b6579'});
+      }
+      if(B[wi].tapping <= 0){ B[wi].tapping = 0; B[wi].down = true; }
+    }
+  }
   if(RP.tk < 1){
     RP.tk = Math.min(1, RP.tk + ms / TRANS_MS);
     /* Приземление отбивается один раз, когда дуга пошла вниз: тряска,
@@ -3663,7 +3955,8 @@ function playRound(rec, done){
   rec._air = [airPoint(0, rec), airPoint(1, rec)];
   if(rec.mma) setRP(rec.before.pos, rec.before.top);
   drawOrder = (rec.out[0].dmg || 0) >= (rec.out[1].dmg || 0) ? [1, 0] : [0, 1];
-  seq = {t:0, rec:rec, hit:false, swung:false, koDone:false, posDone:false,
+  seq = {t:0, rec:rec, hit:false, swung:false, koDone:false, posDone:false, winDone:false,
+         winAt:T_IMPACT + (rec.tap >= 0 ? 1500 : 900),
          end:(phase === 'replay' ? REPLAY_END : SEQ_END), done:done};
   animating = true;
 }
@@ -3992,6 +4285,8 @@ function screenReveal(){
 function winTitle(i){ return F[i].ico + ' ' + F[i].name + ' ПОБЕДИЛ'; }
 function verdict(){
   var a = F[0].hp, b = F[1].hp;
+  if(F[0].broke) return {t:winTitle(1), s:'Перелом ' + (F[0].broke === 'leg' ? 'ноги' : 'руки') + ' в раунде ' + round + '. ' + F[0].ico + ' ' + F[0].name + ' не успел постучать, бой остановлен.'};
+  if(F[1].broke) return {t:winTitle(0), s:'Перелом ' + (F[1].broke === 'leg' ? 'ноги' : 'руки') + ' в раунде ' + round + '. ' + F[1].ico + ' ' + F[1].name + ' не успел постучать, бой остановлен.'};
   if(F[0].tap) return {t:winTitle(1), s:'Сдача болевым в раунде ' + round + '. ' + F[0].ico + ' ' + F[0].name + ' постучал.'};
   if(F[1].tap) return {t:winTitle(0), s:'Сдача болевым в раунде ' + round + '. ' + F[1].ico + ' ' + F[1].name + ' постучал.'};
   if(a <= 0 && b <= 0) return {t:'ДВОЙНОЙ НОКАУТ', s:'Оба на настиле. Ничья.'};
@@ -4004,7 +4299,15 @@ function verdict(){
 
 function screenOver(){
   var v = verdict();
-  return '<h1>' + v.t + '</h1><div class="sub">' + v.s + '</div><div class="spacer"></div>' +
+  /* Реплика победителя — та же, что и поза, и берётся из записи: пересмотр
+     боя не должен выдавать другую. */
+  var lr = bouts.length ? bouts[bouts.length - 1] : null, say = '';
+  if(lr && lr.win){
+    var wp = WIN_POSE[lr.win.pose];
+    say = '<div class="card ' + F[lr.win.i].cls + '"><div style="text-align:center;font-family:var(--disp);' +
+          'font-size:19px;letter-spacing:.03em">' + F[lr.win.i].ico + ' «' + wp.say + '»</div></div>';
+  }
+  return '<h1>' + v.t + '</h1><div class="sub">' + v.s + '</div>' + say + '<div class="spacer"></div>' +
     '<button class="btn gold big" data-go="replay">▶ СМОТРЕТЬ ВЕСЬ БОЙ</button>' +
     '<button class="btn" data-go="restart">ИГРАТЬ ЗАНОВО</button>';
 }
@@ -4170,6 +4473,20 @@ function sndCharge(){                             // замах кросса
   g.gain.exponentialRampToValueAtTime(.17, t + .18);
   g.gain.exponentialRampToValueAtTime(.0001, t + .62);
   o.connect(f); f.connect(g); g.connect(master); o.start(t); o.stop(t + .7);
+}
+function sndMat(){                                 // ладонь по настилу — знак сдачи
+  if(!AC) return;
+  var t = AC.currentTime;
+  tone('sine', 155, 62, t, .09, .5);
+  hiss('lowpass', 950, 300, t, .07, .42, .8);
+}
+function sndSnap(){                                // сустав не выдержал
+  if(!AC) return;
+  var t = AC.currentTime;
+  musicDuck(.5);
+  hiss('highpass', 2700, 900, t, .09, .8, 1.2);
+  tone('square', 430, 90, t, .07, .3);
+  tone('sine', 128, 42, t + .03, .3, .55);
 }
 function sndTap(){
   if(!AC) return;
@@ -4591,6 +4908,7 @@ function rewatchRound(){
   for(i = 0; i < 2; i++){
     B[i].charge = chargeKind(rec.before.pending[i]);
     B[i].down = false;
+    B[i].win = null; B[i].mood = 0; B[i].tapping = 0; B[i].broke = null;
     B[i].tired = rec.before.st[i] < LOW_ST;
     B[i].winded = !!rec.before.winded[i];
     disp[i].hp = rec.before.hp[i]; disp[i].st = rec.before.st[i];
@@ -4606,6 +4924,7 @@ function rewatchRound(){
         B[j].down = !!F[j].ko; B[j].charge = chargeKind(F[j].pending);
         B[j].tired = F[j].st < LOW_ST; B[j].winded = F[j].winded;
       }
+      restoreFinish();
       setRP(GR.pos, GR.top);
       syncDisp();
       revealDone = true; render();
@@ -4631,6 +4950,7 @@ function replayNext(){
   for(i = 0; i < 2; i++){
     B[i].charge = chargeKind(rec.before.pending[i]);
     B[i].down = false;
+    B[i].win = null; B[i].mood = 0; B[i].tapping = 0; B[i].broke = null;
     B[i].tired = rec.before.st[i] < LOW_ST;
     B[i].winded = !!rec.before.winded[i];
     disp[i].hp = rec.before.hp[i]; disp[i].st = rec.before.st[i];
@@ -4656,6 +4976,7 @@ function replayStop(){
   ragResetAll();
   for(var i = 0; i < 2; i++){ B[i].down = !!F[i].ko; B[i].charge = false;
                               B[i].tired = F[i].st < LOW_ST; B[i].winded = F[i].winded; }
+  restoreFinish();
   setRP(GR.pos, GR.top);
   syncDisp();
   for(var n = 0; n < 40; n++){ driveIdle(); settle(1/60); }
@@ -4720,7 +5041,7 @@ function resetRing(){
   seq = null; animating = false; skipEl.classList.add('off'); musicStop();
   clearPops(); parts.length = 0; rays.length = 0; freeze = 0; slowT = 0; shake = 0; flashA = 0;
   dark = 0; darkT = 0; cineT = 0; cineFollow = -1; koCardT = 0; lb = 0; cut = null; cutQ = null;
-  for(var i = 0; i < 2; i++){ B[i].reset(); B[i].gh = []; }
+  for(var i = 0; i < 2; i++){ B[i].reset(); B[i].gh = []; B[i].win = null; B[i].mood = 0; }
   ragResetAll();
 }
 
