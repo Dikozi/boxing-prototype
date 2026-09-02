@@ -2616,12 +2616,17 @@ function poseOf(b){
    4. РИСОВАНИЕ
    ========================================================================= */
 var SKIN = [
+  /* Тело телесного цвета, а угол читается по экипировке и по рефлексу:
+     синему подсвечивает холодным, красному тёплым. Раньше бойцы были
+     целиком синим и красным — это и мешало картинке выглядеть живой. */
   {body:'#3b7fe0', bodyD:'#1f4f9e', dark:'#17396f', trunk:'#0d2650', trunkL:'#5a9cf5',
    glove:'#b5d3ff', gloveD:'#5b90e6', rim:'#b9d6ff', boot:'#0a172c',
-   hair:'#0e1a30', tape:'#dce9ff', crop:0},
+   hair:'#0e1a30', tape:'#dce9ff', crop:0,
+   skin:'#b98e77', skinL:'#e0bda3', skinD:'#2f3550', skinR:'#79b2ff'},
   {body:'#e04150', bodyD:'#a02531', dark:'#741822', trunk:'#520f17', trunkL:'#f97d89',
    glove:'#ffbcc3', gloveD:'#dd5866', rim:'#ffc2c8', boot:'#2e080d',
-   hair:'#2b0a10', tape:'#ffe3e6', crop:1}
+   hair:'#2b0a10', tape:'#ffe3e6', crop:1,
+   skin:'#a9663c', skinL:'#dc9a63', skinD:'#4d2011', skinR:'#ff9057'}
 ];
 
 var ring = document.getElementById('ring');
@@ -2747,6 +2752,66 @@ function stepParts(dt){
 }
 
 var INK = '#080b11';
+/* Направление НА свет. Софит в drawArena висит над центром пары чуть спереди,
+   поэтому свет падает сверху-слева, и всё затенение считается от этого вектора. */
+var LDIR = {x:-0.36, y:-0.93};
+var OUTL = 2.0;                     // насколько тёмная подложка контура отъезжает в тень
+var HAIR = 1.5;                     // тонкая обводка по всему силуэту, чтобы тело не растворялось в тёмном зале
+/* Переменный контур одним движением: тёмная подложка со сдвигом В ТЕНЬ даёт
+   толстый край там, где форма отворачивается от света, а волосяная обводка
+   держит силуэт со стороны света. Ровный чёрный контур одной толщины и есть
+   главный признак мультика — но и полное его отсутствие тоже беда: на тёмном
+   настиле тело без края расплывается. */
+function inkPath(P, mul){
+  cx.save();
+  cx.translate(-LDIR.x * OUTL * mul, -LDIR.y * OUTL * mul);
+  cx.fillStyle = INK; cx.fill(P);
+  cx.restore();
+  cx.strokeStyle = INK; cx.lineWidth = HAIR; cx.lineJoin = 'round'; cx.stroke(P);
+}
+
+function rgbOf(c){
+  if(c.charCodeAt(0) === 35){ var n = parseInt(c.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+  var m = c.match(/\d+/g); return [+m[0], +m[1], +m[2]];
+}
+function blend(a, b, t){
+  var A = rgbOf(a), B = rgbOf(b);
+  return 'rgb(' + ((A[0] + (B[0] - A[0]) * t) | 0) + ',' + ((A[1] + (B[1] - A[1]) * t) | 0) +
+         ',' + ((A[2] + (B[2] - A[2]) * t) | 0) + ')';
+}
+function dimC(c, m){
+  if(m >= .999) return c;
+  var A = rgbOf(c);
+  return 'rgb(' + ((A[0] * m) | 0) + ',' + ((A[1] * m) | 0) + ',' + ((A[2] * m) | 0) + ')';
+}
+
+/* Поперечное затенение одного звена. Раньше градиент шёл ВДОЛЬ кости, от
+   плеча к кисти, — так цилиндр не выглядит круглым ни при каком подборе
+   цветов. Объём даёт градиент ПОПЕРЁК оси: блик со стороны света, полутон,
+   ядро тени и рефлекс по дальнему краю. */
+function limbSeg(a, b2, r, T, dim){
+  var u = unitV(a, b2), n = {x:-u.y, y:u.x};
+  var lit = n.x * LDIR.x + n.y * LDIR.y;
+  if(lit < 0){ n = {x:-n.x, y:-n.y}; lit = -lit; }
+  var e = r + 1.5;
+  var x0 = a.x - u.x * e, y0 = a.y - u.y * e, x1 = b2.x + u.x * e, y1 = b2.y + u.y * e;
+  var mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+  var g = cx.createLinearGradient(mx + n.x * e, my + n.y * e, mx - n.x * e, my - n.y * e);
+  var k = .34 + lit * .66;                       // вдоль света форма плоская, поперёк — круглая
+  /* Тень и рефлекс подкрашены в угол бойца. Это не украшение: в партере тела
+     переплетены, экипировки почти не видно, и холодная против тёплой тени —
+     единственное, по чему с одного взгляда понятно, кто где. */
+  g.addColorStop(0, dimC(blend(T.base, T.lit, k * .85), dim));
+  g.addColorStop(.34, dimC(T.base, dim));
+  g.addColorStop(.64, dimC(blend(T.base, T.shade, .34 + k * .32), dim));
+  g.addColorStop(.86, dimC(blend(T.base, T.shade, .88), dim));
+  g.addColorStop(1, dimC(blend(T.shade, T.rim, .70), dim));
+  cx.fillStyle = g;
+  cx.beginPath();
+  cx.moveTo(x0 + n.x * e, y0 + n.y * e); cx.lineTo(x1 + n.x * e, y1 + n.y * e);
+  cx.lineTo(x1 - n.x * e, y1 - n.y * e); cx.lineTo(x0 - n.x * e, y0 - n.y * e);
+  cx.closePath(); cx.fill();
+}
 function line(a, b2, w, col, noInk){
   cx.lineCap = 'round';
   cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b2.x, b2.y);
@@ -2764,33 +2829,54 @@ function nrmV(a, b2){ var u = unitV(a, b2); return {x:-u.y, y:u.x}; }
    толщина по всей длине и делала из руки верёвку с шариком на конце.
    Торцы скруглены квадратичной кривой (у неё контрольная точка ровно вдвое
    дальше вершины), чтобы не разбираться с направлением обхода дуги. */
-function limb(a, b2, c, r0, r1, r2, col, colD){
+function limb(a, b2, c, r0, r1, r2, T, dim){
   var n0 = nrmV(a, b2), n2 = nrmV(b2, c);
   var dA = unitV(b2, a), dC = unitV(b2, c);
   /* На локте не строим митру: когда рука сложена острее прямого угла, она
      улетает в бесконечность и даёт шип. Вместо неё — фаска из двух точек,
-     по нормали каждого звена, а внутренний зарез потом закрывается кружком
-     сустава. */
-  cx.lineJoin = 'round';
-  cx.beginPath();
-  cx.moveTo(a.x + n0.x * r0, a.y + n0.y * r0);
-  cx.lineTo(b2.x + n0.x * r1, b2.y + n0.y * r1);
-  cx.lineTo(b2.x + n2.x * r1, b2.y + n2.y * r1);
-  cx.lineTo(c.x + n2.x * r2, c.y + n2.y * r2);
-  cx.quadraticCurveTo(c.x + dC.x * r2 * 2, c.y + dC.y * r2 * 2, c.x - n2.x * r2, c.y - n2.y * r2);
-  cx.lineTo(b2.x - n2.x * r1, b2.y - n2.y * r1);
-  cx.lineTo(b2.x - n0.x * r1, b2.y - n0.y * r1);
-  cx.lineTo(a.x - n0.x * r0, a.y - n0.y * r0);
-  cx.quadraticCurveTo(a.x + dA.x * r0 * 2, a.y + dA.y * r0 * 2, a.x + n0.x * r0, a.y + n0.y * r0);
-  cx.closePath();
-  var g = cx.createLinearGradient(a.x, a.y, c.x, c.y);
-  g.addColorStop(0, col); g.addColorStop(1, colD);
-  cx.strokeStyle = INK; cx.lineWidth = 2.5; cx.stroke();
-  cx.fillStyle = g; cx.fill();
-  cx.beginPath(); cx.arc(b2.x, b2.y, r1, 0, 6.284); cx.fill();   // сустав закрывает зарез
+     по нормали каждого звена, а внутренний зарез закрывается кружком сустава,
+     который входит в тот же путь. */
+  var P = new Path2D();
+  P.moveTo(a.x + n0.x * r0, a.y + n0.y * r0);
+  P.lineTo(b2.x + n0.x * r1, b2.y + n0.y * r1);
+  P.lineTo(b2.x + n2.x * r1, b2.y + n2.y * r1);
+  P.lineTo(c.x + n2.x * r2, c.y + n2.y * r2);
+  P.quadraticCurveTo(c.x + dC.x * r2 * 2, c.y + dC.y * r2 * 2, c.x - n2.x * r2, c.y - n2.y * r2);
+  P.lineTo(b2.x - n2.x * r1, b2.y - n2.y * r1);
+  P.lineTo(b2.x - n0.x * r1, b2.y - n0.y * r1);
+  P.lineTo(a.x - n0.x * r0, a.y - n0.y * r0);
+  P.quadraticCurveTo(a.x + dA.x * r0 * 2, a.y + dA.y * r0 * 2, a.x + n0.x * r0, a.y + n0.y * r0);
+  P.closePath();
+  /* Кружок сустава держим ОТДЕЛЬНЫМ путём. В одном с контуром он попадал под
+     правило ненулевого числа оборотов с обратным направлением обхода и
+     вычитался — на локтях и коленях получались сквозные чёрные дыры. */
+  var JP = new Path2D();
+  JP.arc(b2.x, b2.y, r1, 0, 6.284);
+  /* Переменный контур. Вместо обводки одной толщины — та же фигура тёмным
+     со сдвигом В ТЕНЬ: со стороны света контур пропадает, со стороны тени
+     набирает толщину. Ровный чёрный контур и есть главный признак мультика. */
+  cx.save();
+  cx.translate(-LDIR.x * OUTL, -LDIR.y * OUTL);
+  cx.fillStyle = INK; cx.fill(P); cx.fill(JP);
+  cx.restore();
+  cx.strokeStyle = INK; cx.lineWidth = HAIR; cx.lineJoin = 'round'; cx.stroke(P);
+  cx.save();
+  cx.clip(P);
+  cx.fillStyle = dimC(T.base, dim); cx.fill(P);      // полосы звеньев не покрывают всё
+  limbSeg(a, b2, r0, T, dim);
+  limbSeg(b2, c, r1, T, dim);
+  cx.restore();
+  /* Сустав поверх стыка: свет по той же стороне, что и у звеньев, плюс мягкая
+     тень по сгибу — иначе локоть читается как стык двух труб. */
+  var jn = {x:-LDIR.x, y:-LDIR.y};
+  var jg = cx.createLinearGradient(b2.x - jn.x * r1, b2.y - jn.y * r1, b2.x + jn.x * r1, b2.y + jn.y * r1);
+  jg.addColorStop(0, dimC(blend(T.base, T.lit, .55), dim));
+  jg.addColorStop(.45, dimC(T.base, dim));
+  jg.addColorStop(1, dimC(blend(T.base, T.shade, .75), dim));
+  cx.fillStyle = jg; cx.fill(JP);
 }
-function arm(A, r0, r1, r2, col, colD){ limb(A.sh, A.el, A.hand, r0, r1, r2, col, colD); }
-function leg(L, r0, r1, r2, col, colD){ limb(L.hip, L.knee, L.foot, r0, r1, r2, col, colD); }
+function arm(A, r0, r1, r2, T, dim){ limb(A.sh, A.el, A.hand, r0, r1, r2, T, dim); }
+function leg(L, r0, r1, r2, T, dim){ limb(L.hip, L.knee, L.foot, r0, r1, r2, T, dim); }
 
 /* Перчатка развёрнута по предплечью и «смотрит» туда, куда летит удар:
    тупая масса у костяшек, бинт на запястье, шов большого пальца. Кружок
@@ -2817,23 +2903,34 @@ function glove(p, prev, dir, f, col, colD, wrap, r){
   cx.lineJoin = 'round'; cx.strokeStyle = INK;
   cx.fillStyle = wrap; cx.lineWidth = 1.3;      // бинт на запястье
   cx.beginPath(); cx.ellipse(-r * .95, 0, r * .3, r * .56, 0, 0, 6.284); cx.fill(); cx.stroke();
-  var g = cx.createLinearGradient(0, -r, 0, r * .8);
-  g.addColorStop(0, col); g.addColorStop(1, colD);
-  cx.fillStyle = g; cx.lineWidth = 1.7;         // масса: тупая у костяшек, сходит к запястью
-  cx.beginPath();
-  cx.moveTo(-r * .72, -r * .6);
-  cx.quadraticCurveTo(r * .3, -r * 1.02, r * .92, -r * .44);
-  cx.quadraticCurveTo(r * 1.24, 0, r * .92, r * .46);
-  cx.quadraticCurveTo(r * .25, r * 1.0, -r * .72, r * .64);
-  cx.quadraticCurveTo(-r * .98, 0, -r * .72, -r * .6);
-  cx.closePath(); cx.stroke(); cx.fill();
+  /* Свет считается в мировых координатах, а перчатка нарисована в своей
+     системе: поворачиваем вектор света обратно на угол кисти, иначе блик
+     живёт сам по себе и не совпадает с телом. */
+  var ga = -Math.atan2(dir.y, dir.x), ca = Math.cos(ga), sa = Math.sin(ga);
+  var lx = LDIR.x * ca - LDIR.y * sa, ly = (LDIR.x * sa + LDIR.y * ca) * f;
+  var GP = new Path2D();
+  GP.moveTo(-r * .72, -r * .6);
+  GP.quadraticCurveTo(r * .3, -r * 1.02, r * .92, -r * .44);
+  GP.quadraticCurveTo(r * 1.24, 0, r * .92, r * .46);
+  GP.quadraticCurveTo(r * .25, r * 1.0, -r * .72, r * .64);
+  GP.quadraticCurveTo(-r * .98, 0, -r * .72, -r * .6);
+  GP.closePath();
+  cx.save();
+  cx.translate(-lx * OUTL, -ly * OUTL);
+  cx.fillStyle = INK; cx.fill(GP);
+  cx.restore();
+  var g = cx.createLinearGradient(lx * r, ly * r, -lx * r, -ly * r);
+  g.addColorStop(0, blend(col, '#ffffff', .3));
+  g.addColorStop(.4, col);
+  g.addColorStop(1, colD);
+  cx.fillStyle = g; cx.fill(GP);
   cx.strokeStyle = 'rgba(0,0,0,.34)'; cx.lineWidth = 1.15;   // шов большого пальца
   cx.beginPath();
   cx.moveTo(-r * .34, r * .58);
   cx.quadraticCurveTo(r * .3, r * .3, r * .42, r * .62);
   cx.stroke();
-  cx.fillStyle = 'rgba(255,255,255,.34)';                    // сдержанный блик
-  cx.beginPath(); cx.ellipse(r * .26, -r * .46, r * .26, r * .15, -.34, 0, 6.284); cx.fill();
+  cx.fillStyle = 'rgba(255,255,255,.5)';                     // кожа даёт узкий жёсткий блик
+  cx.beginPath(); cx.ellipse(lx * r * .55, ly * r * .55, r * .22, r * .11, Math.atan2(ly, lx), 0, 6.284); cx.fill();
   cx.restore();
 }
 
@@ -2968,26 +3065,62 @@ function boxerParts(b, out){
   var dim = b.down ? 0.55 : 1;
   function mix(c){ return dim < 1 ? shadeHex(c, dim) : c; }
   var D = depthFor(b.i);
+  /* Тон кожи бойца. dim отделяет ближние конечности от дальних: дальние
+     получают меньше света, а не просто заливаются тёмным цветом. */
+  var TN = {base:mix(s.skin), lit:mix(s.skinL), shade:mix(s.skinD), rim:mix(s.skinR)};
+  var FAR = .62;
   function put(part, fn){ out.push({z:(D.ov && D.ov[part] != null) ? D.ov[part] : D.base + PZ[part], d:fn}); }
 
   var legOut = J.legs[1].foot.y < FLOOR - 5;                // задняя нога пошла в удар
   var rearOut = (J.arms[1].hand.x - J.neck.x) * f > 7;      // задняя рука вылетела вперёд
 
   put('shadow', function(){
+    /* Тень по позе, а не пятно у таза. Тот же скелет кладётся на настил:
+       каждая точка отъезжает от света тем дальше, чем выше она над полом, и
+       сплющивается по вертикали. В партере пара получает общую тень, и вес
+       становится виден — неподвижный эллипс у таза этого показать не мог. */
+    var SKX = .42, SQY = .13, q;
+    function pj(v){ var d = FLOOR - v.y; return {x:v.x + d * SKX, y:FLOOR - d * SQY}; }
     var lift = Math.max(0, (HIP_Y - J.hip.y)) / 20;
     if(b.rd) lift = 0;
-    cx.fillStyle = 'rgba(0,0,0,.42)'; cx.globalAlpha = Math.max(.12, .42 - lift * .18);
-    cx.beginPath(); cx.ellipse(J.hip.x, FLOOR + 1.2, 15 + lift * 3, 2.9, 0, 0, 6.284); cx.fill();
+    var SP2 = new Path2D();
+    var h = pj(J.hip), ch = pj(J.chest), hd = pj(J.head);
+    SP2.moveTo(h.x, h.y); SP2.lineTo(ch.x, ch.y); SP2.lineTo(hd.x, hd.y);
+    for(q = 0; q < 2; q++){
+      var L = J.legs[q], A = J.arms[q];
+      var kn = pj(L.knee), ft = pj(L.foot), sh = pj(A.sh), el = pj(A.el), hn = pj(A.hand);
+      SP2.moveTo(h.x, h.y); SP2.lineTo(kn.x, kn.y); SP2.lineTo(ft.x, ft.y);
+      SP2.moveTo(sh.x, sh.y); SP2.lineTo(el.x, el.y); SP2.lineTo(hn.x, hn.y);
+    }
+    /* Одним stroke: перекрытия подпутей внутри вызова не темнеют дважды,
+       иначе на стыках у таза вылезли бы чёрные узлы. */
+    cx.save();
+    cx.globalAlpha = Math.max(.13, .33 - lift * .12);
+    cx.strokeStyle = '#000'; cx.lineWidth = 9; cx.lineCap = 'round'; cx.lineJoin = 'round';
+    cx.stroke(SP2);
+    cx.restore();
+    /* Контактные тени под каждой опорой: узкие и плотные, они прибивают
+       ступню и ладонь к настилу там, где мягкая тень позы этого не делает. */
+    cx.fillStyle = '#000';
+    for(q = 0; q < 2; q++){
+      var pt = [J.legs[q].foot, J.arms[q].hand];
+      for(var w = 0; w < 2; w++){
+        var d = FLOOR - pt[w].y;
+        if(d > 9 || d < -3) continue;
+        cx.globalAlpha = Math.max(0, .42 - d * .045);
+        cx.beginPath(); cx.ellipse(pt[w].x, FLOOR + .8, 5.2 - d * .22, 1.7, 0, 0, 6.284); cx.fill();
+      }
+    }
     cx.globalAlpha = 1;
   });
 
   if(!legOut) put('farLeg', function(){
-    leg(J.legs[1], 4.7, 3.3, 2.4, mix(s.dark), mix(s.dark));
+    leg(J.legs[1], 4.7, 3.3, 2.4, TN, FAR);
     cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
     boot(J.legs[1], f, 4.6, 2.5, mix(s.dark));
   });
   if(!rearOut) put('farArm', function(){
-    arm(J.arms[1], 4.2, 2.9, 2.2, mix(s.dark), mix(s.dark));
+    arm(J.arms[1], 4.2, 2.9, 2.2, TN, FAR);
     glove(J.arms[1].hand, b.trail[1][0], unitV(J.arms[1].el, J.arms[1].hand), f,
           mix(s.gloveD), mix(s.dark), mix(s.dark), gloveR() * .93);
   });
@@ -3002,30 +3135,58 @@ function boxerParts(b, out){
       var d = t - LO;
       return {x:CH.x + U1.x * d + F1.x * n, y:CH.y + U1.y * d + F1.y * n};
     };
-    var g = cx.createLinearGradient(J.neck.x, J.neck.y, J.hip.x, J.hip.y + 6);
-    g.addColorStop(0, mix(s.body)); g.addColorStop(1, mix(s.bodyD));
     cx.lineJoin = 'round';
-    cx.beginPath();
+    var TP = new Path2D();
     var a1 = p(1, 6.8), a2 = p(10, 8.8), a3 = p(20.5, 9.6), a4 = p(20.5, -8.8), a5 = p(10, -7.8), a6 = p(1, -6.2);
-    cx.moveTo(a1.x, a1.y);
-    cx.quadraticCurveTo(a2.x, a2.y, a3.x, a3.y);
-    cx.lineTo(a4.x, a4.y);
-    cx.quadraticCurveTo(a5.x, a5.y, a6.x, a6.y);
-    cx.closePath();
-    cx.strokeStyle = INK; cx.lineWidth = 4.2; cx.stroke();
-    cx.fillStyle = g; cx.fill();
-
+    TP.moveTo(a1.x, a1.y);
+    TP.quadraticCurveTo(a2.x, a2.y, a3.x, a3.y);
+    TP.lineTo(a4.x, a4.y);
+    TP.quadraticCurveTo(a5.x, a5.y, a6.x, a6.y);
+    TP.closePath();
+    inkPath(TP, 1.35);                                 // переменный контур
+    cx.save();
+    cx.clip(TP);
+    /* Объём корпуса — поперёк тела, по направлению fw1: грудь к свету светлая,
+       спина уходит в тень, по дальнему краю рефлекс. */
+    var ax = J.fw1, alit = ax.x * LDIR.x + ax.y * LDIR.y, sgn = alit < 0 ? -1 : 1;
+    var ctr = p(11, 0), wd2 = 11 * TW * J.wd;
+    var tg = cx.createLinearGradient(ctr.x + ax.x * wd2 * sgn, ctr.y + ax.y * wd2 * sgn,
+                                     ctr.x - ax.x * wd2 * sgn, ctr.y - ax.y * wd2 * sgn);
+    var tk = .34 + Math.abs(alit) * .66;
+    tg.addColorStop(0, mix(blend(s.skin, s.skinL, tk * .8)));
+    tg.addColorStop(.36, mix(s.skin));
+    tg.addColorStop(.68, mix(blend(s.skin, s.skinD, .34 + tk * .32)));
+    tg.addColorStop(.88, mix(blend(s.skin, s.skinD, .88)));
+    tg.addColorStop(1, mix(blend(s.skinD, s.skinR, .66)));
+    cx.fillStyle = tg; cx.fill(TP);
     cx.lineCap = 'round';
-    cx.strokeStyle = 'rgba(255,255,255,.14)';          // свет по переднему краю — корпус получает объём
-    cx.lineWidth = 2.2;
-    var r1 = p(3.5, 7.6), r2 = p(12, 9.2), r3 = p(19, 8.6);
-    cx.beginPath(); cx.moveTo(r1.x, r1.y); cx.quadraticCurveTo(r2.x, r2.y, r3.x, r3.y); cx.stroke();
-    cx.strokeStyle = 'rgba(0,0,0,.2)'; cx.lineWidth = 1.5;   // грудная мышца
-    var q1 = p(17.2, 7.6), q2 = p(13.4, 4.2), q3 = p(12.4, -1.0);
+    cx.strokeStyle = 'rgba(0,0,0,.26)'; cx.lineWidth = 2.6;  // складка под грудной
+    var q1 = p(16.4, 8.2), q2 = p(13.0, 4.0), q3 = p(12.2, -1.4);
     cx.beginPath(); cx.moveTo(q1.x, q1.y); cx.quadraticCurveTo(q2.x, q2.y, q3.x, q3.y); cx.stroke();
-    cx.lineWidth = 1.2;                                      // средняя линия пресса
-    var w1 = p(11.4, 2.2), w2 = p(4.2, 2.0);
+    cx.strokeStyle = 'rgba(0,0,0,.2)'; cx.lineWidth = 1.6;   // средняя линия пресса
+    var w1 = p(11.4, 2.0), w2 = p(3.6, 1.8);
     cx.beginPath(); cx.moveTo(w1.x, w1.y); cx.lineTo(w2.x, w2.y); cx.stroke();
+    cx.strokeStyle = 'rgba(0,0,0,.14)'; cx.lineWidth = 1.3;  // сегменты пресса
+    for(var ab = 0; ab < 3; ab++){
+      var y1 = p(9.4 - ab * 3.1, 5.6), y2 = p(9.4 - ab * 3.1, -4.6);
+      cx.beginPath(); cx.moveTo(y1.x, y1.y); cx.lineTo(y2.x, y2.y); cx.stroke();
+    }
+    /* Смыкания. Там, где рука или нога входит в корпус, свет не достаёт, и
+       без этого затемнения конечность выглядит приклеенной поверх плоской
+       доски. Ложится внутри отсечения по корпусу, поэтому за силуэт не
+       вылезает. Дальняя сторона темнее ближней: она глубже в тени тела. */
+    var AO = [[J.arms[0].sh, 7.0, .30], [J.arms[1].sh, 7.6, .46],
+              [J.legs[0].hip, 6.4, .26], [J.legs[1].hip, 6.8, .40]];
+    for(var ao = 0; ao < 4; ao++){
+      var c0 = AO[ao][0], rr = AO[ao][1];
+      var ag = cx.createRadialGradient(c0.x, c0.y, rr * .18, c0.x, c0.y, rr);
+      ag.addColorStop(0, 'rgba(0,0,0,' + AO[ao][2] + ')');
+      ag.addColorStop(.55, 'rgba(0,0,0,' + (AO[ao][2] * .42).toFixed(3) + ')');
+      ag.addColorStop(1, 'rgba(0,0,0,0)');
+      cx.fillStyle = ag;
+      cx.beginPath(); cx.arc(c0.x, c0.y, rr, 0, 6.284); cx.fill();
+    }
+    cx.restore();
 
     var t1 = p(-2.5, 7.4), t2 = p(6, 7.9), t3 = p(6, -7.2), t4 = p(-2.5, -6.9);   // шорты и пояс
     cx.beginPath(); cx.moveTo(t1.x, t1.y); cx.lineTo(t2.x, t2.y); cx.lineTo(t3.x, t3.y); cx.lineTo(t4.x, t4.y);
@@ -3037,33 +3198,39 @@ function boxerParts(b, out){
   });
 
   put('nearLeg', function(){
-    leg(J.legs[0], 5.1, 3.6, 2.6, mix(s.body), mix(s.bodyD));
+    leg(J.legs[0], 5.1, 3.6, 2.6, TN, 1);
     cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
     boot(J.legs[0], f, 4.8, 2.6, mix(s.trunkL));
   });
   if(legOut) put('kickLeg', function(){
-    leg(J.legs[1], 4.9, 3.4, 2.5, mix(s.body), mix(s.bodyD));
+    leg(J.legs[1], 4.9, 3.4, 2.5, TN, .88);
     cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
     boot(J.legs[1], f, 4.7, 2.55, mix(s.trunkL));
   });
 
   put('head', function(){                       // шея и голова одним силуэтом: череп + челюсть вперёд
-    line(J.neck, {x:J.head.x, y:J.head.y + HEAD_R * .6}, 5.6, mix(s.bodyD));
-    cx.strokeStyle = INK; cx.lineWidth = 3.2; cx.fillStyle = mix(s.body);
-    cx.beginPath(); cx.ellipse(J.head.x + J.fw1.x * 2.1 * HS, J.head.y + J.fw1.y * 2.1 * HS + 2.9 * HS, 4.3 * HS, 3.7 * HS, 0, 0, 6.284);
-    cx.stroke(); cx.fill();
-    cx.beginPath(); cx.ellipse(J.head.x, J.head.y, HEAD_R * 1.02, HEAD_R * .96, J.ha * f, 0, 6.284);
-    cx.stroke(); cx.fill();
-    cx.fillStyle = 'rgba(255,255,255,.13)';                       // мягкий блик от софита
-    cx.beginPath(); cx.ellipse(J.head.x - J.fw1.x * 1.4 * HS, J.head.y - 2.3 * HS, HEAD_R * .6, HEAD_R * .46, 0, 0, 6.284); cx.fill();
-    cx.fillStyle = mix(s.dark);                                   // узкая тень под скулой
+    line(J.neck, {x:J.head.x, y:J.head.y + HEAD_R * .6}, 5.6, mix(blend(s.skin, s.skinD, .45)));
+    /* Череп и челюсть одним путём, тёмная подложка со сдвигом в тень, внутри —
+       шаровой градиент от источника света с рефлексом угла по дальнему краю. */
+    var HP = new Path2D();
+    HP.ellipse(J.head.x + J.fw1.x * 2.1 * HS, J.head.y + J.fw1.y * 2.1 * HS + 2.9 * HS, 4.3 * HS, 3.7 * HS, 0, 0, 6.284);
+    HP.ellipse(J.head.x, J.head.y, HEAD_R * 1.02, HEAD_R * .96, J.ha * f, 0, 6.284);
+    inkPath(HP, 1.25);
+    var hg = cx.createRadialGradient(J.head.x + LDIR.x * HEAD_R * .7, J.head.y + LDIR.y * HEAD_R * .7,
+                                     HEAD_R * .12, J.head.x, J.head.y, HEAD_R * 1.7);
+    hg.addColorStop(0, mix(blend(s.skin, s.skinL, .8)));
+    hg.addColorStop(.46, mix(s.skin));
+    hg.addColorStop(.84, mix(blend(s.skin, s.skinD, .64)));
+    hg.addColorStop(1, mix(blend(s.skinD, s.skinR, .5)));
+    cx.fillStyle = hg; cx.fill(HP);
+    cx.fillStyle = mix(blend(s.skin, s.skinD, .7));               // узкая тень под скулой
     cx.beginPath(); cx.ellipse(J.head.x + J.fw1.x * .4, J.head.y + HEAD_R * .86, 2.4 * HS, .95 * HS, 0, 0, 6.284); cx.fill();
     face(J, f, s, mix, b.turned > .5, b.mood);
   });
 
-  if(rearOut) put('rearArm', function(){ arm(J.arms[1], 4.5, 3.1, 2.4, mix(s.body), mix(s.bodyD)); });
+  if(rearOut) put('rearArm', function(){ arm(J.arms[1], 4.5, 3.1, 2.4, TN, .88); });
   put('nearArm', function(){
-    arm(J.arms[0], 4.8, 3.3, 2.5, mix(s.body), mix(s.bodyD));
+    arm(J.arms[0], 4.8, 3.3, 2.5, TN, 1);
     glove(J.arms[0].hand, b.trail[0][0], unitV(J.arms[0].el, J.arms[0].hand), f,
           mix(s.glove), mix(s.gloveD), mix(s.trunkL), gloveR());
   });
