@@ -522,6 +522,17 @@ var SUB_ENDURE = 10;                // «терпеть» стоит здоро�
    постучать, и конечность ломается — бой останавливают. Удушения ломать
    нечего, там всегда стук. */
 var BREAK_CHANCE = 0.30;
+/* «Поплыл». Больше половины боёв в ММА доходили до 14 раундов и решались
+   подсчётом здоровья — самый скучный финал из возможных. Причина не в том,
+   что урон мал, а в том, что боец на пяти очках защищается ровно так же,
+   как на ста: в бою нет накопления. Пропустивший тяжёлый удар (или упавший
+   ниже порога) раунд «плывёт»: получает больше и бьёт слабее. Это создаёт
+   добивающие серии — то, чего не хватало, — не раздувая урон вообще.
+   Только ММА: бокс укладывается в пять-шесть раундов и в этом не нуждается. */
+var ROCK_DMG = 26;      // столько урона за раунд — и поплыл
+var ROCK_HP  = 30;      // ниже этого плывёт от любого пропущенного
+var ROCK_TAKE = 1.45;   // поплывший получает больше
+var ROCK_DEAL = 0.80;   // и бьёт слабее
 var CTRL_REST = 6;                  // контроль/блок сверх обычного отдыха
 
 /* --- действия ММА. Кладутся в общий ACT, доступность решает legal(). ------
@@ -613,8 +624,8 @@ var mode = 'pvp';                   // 'pvp' — два игрока на одн
 var pick = ['allrnd','allrnd'];      // выбранные архетипы (только ММА)
 function newFight(){
   F = [
-    {i:0, name:'СИНИЙ', cls:'b', ico:'🔵', hp:MAX_HP, st:MAX_ST, pending:null, winded:false, ko:false, tap:false},
-    {i:1, name:(mode === 'cpu' ? 'CPU' : 'КРАСНЫЙ'), cls:'r', ico:'🔴', hp:MAX_HP, st:MAX_ST, pending:null, winded:false, ko:false, tap:false}
+    {i:0, name:'СИНИЙ', cls:'b', ico:'🔵', hp:MAX_HP, st:MAX_ST, pending:null, winded:false, rocked:false, ko:false, tap:false},
+    {i:1, name:(mode === 'cpu' ? 'CPU' : 'КРАСНЫЙ'), cls:'r', ico:'🔴', hp:MAX_HP, st:MAX_ST, pending:null, winded:false, rocked:false, ko:false, tap:false}
   ];
   for(var q = 0; q < 2; q++){ F[q].S = archOf(pick[q]); F[q].arch = F[q].S; F[q].broke = null; }
   GR = newGrapple(); setRP('stand', -1);
@@ -988,6 +999,7 @@ function resolveRoundMMA(){
   var i, g = GR;
   var before = {hp:[F[0].hp, F[1].hp], st:[F[0].st, F[1].st],
                 pending:[F[0].pending, F[1].pending], winded:[F[0].winded, F[1].winded],
+                rocked:[F[0].rocked, F[1].rocked],
                 pos:g.pos, top:g.top, ctrl:g.ctrl,
                 sub:g.sub ? {by:g.sub.by, kind:g.sub.kind, tight:g.sub.tight} : null,
                 turned:[g.turned[0], g.turned[1]]};
@@ -1001,8 +1013,10 @@ function resolveRoundMMA(){
     if(mine.id === 'cross' || mine.id === 'spin'){ out[i] = {type:'windup', dmg:0}; continue; }
     var r = resolveM(mine, choices[1 - i]);
     out[i] = {type:'atk',
-              dmg:Math.round(dmgOf(mine) * dmgMul(i) * takeMul(1 - i) * (tired[i] ? TIRED_MULT : 1) * r.mult),
-              mult:r.mult, why:r.why, tired:tired[i]};
+              dmg:Math.round(dmgOf(mine) * dmgMul(i) * takeMul(1 - i) * (tired[i] ? TIRED_MULT : 1)
+                             * (before.rocked[i] ? ROCK_DEAL : 1)
+                             * (before.rocked[1 - i] ? ROCK_TAKE : 1) * r.mult),
+              mult:r.mult, why:r.why, tired:tired[i], onRocked:before.rocked[1 - i]};
   }
 
   /* --- 2. Приёмы. Если оба лезут в борьбу — один встречный бросок решает,
@@ -1050,6 +1064,17 @@ function resolveRoundMMA(){
   F[0].hp = Math.max(0, F[0].hp - (out[1].dmg || 0));
   for(i = 0; i < 2; i++) if(out[i].self) F[i].hp = Math.max(0, F[i].hp - out[i].self);
 
+  /* --- 4b. Кто поплыл. Считается от УЖЕ применённого урона, поэтому попадание,
+         которое сбило соперника ниже порога, само же его и качает. --- */
+  var rock = [false, false];
+  for(i = 0; i < 2; i++){
+    var took = out[1 - i].dmg || 0;
+    if(F[i].hp > 0 && took > 0 && (took >= ROCK_DMG || F[i].hp <= ROCK_HP)){
+      rock[i] = true;
+      if(!before.rocked[i]) out[1 - i].rock = true;      // отметка для сцены — только на входе
+    }
+  }
+
   /* --- 5. Печень: один бросок здесь, результат в записи. --- */
   var winded = [false, false];
   for(i = 0; i < 2; i++)
@@ -1095,6 +1120,7 @@ function resolveRoundMMA(){
     else if(choices[i].id === 'spin')       F[i].pending = {id:'spinLand', lvl:choices[i].lvl || 'head'};
     else                                    F[i].pending = null;
     F[i].winded = winded[i];
+    F[i].rocked = rock[i];                 // держится ровно один следующий раунд
     if(F[i].hp <= 0) F[i].ko = true;
   }
   if(tapped >= 0){ F[tapped].ko = true;
@@ -1102,7 +1128,8 @@ function resolveRoundMMA(){
 
   lastRec = {round:round, mma:true, choices:[choices[0], choices[1]], out:out, tired:tired,
              before:before, hp:[F[0].hp, F[1].hp], st:[F[0].st, F[1].st],
-             winded:[F[0].winded, F[1].winded], ko:[F[0].ko, F[1].ko],
+             winded:[F[0].winded, F[1].winded], rocked:[F[0].rocked, F[1].rocked],
+             ko:[F[0].ko, F[1].ko],
              after:{pos:g.pos, top:g.top, ctrl:g.ctrl,
                     sub:g.sub ? {by:g.sub.by, kind:g.sub.kind, tight:g.sub.tight} : null},
              tap:tapped, broke:broke};
@@ -1176,7 +1203,7 @@ function Boxer(i){
   this.footY = [new Sp(FLOOR, 190, 25), new Sp(FLOOR, 190, 25)];
   this.trail = [[], []];
   this.breath = Math.random() * 6;
-  this.charge = false; this.down = false; this.tired = false; this.winded = false;
+  this.charge = false; this.down = false; this.tired = false; this.winded = false; this.rocked = false;
   this.win = null; this.mood = 0; this.tapping = 0; this.broke = null;
   this.turned = 0;                              // 0 — лицом к сопернику, 1 — спиной
   this.J = null;
@@ -1190,7 +1217,7 @@ Boxer.prototype.reset = function(){
   this.twist.reset(0); this.pelvis.reset(0); this.bend.reset(0); this.turn3.reset(0);
   this.foot[0].reset(this.base + 11 * f); this.foot[1].reset(this.base - 12.5 * f);
   this.footY[0].reset(FLOOR); this.footY[1].reset(FLOOR);
-  this.charge = false; this.down = false; this.tired = false; this.winded = false;
+  this.charge = false; this.down = false; this.tired = false; this.winded = false; this.rocked = false;
   this.win = null; this.mood = 0; this.tapping = 0; this.broke = null;
   this.turned = 0;
   this.trail = [[], []];
@@ -1703,17 +1730,22 @@ function driveGuard(b){
   /* Печень: дыхание перехватило — боец складывается вперёд, руки уходят вниз.
      Внешне это сильнее обычной усталости, потому что это и есть её предел. */
   var wd = b.winded ? 1 : 0;
-  var drop = (b.tired ? 3.4 : 0) + wd * 6.5;    // выдохся — руки опускаются
-  var br = Math.sin(b.breath) * (b.tired ? 1.7 : 0.75) * (1 + wd);
-  b.hx.set(b.base, 130, 21);
-  b.hy.set(HIP_Y + br + wd * 5.5, 220, 27);
-  b.lean.set((b.tired ? 0.07 : 0.02) + wd * 0.30, 150, 22);
-  b.head.set(wd * 0.22, 260, 17);
+  /* Поплыл: ноги не держат линию, корпус водит из стороны в сторону, голова
+     запаздывает за телом, руки ползут вниз. Отличается от «выдохся» тем, что
+     это не усталость, а потеря управления — отсюда снос, а не оседание. */
+  var rk = b.rocked ? 1 : 0;
+  var sway = Math.sin(b.breath * 1.9) * 2.7 * rk;
+  var drop = (b.tired ? 3.4 : 0) + wd * 6.5 + rk * 3.4;
+  var br = Math.sin(b.breath) * (b.tired ? 1.7 : 0.75) * (1 + wd) + rk * 1.4;
+  b.hx.set(b.base + sway, 130, 21);
+  b.hy.set(HIP_Y + br + wd * 5.5 + rk * 2.2, 220, 27);
+  b.lean.set((b.tired ? 0.07 : 0.02) + wd * 0.30 + Math.sin(b.breath * 1.15) * .07 * rk, 150, 22);
+  b.head.set(wd * 0.22 + Math.sin(b.breath * 1.42) * .17 * rk, 260, 17);
   b.turned = 0;
   handTo(b, 0, n.x + 10 * f, n.y - 1 + drop, 190, 25);
   handTo(b, 1, n.x + 5 * f, n.y - 3.5 + drop, 190, 25);
   b.twist.set(0, 190, 25);
-  b.bend.set(wd * 0.16, 170, 23); b.turn3.set(0, 150, 22);
+  b.bend.set(wd * 0.16 - rk * .12, 170, 23); b.turn3.set(0, 150, 22);
   footTo(b, 0, b.base + 11 * f, 170, 24);
   footTo(b, 1, b.base - 12.5 * f, 170, 24);
 }
@@ -2252,6 +2284,13 @@ function applyImpact(rec){
       burst(hp.x, hp.y, 16 + (k * 20 | 0), k);
       if(!mode) spawnRays(hp.x, hp.y, 4, f > 0 ? 0 : Math.PI, '#ffd48a');
       popAt(hp.x, hp.y - 24, '−' + o.dmg, o.mult < 1 ? 'half' : 'dmg');
+      if(o.rock){                                    // соперник поплыл — это надо видеть
+        popAt(d.J.head.x, d.J.head.y - 26, 'ПОПЛЫЛ!', 'half');
+        d.head.v -= 5.5; d.hx.v += f * 22;
+        shake = Math.max(shake, 4.2); freeze += 70;
+        spawnRays(d.J.head.x, d.J.head.y, 6, f > 0 ? 0 : Math.PI, '#ffd48a');
+        seqExtend(220);
+      }
       if(o.liver){                                   // точно в печень: дыхание выбито
         popAt(d.J.hip.x, d.J.hip.y - 26, '🫁 ПЕЧЕНЬ!', 'half');
         sndLiver();
@@ -4094,6 +4133,7 @@ function snapEnd(rec){
     B[i].down = !!rec.ko[i];
     B[i].tired = rec.st[i] < LOW_ST;
     B[i].winded = !!rec.winded[i];
+    B[i].rocked = !!(rec.rocked && rec.rocked[i]);
   }
   for(var n = 0; n < 40; n++){ driveIdle(); settle(1 / 60); }
   ragResetAll();
@@ -4159,6 +4199,7 @@ function paintRounds(){
 function paintRing(){
   if(phase !== 'replay') for(var i = 0; i < 2; i++){
     B[i].tired = F[i].st < LOW_ST && !F[i].ko; B[i].winded = F[i].winded && !F[i].ko;
+    B[i].rocked = !!F[i].rocked && !F[i].ko;
   }
   ring.classList.toggle('full', (phase === 'reveal' && revealDone) || phase === 'over');
   ring.classList.toggle('cinema', phase === 'replay' || (phase === 'reveal' && !revealDone));
@@ -4186,7 +4227,7 @@ function pushLog(rec){
     else if(o.type === 'windup') tag = '⚡ замах кроссом — сработает в раунде ' + (rec.round + 1);
     else if(o.dmg === 0)         tag = 'мимо (' + o.why + ')';
     else                         tag = '−' + o.dmg + (o.stHit ? ' и −' + o.stHit + ' вын.' : '') +
-                                       (o.liver ? ' 🫁 ПЕЧЕНЬ' : '') +
+                                       (o.liver ? ' 🫁 ПЕЧЕНЬ' : '') + (o.rock ? ' 😵‍💫 ПОПЛЫЛ' : '') +
                                        ' (' + o.why + ')' + (o.tired ? ' [выдохся]' : '');
     txt += '<div class="l"><b class="' + F[i].cls + '">' + F[i].ico + ' ' + F[i].name + '</b>: ' +
            label(rec.choices[i]) + ' → ' + tag + '</div>';
@@ -4335,6 +4376,11 @@ function screenChoose(){
   var wd = me.winded;
   if(wd) warn += '<div class="card"><div class="warnline">🫁 Удар в печень — дыхание перехватило. ' +
                  'В этом раунде не закрыться и не отойти, только нырок или атака.</div></div>';
+  if(me.rocked) warn += '<div class="card"><div class="warnline">😵‍💫 Ты поплыл. В этом раунде ты получаешь в полтора раза больше ' +
+                 'и бьёшь слабее — раунд надо пережить.</div></div>';
+  if(game === 'mma' && F[1 - active].rocked)
+    warn += '<div class="card"><div class="warnline">🎯 ' + F[1 - active].ico + ' ' + F[1 - active].name +
+            ' поплыл — сейчас он ломается легче всего. Момент для тяжёлого.</div></div>';
   if(game === 'mma') return screenChooseMMA(me, warn);
   return '<h2>' + me.ico + ' ' + me.name + ', ТВОЙ ХОД</h2>' + warn +
     '<div class="hdr">Атака</div><div class="grid">' + actBtn('jab') + actBtn('uppercut') +
@@ -5046,9 +5092,9 @@ var MMA_W = {
   jab:20, uppercut:11, kick:7, spin:4, cross:7, shoot:15, clinchIn:8,
   block:11, bblock:9, slip:11, step:7, sprawl:10,
   cpunch:16, cknee:16, throw:14, frame:10, breakout:7,
-  gpunch:16, gbody:14, pass:18, kimura:9, leglock:6, hold:9,
-  upkick:8, sweep:18, standup:14, tri:8, gblock:12,
-  elbow:16, sbody:13, tomount:18, takeback:12, armbar:10, reguard:18,
+  gpunch:16, gbody:14, pass:18, kimura:13, leglock:9, hold:9,
+  upkick:8, sweep:18, standup:14, tri:11, gblock:12,
+  elbow:16, sbody:13, tomount:18, takeback:12, armbar:16, reguard:18,
   pound:20, bridge:14, toguard:16,
   rnc:26, bpunch:12, hooks:8, shed:16, spinout:9, neckdef:16,
   cinch:28, release:3, endure:9, escape:24
@@ -5085,6 +5131,19 @@ function botChooseMMA(){
     for(i = 0; i < ids.length; i++){ id = ids[i]; if(ACT[id].kind === 'attack') w[id] *= 1.6; }
     if(w.shoot != null) w.shoot *= 1.4;
   }
+  if(op.rocked){                                  // поплыл — добивать, и добивать сильным
+    for(i = 0; i < ids.length; i++){
+      id = ids[i]; var AA = ACT[id];
+      if(AA.kind === 'attack') w[id] *= (AA.dmg >= 24 ? 2.4 : 1.5);
+    }
+  }
+  if(me.rocked){                                  // сам поплыл — вязать и закрываться
+    for(i = 0; i < ids.length; i++){
+      id = ids[i];
+      if(ACT[id].kind === 'defense') w[id] *= 2.1;
+      else if(ACT[id].kind === 'attack') w[id] *= .55;
+    }
+  }
   if(g.sub && g.sub.by === 1) w.cinch *= (g.sub.tight >= 2 ? 2.2 : 1.4);
   if(g.sub && g.sub.by === 0){ w.escape *= (g.sub.tight >= 2 ? 2.6 : 1.2);
                                if(me.hp <= 35) w.escape *= 1.5; }
@@ -5093,8 +5152,14 @@ function botChooseMMA(){
                      if(w.toguard != null) w.toguard *= 1.4; if(w.shed != null) w.shed *= 1.4; }
   }
   if(amTop && g.ctrl >= 2){                       // устоялся — пора идти вперёд
-    if(w.pass != null) w.pass *= 1.4; if(w.tomount != null) w.tomount *= 1.4;
-    if(w.armbar != null) w.armbar *= 1.4; if(w.rnc != null) w.rnc *= 1.5;
+    if(w.pass != null) w.pass *= 1.3; if(w.tomount != null) w.tomount *= 1.3;
+    if(w.armbar != null) w.armbar *= 1.9; if(w.rnc != null) w.rnc *= 2.0;
+    if(w.kimura != null) w.kimura *= 1.8; if(w.leglock != null) w.leglock *= 1.5;
+  }
+  if(amTop && (g.pos === 'mount' || g.pos === 'back')){
+    /* Из маунта и со спины приём — самый прямой путь к финишу, и жадная
+       стратегия набирала их втрое больше бота именно отсюда. */
+    if(w.armbar != null) w.armbar *= 1.7; if(w.rnc != null) w.rnc *= 1.7;
   }
   if(g.turned[0]){ if(w.takeback != null) w.takeback *= 2.4; }
   if(choices[0] && (choices[0].id === 'crossLand' || choices[0].id === 'spinLand')){
@@ -5161,6 +5226,7 @@ function rewatchRound(){
     B[i].win = null; B[i].mood = 0; B[i].tapping = 0; B[i].broke = null;
     B[i].tired = rec.before.st[i] < LOW_ST;
     B[i].winded = !!rec.before.winded[i];
+    B[i].rocked = !!(rec.before.rocked && rec.before.rocked[i]);
     disp[i].hp = rec.before.hp[i]; disp[i].st = rec.before.st[i];
   }
   if(rec.mma) setRP(rec.before.pos, rec.before.top);
@@ -5172,7 +5238,7 @@ function rewatchRound(){
     runRound(rec, function(){
       for(var j = 0; j < 2; j++){                    // возвращаем настоящее состояние боя
         B[j].down = !!F[j].ko; B[j].charge = chargeKind(F[j].pending);
-        B[j].tired = F[j].st < LOW_ST; B[j].winded = F[j].winded;
+        B[j].tired = F[j].st < LOW_ST; B[j].winded = F[j].winded; B[j].rocked = !!F[j].rocked;
       }
       restoreFinish();
       setRP(GR.pos, GR.top);
@@ -5203,6 +5269,7 @@ function replayNext(){
     B[i].win = null; B[i].mood = 0; B[i].tapping = 0; B[i].broke = null;
     B[i].tired = rec.before.st[i] < LOW_ST;
     B[i].winded = !!rec.before.winded[i];
+    B[i].rocked = !!(rec.before.rocked && rec.before.rocked[i]);
     disp[i].hp = rec.before.hp[i]; disp[i].st = rec.before.st[i];
   }
   if(rec.mma) setRP(rec.before.pos, rec.before.top);
@@ -5225,7 +5292,8 @@ function replayStop(){
   for(var g = 0; g < 2; g++) B[g].gh = [];
   ragResetAll();
   for(var i = 0; i < 2; i++){ B[i].down = !!F[i].ko; B[i].charge = false;
-                              B[i].tired = F[i].st < LOW_ST; B[i].winded = F[i].winded; }
+                              B[i].tired = F[i].st < LOW_ST; B[i].winded = F[i].winded;
+                              B[i].rocked = !!F[i].rocked; }
   restoreFinish();
   setRP(GR.pos, GR.top);
   syncDisp();
