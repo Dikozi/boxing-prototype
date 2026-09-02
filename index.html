@@ -116,6 +116,8 @@ body{
 #panel>*:nth-child(3){animation-delay:.1s}
 #panel>*:nth-child(4){animation-delay:.15s}
 #panel>*:nth-child(5){animation-delay:.2s}
+#panel>*:nth-child(6){animation-delay:.25s}
+#panel>*:nth-child(7){animation-delay:.3s}
 @keyframes rise{from{opacity:0;transform:translateY(13px)}to{opacity:1;transform:none}}
 h1{font-family:var(--disp);font-size:clamp(28px,8.6vw,38px);font-weight:700;line-height:1.02;text-align:center;letter-spacing:.03em;text-wrap:balance}
 h2{font-family:var(--disp);font-size:clamp(20px,5.8vw,25px);font-weight:700;text-align:center;line-height:1.15;letter-spacing:.04em;text-wrap:balance}
@@ -156,6 +158,21 @@ button{font-family:inherit;color:inherit;cursor:pointer;touch-action:manipulatio
 .act.def{border-color:#26445f;background:linear-gradient(#141d29,#101720)}
 .act.def .t{color:var(--blueL)}
 .hdr{font-size:10px;font-weight:800;letter-spacing:.22em;color:var(--dim);text-transform:uppercase}
+
+/* ===================== СТАТИСТИКА БОЯ ===================== */
+.st{gap:6px}
+.st .r{display:grid;grid-template-columns:1fr auto 1fr;align-items:baseline;gap:9px}
+.st .v{font-family:var(--disp);font-size:16px;font-weight:700;line-height:1.15;letter-spacing:.02em}
+.st .r>.v:first-child{text-align:right;color:var(--blueL)}
+.st .r>.v:last-child{text-align:left;color:var(--redL)}
+.st .n{font-size:9.5px;font-weight:800;letter-spacing:.13em;color:var(--dim);text-transform:uppercase;text-align:center}
+.bar2{display:flex;height:8px;border-radius:5px;overflow:hidden;border:1px solid var(--line);background:#0a0d13}
+.bar2 i{display:block;height:100%}
+.bar2 .a{background:linear-gradient(#3d8bfd,#2160cd)}
+.bar2 .b{background:linear-gradient(#ff4d5e,#d02536)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 11px;justify-content:center}
+.legend .lg{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--dim);font-weight:600}
+.legend b{width:8px;height:8px;border-radius:2px;flex:0 0 auto}
 
 /* ===================== РАЗБОР РАУНДА ===================== */
 .res{display:flex;flex-direction:column;gap:3px;padding:7px 0}
@@ -1070,7 +1087,9 @@ function resolveRoundMMA(){
   if(g.pos === 'stand'){ g.top = -1; g.sub = null; }
 
   for(i = 0; i < 2; i++){
-    F[i].st = Math.max(0, Math.min(MAX_ST, F[i].st - spend[i] - drain[i] + restOf(i) + bonus[i]));
+    /* Округляем здесь: отдых зависит от характеристики и приходит дробным,
+       а показатель на полосках и в журнале — целое число. */
+    F[i].st = Math.max(0, Math.min(MAX_ST, Math.round(F[i].st - spend[i] - drain[i] + restOf(i) + bonus[i])));
     if(g.pos !== 'stand')                   F[i].pending = null;   // с земли заряженный удар не летит
     else if(choices[i].id === 'cross')      F[i].pending = {id:'crossLand'};
     else if(choices[i].id === 'spin')       F[i].pending = {id:'spinLand', lvl:choices[i].lvl || 'head'};
@@ -1757,10 +1776,11 @@ function driveDown(b){                          // нокдаун: тело ос
 var WIN_MS = 2600;
 var WIN_POSE = [
   {id:'foot_arm',  down:true,  name:'нога на поверженном, рука вверх',   say:'Кто следующий?'},
-  {id:'foot_cross',down:true,  name:'нога на поверженном, руки скрещены', say:'Вопросы ещё есть?'},
+  {id:'foot_shrug',down:true,  name:'нога на поверженном, руки разведены', say:'И это всё?'},
   {id:'ropes',     down:false, name:'на канатах, рёв на трибуны',         say:'Я вас слышу!'},
   {id:'cross',     down:false, name:'руки крестом, разворот',             say:'Это мой вечер.'},
-  {id:'chest',     down:false, name:'бьёт себя в грудь',                  say:'Ещё не наигрался.'},
+  {id:'vsign',     down:false, name:'обе руки вверх, рёв',                say:'Забирайте пояс.'},
+  {id:'crouch',    down:true,  name:'присел над лежащим',                say:'Ну и как оно там, снизу?'},
   {id:'point',     down:true,  name:'указывает вниз на лежащего',         say:'Лежать — тоже позиция.'},
   {id:'sleep',     down:true,  name:'ложится рядом и «засыпает»',         say:'Тихо, ему снится реванш.'}
 ];
@@ -1799,7 +1819,10 @@ function startWin(w){
   b.win = {pose:w.pose, t:0};
   setRP('stand', -1);
   drawOrder = [1 - w.i, w.i];                            // победитель поверх лежащего
-  crowdCheer(1.9); sndBell(.8);
+  darkT = 0; seqDark = 0;                                  // гаснущий после нокаута свет возвращаем
+  crowdCheer(1.9); sndBell(.8); crowdRoar(WIN_MS + 1600);
+  winFx = WIN_MS + 1700; camT = 0; confT = 0;
+  spawnConfetti(26);
   cinePush(b.J.head.x, b.J.head.y - 2, 1.34, WIN_MS, w.i);
   seqExtend(WIN_MS + 200);
 }
@@ -1810,25 +1833,28 @@ function driveWin(b){
   b.face = f; b.turned = 0;
   b.twist.set(0, 170, 24);
 
-  if(id === 'foot_arm' || id === 'foot_cross'){
+  if(id === 'foot_arm' || id === 'foot_shrug'){
     /* Ставит ногу на поверженного и выпрямляется над ним. Опора идёт по
        его тазу, поэтому поза держится, куда бы тот ни упал. */
     b.base = o.J.hip.x - 17 * f;
     b.hx.set(b.base, 110, 20);
     b.hy.set(HIP_Y - 2 + Math.sin(t / 430) * .8, 150, 22);
-    b.lean.set(id === 'foot_arm' ? -0.12 : 0.03, 130, 20);
-    b.bend.set(-0.10, 150, 22);
-    b.turn3.set((id === 'foot_arm' ? 0.62 : 0.52) * e, 120, 20);
-    b.head.set(0.04, 200, 17);
+    b.lean.set(id === 'foot_arm' ? -0.12 : -0.10, 130, 20);
+    b.bend.set(id === 'foot_arm' ? -0.10 : -0.18, 150, 22);
+    b.turn3.set((id === 'foot_arm' ? 0.62 : 0.60) * e, 120, 20);
+    b.head.set(id === 'foot_arm' ? 0.04 : -0.20, 200, 17);    // подбородок вверх — свысока
     b.solve(); n = b.J.neck;
     if(id === 'foot_arm'){
       handTo(b, 1, n.x + 4 * f, n.y - 31 * e, 150, 22);       // рука в небо
       handTo(b, 0, n.x + 9 * f, n.y + 9, 170, 24);
       b.mood = 1;                                            // улыбка во всю ширь
     } else {
-      handTo(b, 0, n.x + 3 * f, n.y + 7, 165, 23);            // руки скрещены на груди
-      handTo(b, 1, n.x - 3 * f, n.y + 9, 165, 23);
-      b.mood = 0;
+      /* Руки разведены в стороны — «и это всё?». Скрещённые на груди в строгом
+         профиль накладывались одна на другую и читались сутулостью: обе кисти
+         оказывались в одной точке. Разведённые дают ясный широкий силуэт. */
+      handTo(b, 0, n.x + (7 + 15 * e) * f, n.y + 14, 165, 23);
+      handTo(b, 1, n.x - (4 + 15 * e) * f, n.y + 11, 165, 23);
+      b.mood = 1;
     }
     footToXY(b, 0, o.J.hip.x - 2 * f, o.J.hip.y - 7, 150, 22);
     footTo(b, 1, b.base - 10 * f, 160, 23);
@@ -1871,21 +1897,43 @@ function driveWin(b){
     return;
   }
 
-  if(id === 'chest'){                                        // бьёт себя кулаками в грудь
+  if(id === 'vsign'){
+    /* Обе руки прямо вверх буквой V. Самый читаемый силуэт из всех: в профиль
+       он ни с чем не путается — в отличие от ударов себя в грудь, где обе
+       руки ложились на одной высоте и сливались в одну полосу. */
     b.base = POS[b.i];
     b.hx.set(b.base, 110, 20);
-    b.hy.set(HIP_Y - 1 + Math.sin(t / 225) * 1.5, 160, 22);
-    b.lean.set(0.06, 130, 20);
-    b.bend.set(0.05, 150, 22);
-    b.turn3.set(0.60 * e, 120, 20);
-    b.head.set(-0.08, 190, 17);
+    b.hy.set(HIP_Y - 2 + Math.sin(t / 400) * .9, 160, 22);
+    b.lean.set(-0.18, 130, 20);
+    b.bend.set(-0.22, 150, 22);
+    b.turn3.set(0.70 * e, 120, 20);
+    b.head.set(-0.32, 190, 17);
     b.solve(); n = b.J.neck;
-    var k0 = Math.max(0, Math.sin(t / 112)) * e, k1 = Math.max(0, Math.sin(t / 112 + Math.PI)) * e;
-    handTo(b, 0, n.x + (14 - 9 * k0) * f, n.y + 4, 300, 24);
-    handTo(b, 1, n.x + (10 - 7 * k1) * f, n.y + 6, 300, 24);
-    footTo(b, 0, b.base + 10 * f, 160, 23);
-    footTo(b, 1, b.base - 11 * f, 160, 23);
+    handTo(b, 0, n.x + (5 + 9 * e) * f, n.y - 29 * e, 145, 21);
+    handTo(b, 1, n.x - (3 + 7 * e) * f, n.y - 27 * e, 145, 21);
+    footTo(b, 0, b.base + 12 * f, 160, 23);
+    footTo(b, 1, b.base - 13 * f, 160, 23);
     b.mood = 2;
+    return;
+  }
+
+  if(id === 'crouch'){
+    /* Присел рядом и заглядывает в лицо. Садиться прямо НАД головой нельзя:
+       корпус победителя целиком закрывает лежащего, и вся соль пропадает —
+       поэтому он держится на отлёте и наклоняется к ней сверху-сбоку. */
+    b.base = o.J.head.x - 30 * f;
+    b.hx.set(b.base, 105, 19);
+    b.hy.set(FLOOR - 24 - Math.sin(t / 500) * 1.2, 130, 20);
+    b.lean.set(0.44 * e, 120, 20);
+    b.bend.set(0.24, 150, 22);
+    b.turn3.set(0.40 * e, 120, 20);
+    b.head.set(0.40, 190, 17);
+    b.solve(); n = b.J.neck;
+    handTo(b, 0, n.x + 11 * f, n.y + 19, 160, 23);            // локоть на колене
+    graspTo(b, 1, o.J.head.x - 11 * f, o.J.head.y - 9, 160, 23);
+    footTo(b, 0, b.base + 8 * f, 155, 22);
+    footTo(b, 1, b.base - 7 * f, 155, 22);
+    b.mood = 1;
     return;
   }
 
@@ -2570,6 +2618,65 @@ function spawnRays(x, y, n, dir, col){
   }
 }
 var parts = [];
+/* Финиш собирает вокруг себя зал: вспышки фотографов по периметру, конфетти
+   с потолка и поднявшийся гул. Всё живёт отдельными списками, потому что у
+   каждого своя физика: искры от удара падают с тяжестью, конфетти планирует. */
+var cams = [], conf = [], winFx = 0, camT = 0, confT = 0;
+var CONF_COL = ['#ffcf6b', '#3d8bfd', '#ff4d5e', '#37d178', '#ffffff', '#b57bff'];
+function spawnCam(){
+  cams.push({x:-24 + Math.random() * (STAGE_W + 48), y:4 + Math.random() * 30,
+             r:4.5 + Math.random() * 7, life:0, max:.15 + Math.random() * .1});
+}
+function spawnConfetti(n){
+  for(var i = 0; i < n; i++)
+    conf.push({x:-12 + Math.random() * (STAGE_W + 24), y:-8 - Math.random() * 34,
+               vx:(Math.random() * 2 - 1) * 7, vy:7 + Math.random() * 11,
+               w:1.5 + Math.random() * 1.9, h:2.3 + Math.random() * 2.7,
+               a:Math.random() * 6.284, va:(Math.random() * 2 - 1) * 5.5,
+               c:CONF_COL[(Math.random() * CONF_COL.length) | 0],
+               life:0, max:3.4 + Math.random() * 2});
+}
+function drawCams(){
+  for(var i = 0; i < cams.length; i++){
+    var c = cams[i], e = c.life / c.max, a = (1 - e) * (1 - e), r = c.r * (1 + e * 1.7);
+    var g = cx.createRadialGradient(c.x, c.y, 0, c.x, c.y, r);
+    g.addColorStop(0, 'rgba(255,255,255,' + (a * .95).toFixed(3) + ')');
+    g.addColorStop(.34, 'rgba(208,231,255,' + (a * .36).toFixed(3) + ')');
+    g.addColorStop(1, 'rgba(190,220,255,0)');
+    cx.fillStyle = g;
+    cx.beginPath(); cx.arc(c.x, c.y, r, 0, 6.284); cx.fill();
+  }
+}
+function drawConf(){
+  for(var i = 0; i < conf.length; i++){
+    var p = conf[i], e = p.life / p.max;
+    cx.save();
+    cx.translate(p.x, p.y); cx.rotate(p.a);
+    cx.globalAlpha = e > .82 ? (1 - e) / .18 : 1;
+    cx.fillStyle = p.c;
+    /* Высота бумажки гуляет с поворотом — лепесток то плашмя, то ребром. */
+    var hh = p.h * (.3 + Math.abs(Math.cos(p.a)) * .7);
+    cx.fillRect(-p.w / 2, -hh / 2, p.w, hh);
+    cx.restore();
+  }
+  cx.globalAlpha = 1;
+}
+function stepFx(dt){
+  var i;
+  for(i = cams.length - 1; i >= 0; i--){
+    cams[i].life += dt;
+    if(cams[i].life > cams[i].max) cams.splice(i, 1);
+  }
+  for(i = conf.length - 1; i >= 0; i--){
+    var p = conf[i];
+    p.life += dt;
+    if(p.life > p.max || p.y > FLOOR + 3){ conf.splice(i, 1); continue; }
+    p.vy = Math.min(27, p.vy + 12 * dt);
+    p.x += (p.vx + Math.sin(p.life * 3.1 + p.a) * 7) * dt;
+    p.y += p.vy * dt;
+    p.a += p.va * dt;
+  }
+}
 
 function fitCanvas(){
   var r = ring.getBoundingClientRect();
@@ -2962,6 +3069,7 @@ function drawStage(){
   cx.scale(k, k);
   cx.translate(-viewCx(), -viewCy());
   drawArena();
+  if(cams.length) drawCams();
 
   var i;
   /* В партере глубина задаётся позицией, а не силой удара: верхний всегда
@@ -2982,6 +3090,7 @@ function drawStage(){
     cx.globalAlpha = pa * pa; cx.fillStyle = p.c;
     cx.beginPath(); cx.arc(p.x, p.y, p.r, 0, 6.284); cx.fill();
   }
+  if(conf.length) drawConf();
   cx.globalAlpha = 1;
   cx.restore();
   drawLetterbox();
@@ -3841,6 +3950,15 @@ function frame(now){
     }
   } else driveIdle();
 
+  if(winFx > 0){
+    winFx -= raw;
+    /* Вспышки — мигающий свет, поэтому при системном «меньше движения» их
+       нет вовсе; конфетти спокойные и остаются. */
+    camT -= raw;
+    if(camT <= 0 && !RM){ camT = 70 + Math.random() * 130; spawnCam(); sndCamera(); }
+    confT -= raw;
+    if(confT <= 0){ confT = 200; spawnConfetti(RM ? 4 : 8); }
+  }
   for(var wi = 0; wi < 2; wi++){
     if(B[wi].win) B[wi].win.t += raw;
     if(B[wi].tapping > 0){
@@ -3896,6 +4014,7 @@ function frame(now){
   }
   stepPhys(ms);
   stepParts(dt);
+  stepFx(dt);
   dark += (darkT - dark) * Math.min(1, dt * 4.5);
   if(!cam){ cam = new Sp(0, 110, 20); camY = new Sp(1, 70, 17); zoomS = new Sp(1, 60, 15); }
   var dtR = raw / 1000;                              // камера живёт реальным временем
@@ -4297,6 +4416,121 @@ function verdict(){
   return {t:'НИЧЬЯ', s:'После ' + MAX_ROUNDS + ' раундов у обоих по ' + a + ' здоровья.'};
 }
 
+
+/* =========================================================================
+   СТАТИСТИКА БОЯ
+   -------------------------------------------------------------------------
+   Всё считается из bouts — записей раундов, которые уже есть. Своего
+   состояния этот экран не заводит: любая цифра здесь выводится из того же
+   источника, что и повтор боя, и поэтому не может с ним разойтись.
+   ========================================================================= */
+var POS_COL = {stand:'#35b6dd', clinch:'#7a6bd6', guard:'#37d178',
+               side:'#ffb020', mount:'#ff7a1a', back:'#ff4d5e'};
+var POS_SHORT = {stand:'стойка', clinch:'клинч', guard:'гард',
+                 side:'сайд', mount:'маунт', back:'спина'};
+
+function fightStats(){
+  var S = [null, null], i, n, k;
+  for(i = 0; i < 2; i++)
+    S[i] = {atk:0, hit:0, dmg:0, head:0, body:0, liver:0, def:0, defOk:0,
+            td:0, tdOk:0, spr:0, sprOk:0, thr:0, thrOk:0, adv:0, advOk:0,
+            esc:0, escOk:0, sub:0, subOk:0, top:0, best:0, bestName:'—'};
+  var posT = {}, mma = false;
+  var ADV = {pass:1, tomount:1, takeback:1};
+  var ESC = {sweep:1, bridge:1, toguard:1, reguard:1, standup:1, shed:1, spinout:1, escape:1};
+  for(n = 0; n < bouts.length; n++){
+    var r = bouts[n];
+    if(r.mma){
+      mma = true;
+      if(r.before.pos) posT[r.before.pos] = (posT[r.before.pos] || 0) + 1;
+    }
+    for(i = 0; i < 2; i++){
+      var c = r.choices[i], o = r.out[i], A = ACT[c.id], j = 1 - i, oj = r.out[j];
+      if(o.type === 'atk'){
+        S[i].atk++;
+        if(o.dmg > 0){
+          S[i].hit++; S[i].dmg += o.dmg;
+          if(isBody(c)) S[i].body += o.dmg; else S[i].head += o.dmg;
+          if(o.dmg > S[i].best){ S[i].best = o.dmg; S[i].bestName = A.name; }
+        }
+        if(o.liver) S[i].liver++;
+      }
+      if(A.kind === 'defense'){
+        S[i].def++;
+        if(oj.type === 'atk' && oj.dmg === 0) S[i].defOk++;      // защита сработала
+      }
+      if(c.id === 'shoot'){ S[i].td++; if(o.ok) S[i].tdOk++; }
+      if(c.id === 'sprawl'){
+        S[i].spr++;
+        if(r.choices[j].id === 'shoot' && !oj.ok) S[i].sprOk++;
+      }
+      if(c.id === 'throw'){ S[i].thr++; if(o.ok) S[i].thrOk++; }
+      if(ADV[c.id]){ S[i].adv++; if(o.ok) S[i].advOk++; }
+      if(ESC[c.id]){ S[i].esc++; if(o.ok) S[i].escOk++; }
+      if(A.sub){ S[i].sub++; if(o.ok) S[i].subOk++; }
+      if(r.mma && r.before.top === i) S[i].top++;
+    }
+  }
+  return {S:S, pos:posT, mma:mma, rounds:bouts.length};
+}
+
+function stRow(a, b, label){
+  return '<div class="r"><span class="v">' + a + '</span><span class="n">' + label +
+         '</span><span class="v">' + b + '</span></div>';
+}
+function stPct(h, a){ return a ? Math.round(h / a * 100) + '%' : '—'; }
+function stOf(ok, all){ return all ? ok + ' / ' + all : '—'; }
+
+function statCard(){
+  if(!bouts.length) return '';
+  var q = fightStats(), A = q.S[0], B2 = q.S[1], h = '', k;
+  var dt = A.dmg + B2.dmg;
+  h += '<div class="hdr">Статистика боя · раундов ' + q.rounds + '</div>';
+  h += '<div class="card st">';
+  h += stRow(A.dmg, B2.dmg, 'урон');
+  h += '<div class="bar2"><i class="a" style="width:' + (dt ? A.dmg / dt * 100 : 50).toFixed(1) +
+       '%"></i><i class="b" style="width:' + (dt ? B2.dmg / dt * 100 : 50).toFixed(1) + '%"></i></div>';
+  h += stRow(stOf(A.hit, A.atk), stOf(B2.hit, B2.atk), 'попало / атак');
+  h += stRow(stPct(A.hit, A.atk), stPct(B2.hit, B2.atk), 'точность');
+  h += stRow(A.head, B2.head, 'урон в голову');
+  h += stRow(A.body, B2.body, 'урон по корпусу');
+  if(A.liver || B2.liver) h += stRow(A.liver, B2.liver, '🫁 в печень');
+  h += stRow(stOf(A.defOk, A.def), stOf(B2.defOk, B2.def), 'защит сработало');
+  h += stRow(A.best + ' · ' + A.bestName, B2.best + ' · ' + B2.bestName, 'лучший удар');
+  h += '</div>';
+
+  if(!q.mma) return h;
+
+  h += '<div class="hdr">Борьба</div><div class="card st">';
+  h += stRow(stOf(A.tdOk, A.td), stOf(B2.tdOk, B2.td), 'проходов в ноги');
+  h += stRow(stOf(A.sprOk, A.spr), stOf(B2.sprOk, B2.spr), 'спраулов');
+  h += stRow(stOf(A.thrOk, A.thr), stOf(B2.thrOk, B2.thr), 'бросков');
+  h += stRow(stOf(A.advOk, A.adv), stOf(B2.advOk, B2.adv), 'улучшений позиции');
+  h += stRow(stOf(A.escOk, A.esc), stOf(B2.escOk, B2.esc), 'выходов снизу');
+  h += stRow(stOf(A.subOk, A.sub), stOf(B2.subOk, B2.sub), 'приёмов взято');
+  h += stRow(A.top, B2.top, 'раундов сверху');
+  h += '</div>';
+
+  /* Полоса позиций: сколько раундов бой простоял в каждой. Видно с одного
+     взгляда, где он на самом деле шёл — в стойке или на настиле. */
+  var tot = 0, key, leg = '';
+  for(key in q.pos) if(q.pos.hasOwnProperty(key)) tot += q.pos[key];
+  if(tot){
+    var strip = '';
+    var ORD = ['stand', 'clinch', 'guard', 'side', 'mount', 'back'];
+    for(k = 0; k < ORD.length; k++){
+      key = ORD[k];
+      if(!q.pos[key]) continue;
+      strip += '<i style="width:' + (q.pos[key] / tot * 100).toFixed(1) + '%;background:' + POS_COL[key] + '"></i>';
+      leg += '<span class="lg"><b style="background:' + POS_COL[key] + '"></b>' +
+             POS_SHORT[key] + ' ' + q.pos[key] + '</span>';
+    }
+    h += '<div class="hdr">Где шёл бой</div><div class="card st">' +
+         '<div class="bar2">' + strip + '</div><div class="legend">' + leg + '</div></div>';
+  }
+  return h;
+}
+
 function screenOver(){
   var v = verdict();
   /* Реплика победителя — та же, что и поза, и берётся из записи: пересмотр
@@ -4307,7 +4541,8 @@ function screenOver(){
     say = '<div class="card ' + F[lr.win.i].cls + '"><div style="text-align:center;font-family:var(--disp);' +
           'font-size:19px;letter-spacing:.03em">' + F[lr.win.i].ico + ' «' + wp.say + '»</div></div>';
   }
-  return '<h1>' + v.t + '</h1><div class="sub">' + v.s + '</div>' + say + '<div class="spacer"></div>' +
+  return '<h1>' + v.t + '</h1><div class="sub">' + v.s + '</div>' + say + statCard() +
+    '<div class="spacer"></div>' +
     '<button class="btn gold big" data-go="replay">▶ СМОТРЕТЬ ВЕСЬ БОЙ</button>' +
     '<button class="btn" data-go="restart">ИГРАТЬ ЗАНОВО</button>';
 }
@@ -4473,6 +4708,21 @@ function sndCharge(){                             // замах кросса
   g.gain.exponentialRampToValueAtTime(.17, t + .18);
   g.gain.exponentialRampToValueAtTime(.0001, t + .62);
   o.connect(f); f.connect(g); g.connect(master); o.start(t); o.stop(t + .7);
+}
+function sndCamera(){                              // затвор и писк вспышки
+  if(!AC) return;
+  var t = AC.currentTime;
+  hiss('highpass', 5200, 3000, t, .035, .10, 1.6);
+  tone('sine', 2400, 3400, t + .012, .05, .04);
+}
+function crowdRoar(ms){                            // трибуны встают и не садятся
+  if(!crowdGain) return;
+  var t = AC.currentTime, d = ms / 1000;
+  crowdGain.gain.cancelScheduledValues(t);
+  crowdGain.gain.setValueAtTime(crowdGain.gain.value, t);
+  crowdGain.gain.linearRampToValueAtTime(.115, t + .3);
+  crowdGain.gain.setValueAtTime(.115, t + d * .62);
+  crowdGain.gain.linearRampToValueAtTime(.05, t + d + .9);
 }
 function sndMat(){                                 // ладонь по настилу — знак сдачи
   if(!AC) return;
@@ -4970,7 +5220,7 @@ function replayNext(){
 }
 function replayStop(){
   clearTimeout(rpTimer); rpTimer = null; clearTimeout(openT); replay = null; paused = false;
-  seq = null; animating = false; skipEl.classList.add('off'); clearPops(); parts.length = 0; rays.length = 0;
+  seq = null; animating = false; skipEl.classList.add('off'); clearPops(); parts.length = 0; rays.length = 0; cams.length = 0; conf.length = 0; winFx = 0;
   dark = 0; darkT = 0; cineT = 0; cineFollow = -1; koCardT = 0; lb = 0; cut = null; cutQ = null;
   for(var g = 0; g < 2; g++) B[g].gh = [];
   ragResetAll();
@@ -5039,7 +5289,7 @@ function resetRing(){
   setRP(GR ? GR.pos : 'stand', GR ? GR.top : -1);
   clearTimeout(rpTimer); clearTimeout(openT); replay = null; paused = false;
   seq = null; animating = false; skipEl.classList.add('off'); musicStop();
-  clearPops(); parts.length = 0; rays.length = 0; freeze = 0; slowT = 0; shake = 0; flashA = 0;
+  clearPops(); parts.length = 0; rays.length = 0; cams.length = 0; conf.length = 0; winFx = 0; freeze = 0; slowT = 0; shake = 0; flashA = 0;
   dark = 0; darkT = 0; cineT = 0; cineFollow = -1; koCardT = 0; lb = 0; cut = null; cutQ = null;
   for(var i = 0; i < 2; i++){ B[i].reset(); B[i].gh = []; B[i].win = null; B[i].mood = 0; }
   ragResetAll();
