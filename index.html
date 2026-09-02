@@ -2811,6 +2811,17 @@ function limbSeg(a, b2, r, T, dim){
   cx.moveTo(x0 + n.x * e, y0 + n.y * e); cx.lineTo(x1 + n.x * e, y1 + n.y * e);
   cx.lineTo(x1 - n.x * e, y1 - n.y * e); cx.lineTo(x0 - n.x * e, y0 - n.y * e);
   cx.closePath(); cx.fill();
+  /* Мокрая кожа. К концу боя тело блестит: узкая полоса отражения вдоль
+     освещённого края, тем ярче, чем дольше идёт бой и чем тяжелее дышит
+     боец. Матовая кожа в четырнадцатом раунде — это неправда. */
+  if(T.wet > .05){
+    var w2 = cx.createLinearGradient(mx + n.x * e, my + n.y * e, mx - n.x * e, my - n.y * e);
+    var wa = (.34 * T.wet * lit * dim).toFixed(3);
+    w2.addColorStop(0, 'rgba(255,252,246,0)');
+    w2.addColorStop(.13, 'rgba(255,252,246,' + wa + ')');
+    w2.addColorStop(.30, 'rgba(255,252,246,0)');
+    cx.fillStyle = w2; cx.fill();
+  }
 }
 function line(a, b2, w, col, noInk){
   cx.lineCap = 'round';
@@ -3067,7 +3078,15 @@ function boxerParts(b, out){
   var D = depthFor(b.i);
   /* Тон кожи бойца. dim отделяет ближние конечности от дальних: дальние
      получают меньше света, а не просто заливаются тёмным цветом. */
-  var TN = {base:mix(s.skin), lit:mix(s.skinL), shade:mix(s.skinD), rim:mix(s.skinR)};
+  /* Насколько боец мокрый. Копится по ходу боя и подскакивает, когда садится
+     дыхание: к развязке кожа блестит, а на плечах повисают капли. */
+  var Fq = (typeof F !== 'undefined' && F && F[b.i]) ? F[b.i] : null;
+  var wet = 0;
+  if(Fq && game){
+    wet = Math.min(1, (round - 1) / 8) * .58 + (1 - Math.max(0, Fq.st) / MAX_ST) * .42;
+    wet = Math.max(0, Math.min(1, wet));
+  }
+  var TN = {base:mix(s.skin), lit:mix(s.skinL), shade:mix(s.skinD), rim:mix(s.skinR), wet:wet};
   var FAR = .62;
   function put(part, fn){ out.push({z:(D.ov && D.ov[part] != null) ? D.ov[part] : D.base + PZ[part], d:fn}); }
 
@@ -3186,6 +3205,27 @@ function boxerParts(b, out){
       cx.fillStyle = ag;
       cx.beginPath(); cx.arc(c0.x, c0.y, rr, 0, 6.284); cx.fill();
     }
+    if(wet > .05){                                   // блеск по освещённой стороне груди
+      var wg = cx.createLinearGradient(ctr.x + ax.x * wd2 * sgn, ctr.y + ax.y * wd2 * sgn,
+                                       ctr.x - ax.x * wd2 * sgn, ctr.y - ax.y * wd2 * sgn);
+      var wa = (.30 * wet * Math.abs(alit) * dim).toFixed(3);
+      wg.addColorStop(0, 'rgba(255,252,246,0)');
+      wg.addColorStop(.15, 'rgba(255,252,246,' + wa + ')');
+      wg.addColorStop(.34, 'rgba(255,252,246,0)');
+      cx.fillStyle = wg; cx.fill(TP);
+    }
+    if(wet > .5){
+      /* Пот не сидит горошинами — он стекает. Три коротких ручейка по
+         освещённой стороне, места закреплены, чтобы не мигали от кадра к
+         кадру, длина разная. Появляются только к концу боя. */
+      cx.strokeStyle = 'rgba(255,255,255,' + (.20 * (wet - .5) / .5 * dim).toFixed(3) + ')';
+      cx.lineWidth = .75; cx.lineCap = 'round';
+      var DR = [[18.2, 5.6, 4.4], [14.6, 7.2, 6.1], [10.4, 4.2, 3.2]];
+      for(var dp = 0; dp < DR.length; dp++){
+        var d0 = p(DR[dp][0], DR[dp][1]), d1 = p(DR[dp][0] - DR[dp][2], DR[dp][1] + .8);
+        cx.beginPath(); cx.moveTo(d0.x, d0.y); cx.lineTo(d1.x, d1.y); cx.stroke();
+      }
+    }
     cx.restore();
 
     var t1 = p(-2.5, 7.4), t2 = p(6, 7.9), t3 = p(6, -7.2), t4 = p(-2.5, -6.9);   // шорты и пояс
@@ -3195,6 +3235,23 @@ function boxerParts(b, out){
     cx.fillStyle = mix(s.trunk); cx.fill();
     line(p(6, 7.5), p(6, -6.8), 1.8, mix(s.trunkL), 1);
     line(p(5.4, 7.0), p(-2.2, 6.6), 1.5, mix(s.trunkL), 1);   // лампас
+    /* Складки на ткани идут от пояса к тому бедру, которое её тянет: шорты
+       не жестяная пластина, и при выпаде это видно первым делом. */
+    cx.save();
+    cx.beginPath();
+    cx.moveTo(t1.x, t1.y); cx.lineTo(t2.x, t2.y); cx.lineTo(t3.x, t3.y); cx.lineTo(t4.x, t4.y);
+    cx.closePath(); cx.clip();
+    cx.lineCap = 'round';
+    for(var fq = 0; fq < 2; fq++){
+      var th = unitV(J.legs[fq].hip, J.legs[fq].knee);
+      var an = p(2.0, fq ? -4.6 : 4.6);
+      cx.strokeStyle = 'rgba(0,0,0,' + (fq ? .17 : .22) + ')'; cx.lineWidth = 1.5;
+      cx.beginPath(); cx.moveTo(an.x, an.y);
+      cx.quadraticCurveTo(an.x + th.x * 3.4 - th.y * 1.6, an.y + th.y * 3.4 + th.x * 1.6,
+                          an.x + th.x * 6.2, an.y + th.y * 6.2);
+      cx.stroke();
+    }
+    cx.restore();
   });
 
   put('nearLeg', function(){
@@ -3255,6 +3312,12 @@ function boot(L, f, rx, ry, lace){   // ботинок едет за ступн�
   cx.beginPath();
   cx.ellipse(bx, by, rx, ry, a * .5, 0, 6.284);
   cx.fill(); cx.stroke();
+  /* Лакированная кожа отвечает узким жёстким бликом, а не мягким пятном:
+     этим ботинок и отличается от матовой кожи и от ткани шорт. */
+  cx.fillStyle = 'rgba(255,255,255,.34)';
+  cx.beginPath();
+  cx.ellipse(bx + LDIR.x * rx * .42, by + LDIR.y * ry * .5, rx * .34, ry * .2, a * .5, 0, 6.284);
+  cx.fill();
   cx.strokeStyle = lace; cx.lineWidth = 1.1; cx.lineCap = 'round';   // шнуровка
   cx.beginPath();
   cx.moveTo(bx - rx * .5 * f, by - ry * .5); cx.lineTo(bx + rx * .15 * f, by - ry * .75);
