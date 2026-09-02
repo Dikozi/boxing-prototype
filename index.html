@@ -99,15 +99,21 @@ body{
 #rbar{flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:9px;
   font-family:var(--disp);font-size:13px;font-weight:700;letter-spacing:.2em;color:var(--gold);
   padding:5px 0 6px;background:var(--panel);border-bottom:2px solid var(--line)}
-#rbar{position:relative}
-#rtxt{display:flex;align-items:center;justify-content:center;gap:9px}
-#rtxt span{width:6px;height:6px;border-radius:50%;background:var(--line)}
+#rbar{position:relative;padding-right:0}
+/* Кнопки — обычный флекс-элемент, а не absolute поверх табло. Раньше #snd
+   висел абсолютно и на четырнадцатом раунде последние точки уезжали под него
+   (на 320px перекрытие было 34px ещё до второй кнопки). Теперь кнопки
+   занимают свою ширину, а точки центруются в том, что осталось. */
+#rtxt{flex:1 1 auto;min-width:0;display:flex;align-items:center;justify-content:center;
+  gap:9px;flex-wrap:nowrap;overflow:hidden}
+#rtxt span{flex:0 0 auto;width:6px;height:6px;border-radius:50%;background:var(--line)}
 #rtxt span.on{background:var(--gold)}
 #rtxt span.now{background:var(--gold);box-shadow:0 0 0 3px #ffc44d2e}
-#snd{position:absolute;right:7px;top:50%;transform:translateY(-50%);font-size:14px;line-height:1;
-  padding:5px 8px;border-radius:10px;background:#1c2230;border:1px solid var(--line);filter:grayscale(1) opacity(.55)}
-#snd.on{filter:none;border-color:#5a4416}
-#snd:active{transform:translateY(-50%) scale(.92)}
+#rbtn{flex:0 0 auto;margin-right:7px;display:flex;gap:4px}
+#rbtn button{font-size:14px;line-height:1;padding:5px 8px;border-radius:10px;
+  background:#1c2230;border:1px solid var(--line);filter:grayscale(1) opacity(.55)}
+#rbtn button.on{filter:none;border-color:#5a4416}
+#rbtn button:active{transform:scale(.92)}
 
 /* ===================== ПАНЕЛЬ ===================== */
 #panel{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:11px;display:flex;flex-direction:column;gap:9px}
@@ -224,6 +230,9 @@ details .body b{color:var(--txt)} details .body .k{color:var(--gold);font-weight
   .lab{font-size:8.5px} .lab b{font-size:13px}
   .bar{height:9px}
   #rbar{padding:3px 0 4px;font-size:11px;gap:7px}
+  #rbtn{margin-right:4px;gap:3px} #rbtn button{font-size:12px;padding:4px 5px}
+  #rtxt{gap:4px} #rtxt span{width:5px;height:5px}
+  #rtxt span.now{box-shadow:0 0 0 2px #ffc44d2e}
   #ring{height:clamp(60px,9.5vh,110px)}
   #log{height:13vh;min-height:54px}
   #panel{gap:6px;padding:8px}
@@ -284,7 +293,7 @@ details .body b{color:var(--txt)} details .body .k{color:var(--gold);font-weight
   #ring,#ring.full,#ring.cinema,#ring.slim{height:100%;border-bottom-width:2px;transition:none}
 
   #rbar{grid-area:rbar;font-size:15px;gap:11px;border-left:2px solid var(--line)}
-  #snd{font-size:16px;padding:6px 10px}
+  #rbtn button{font-size:16px;padding:6px 10px}
 
   /* min-height:0 — без него грид-ячейка не сжимается ниже высоты содержимого:
      оверфлоу-скролл панели молча переставал работать, а девять кнопок с блоком
@@ -365,7 +374,7 @@ details .body b{color:var(--txt)} details .body .k{color:var(--gold);font-weight
   <button id="again" class="off">↺ ПОВТОР</button>
 </div>
 
-<div id="rbar"><span id="rtxt"></span><button id="snd" aria-label="Звук">🔊</button></div>
+<div id="rbar"><span id="rtxt"></span><div id="rbtn"><button id="flm" aria-label="Киношный вид">🎞</button><button id="snd" aria-label="Звук">🔊</button></div></div>
 <div id="panel"></div>
 
 <div id="logWrap">
@@ -2729,6 +2738,7 @@ function fitCanvas(){
   cv.width = Math.round(VW * DPR); cv.height = Math.round(VH * DPR);
   SC = Math.min(VH / STAGE_H, VW / 125);        // не приближаемся ближе, чем 125 единиц по ширине
   OX = (VW - STAGE_W * SC) / 2;
+  filmDrop();                                  // канвасы свечения и виньетка пересоберутся под новый размер
 }
 if(window.ResizeObserver) new ResizeObserver(fitCanvas).observe(ring);
 window.addEventListener('resize', fitCanvas);
@@ -3368,6 +3378,107 @@ function drawStage(){
   if(flashA > 0){ cx.fillStyle = 'rgba(255,255,255,' + flashA + ')'; cx.fillRect(0, 0, VW, VH); }
   drawCut();                                         // врезка ложится поверх сцены,
   drawKoCard();                                      // но «НОКАУТ» остаётся читаемым
+  filmPass();                                        // киношный слой поверх готового кадра
+}
+
+/* =========================================================================
+   КИНОШНЫЙ СЛОЙ: свечение, виньетка, зерно
+   -------------------------------------------------------------------------
+   Полноэкранная постобработка в Canvas 2D возможна не вообще, а если считать
+   свечение на канвасе, уменьшенном в шесть раз: 0.25 Мпикс вместо девяти.
+   Поэтому здесь нет ни WebGL, ни шейдеров, ни второго канваса, ни разбора
+   потери GL-контекста — и нечему ломаться на телефоне без WebGL.
+   ========================================================================= */
+var FILM_STEP = 6;                  // во сколько раз меньше канвас свечения
+var film = true;                    // выбор игрока
+var filmTier = 2;                   // 2 свечение+виньетка+зерно, 1 без свечения, 0 выключено
+var fA = null, fAc = null, fB = null, fBc = null;   // канвасы свечения
+var fVig = null, fPat = null, fW = 0, fH = 0, fTick = 0;
+var fFilter = null;                 // поддержан ли ctx.filter (в Safari только с 16.4)
+
+function filmDrop(){ fW = 0; fH = 0; fVig = null; }  // вызывается из fitCanvas
+
+function filmNoise(){
+  /* Тайл шума делается один раз в рантайме: новых ассетов файл не получает,
+     прирост только кодом. */
+  var n = document.createElement('canvas'), nc = n.getContext('2d');
+  n.width = n.height = 128;
+  var id = nc.createImageData(128, 128), i, v;
+  for(i = 0; i < 128 * 128; i++){
+    v = 190 + (Math.random() * 66 | 0);
+    id.data[i * 4] = id.data[i * 4 + 1] = id.data[i * 4 + 2] = v;
+    id.data[i * 4 + 3] = 255;
+  }
+  nc.putImageData(id, 0, 0);
+  fPat = cx.createPattern(n, 'repeat');
+}
+
+function filmSize(){
+  fW = cv.width; fH = cv.height;
+  if(!fA){ fA = document.createElement('canvas'); fAc = fA.getContext('2d');
+           fB = document.createElement('canvas'); fBc = fB.getContext('2d'); }
+  fA.width = fB.width = Math.max(1, fW / FILM_STEP | 0);
+  fA.height = fB.height = Math.max(1, fH / FILM_STEP | 0);
+  fVig = cx.createRadialGradient(fW / 2, fH / 2, fH * .30, fW / 2, fH / 2, fH * .86);
+  fVig.addColorStop(0, 'rgba(0,0,0,0)');
+  fVig.addColorStop(.62, 'rgba(0,0,0,.13)');
+  fVig.addColorStop(1, 'rgba(0,0,0,.42)');
+  if(!fPat) filmNoise();
+  if(fFilter === null){                      // одна проверка на весь запуск
+    fAc.filter = 'blur(1px)';
+    fFilter = (fAc.filter === 'blur(1px)');
+    fAc.filter = 'none';
+  }
+}
+
+function filmPass(){
+  if(!film || filmTier < 1 || !cv.width || !cv.height) return;
+  if(fW !== cv.width || fH !== cv.height) filmSize();
+  cx.setTransform(1, 0, 0, 1, 0, 0);
+  cx.save();
+  if(filmTier >= 2){
+    /* Порог по яркости — умножением копии на саму себя, а не через
+       ctx.filter='brightness() contrast()'. Возведение в квадрат давит тёмное
+       и сохраняет яркое, а работает везде: на iOS до 16.4 присваивание
+       ctx.filter молча игнорируется, и свечение выродилось бы в мутную пелену
+       поверх всего кадра. filter идёт сверху как улучшение, если он есть. */
+    fAc.setTransform(1, 0, 0, 1, 0, 0);
+    fAc.globalCompositeOperation = 'source-over';
+    fAc.clearRect(0, 0, fA.width, fA.height);
+    fAc.drawImage(cv, 0, 0, fA.width, fA.height);
+    fAc.globalCompositeOperation = 'multiply';
+    fAc.drawImage(fA, 0, 0);                   // квадрат: тёмное вниз, яркое на месте
+    fAc.drawImage(fA, 0, 0);                   // ещё раз — четвёртая степень
+    fAc.globalCompositeOperation = 'source-over';
+    /* Два умножения, а не одно: при одном светилась и кожа в полутоне, и
+       свечение читалось жёсткой каймой по краю тела, а не воздухом вокруг
+       ярких мест. В четвёртой степени полутон 0.7 уходит в 0.24, а перчатка
+       0.95 остаётся 0.81 — светится то, что действительно светлое. */
+    fBc.clearRect(0, 0, fB.width, fB.height);
+    if(fFilter) fBc.filter = 'blur(3.4px)';
+    fBc.drawImage(fA, 0, 0);
+    if(fFilter) fBc.filter = 'none';
+    /* Обратно в полный размер: билинейное растягивание в шесть раз само по
+       себе и есть размытие, поэтому дорогого blur по всему кадру не нужно. */
+    cx.globalCompositeOperation = 'lighter';
+    cx.globalAlpha = .60;                      // порог стал строже — доля выше
+    cx.drawImage(fB, 0, 0, fW, fH);
+    cx.globalCompositeOperation = 'source-over';
+    cx.globalAlpha = 1;
+  }
+  cx.fillStyle = fVig; cx.fillRect(0, 0, fW, fH);
+  /* Зерно живое, но сдвиг берётся из счётчика кадров, а не из Math.random():
+     так повтор боя остаётся кадр в кадр тем же. При «уменьшении движения»
+     шум замирает — мельтешение это ровно то, что настройка просит убрать,
+     а само зерно остаётся, потому что это картинка, а не движение. */
+  var gx = 0, gy = 0;
+  if(!RM){ fTick++; gx = (fTick * 37) % 128; gy = (fTick * 61) % 128; }
+  cx.globalAlpha = .05;
+  cx.globalCompositeOperation = 'overlay';
+  cx.translate(-gx, -gy);
+  cx.fillStyle = fPat;
+  cx.fillRect(0, 0, fW + 128, fH + 128);
+  cx.restore();
 }
 
 /* шлейф падающего тела: несколько прошлых поз с затуханием */
@@ -4315,6 +4426,30 @@ function frame(now){
   flashA = Math.max(0, flashA - 1.7 * dt);
   syncTags();
   drawStage();
+  filmWatch(raw);
+}
+
+/* Сторож. На настоящем телефоне проход почти бесплатен — это ровно те
+   операции, которые GPU делает лучше всего, — но проверить это со стороны
+   нельзя, поэтому эффект следит за собой сам и понижает ступень, если кадры
+   не держатся. Меряем только когда что-то происходит: на статичном меню
+   кадры дешёвые и мерить нечего. Сама ступень вверх не поднимается — это
+   делает только явное нажатие кнопки. */
+var fwBuf = [], FW_N = 90, FW_MS = 24;
+function filmWatch(raw){
+  if(!film || filmTier < 1 || paused) return;
+  if(!(seq || phase === 'reveal' || phase === 'replay')){ if(fwBuf.length) fwBuf.length = 0; return; }
+  if(raw <= 0 || raw >= 64) return;                  // пропуски кадра при уходе в фон не считаем
+  fwBuf.push(raw);
+  if(fwBuf.length < FW_N) return;
+  var srt = fwBuf.slice().sort(function(a, b){ return a - b; });
+  var med = srt[FW_N >> 1];
+  fwBuf.length = 0;
+  if(med > FW_MS){
+    filmTier--;
+    if(filmTier <= 0){ filmTier = 0; film = false; }
+    storeFilm(); paintFilm();
+  }
 }
 
 function clearPops(){
@@ -4881,6 +5016,23 @@ function setMuted(v){
   try { localStorage.setItem('klinch.muted', muted ? '1' : '0'); } catch(e){}
   var el = document.getElementById('snd');
   if(el){ el.textContent = muted ? '🔇' : '🔊'; el.classList.toggle('on', !muted); }
+}
+/* Киношный слой хранится по образцу звука: глобальная переменная, эффект,
+   запись в localStorage в try/catch, перекраска своей кнопки. Кнопка живёт
+   в #rbar, а не в #panel, намеренно: render() затирает панель через innerHTML,
+   и элемент внутри неё терял бы состояние на каждой смене экрана. */
+function storeFilm(){
+  try { localStorage.setItem('klinch.film', film ? String(filmTier) : '0'); } catch(e){}
+}
+function paintFilm(){
+  var el = document.getElementById('flm');
+  if(el) el.classList.toggle('on', film && filmTier > 0);
+}
+function setFilm(v){
+  film = v;
+  if(film) filmTier = 2;            // явное нажатие всегда возвращает полную ступень:
+  storeFilm();                      // если сторож ошибся на случайной просадке, это чинится тапом
+  paintFilm();
 }
 
 function noise(){
@@ -5535,7 +5687,14 @@ document.addEventListener('pointerdown', audioTouch, true);
 document.getElementById('snd').addEventListener('click', function(ev){
   ev.stopPropagation(); audioTouch(); setMuted(!muted);
 });
+document.getElementById('flm').addEventListener('click', function(ev){
+  ev.stopPropagation(); setFilm(!film);
+});
 try { muted = localStorage.getItem('klinch.muted') === '1'; } catch(e){}
+try {
+  var fv = localStorage.getItem('klinch.film');
+  if(fv !== null){ filmTier = Math.max(0, Math.min(2, +fv || 0)); film = filmTier > 0; }
+} catch(e){}
 
 P.addEventListener('click', function(ev){
   var t = ev.target.closest('[data-go],[data-pick],[data-lvl],[data-arch]');
@@ -5614,6 +5773,7 @@ for(var ti = 0; ti < 2; ti++){
 fitCanvas();
 initPhys();
 setMuted(muted);
+paintFilm();                  // сохранённую ступень применяем как есть, setFilm сбросил бы её в полную
 newFight();
 phase = 'start';
 render();
