@@ -1237,7 +1237,11 @@ Boxer.prototype.reset = function(){
   this.solve();
 };
 
-/* двухзвенная ИК: где встанет локоть или колено */
+/* двухзвенная ИК: где встанет локоть или колено.
+   Зажим только по ДАЛЬНЕЙ границе, и это намеренно. Нижний предел «сустав не
+   складывается плотнее трети руки» я пробовал — он сдвигает саму кисть,
+   а не ограничивает угол, и на границе она прыгает: скорость конца
+   конечности на переходах партера подскакивала с 4.9 до 21 единицы за кадр. */
 function ik(ax, ay, tx, ty, l1, l2, bend){
   var dx = tx - ax, dy = ty - ay, d = Math.hypot(dx, dy) || 0.001;
   var dc = Math.min(d, l1 + l2 - 0.01);
@@ -1324,9 +1328,58 @@ function applyTap(b){
   handTo(b, 0, b.J.hip.x - 15 * b.face, FLOOR - 2 - lift, 470, 27);
 }
 
-function handTo(b, k, x, y, kk, dd){ b.hand[k].x.set(x, kk, dd); b.hand[k].y.set(y, kk, dd); }
-function footTo(b, k, x, kk, dd){ b.foot[k].set(x, kk, dd); b.footY[k].set(FLOOR, kk, dd); }
-function footToXY(b, k, x, y, kk, dd){ b.foot[k].set(x, kk, dd); b.footY[k].set(y, kk, dd); }
+/* Цель конечности едет по квадратичной кривой, а не по прямой. Раньше фаза
+   удара ставила цель ОДНИМ вызовом прямо в голову соперника, и стопа шла из
+   точки на настиле в голову по линейке — это и есть «точка к точке», на что
+   жаловался пользователь. bow — прогиб поперёк хорды, знак задаёт сторону. */
+function arcPt(from, to, u, bow){
+  var dx = to.x - from.x, dy = to.y - from.y, d = Math.hypot(dx, dy) || 1;
+  var nx = -dy / d, ny = dx / d;
+  var cx2 = (from.x + to.x) / 2 + nx * bow, cy2 = (from.y + to.y) / 2 + ny * bow;
+  var v = 1 - u;
+  return {x:v * v * from.x + 2 * v * u * cx2 + u * u * to.x,
+          y:v * v * from.y + 2 * v * u * cy2 + u * u * to.y};
+}
+function arcHand(b, k, from, to, u, bow, kk, dd){
+  var q = arcPt(from, to, clamp(u, 0, 1), bow); handTo(b, k, q.x, q.y, kk, dd);
+}
+function arcFoot(b, k, from, to, u, bow, kk, dd){
+  var q = arcPt(from, to, clamp(u, 0, 1), bow); footToXY(b, k, q.x, q.y, kk, dd);
+}
+/* Предохранитель от телепорта. Цель кисти или стопы за кадр сдвигается не
+   более чем на TELE единиц: это порог перескока, а не скорости — самый
+   быстрый удар в игре проходит около 8 единиц за кадр и ограничения не
+   замечает, а мгновенные перескоки цели при смене позиции в партере
+   (замер давал до 39 градусов на сустав за кадр) сглаживаются. */
+var TELE = 9;
+/* Считаем от цели на НАЧАЛО кадра, а не от предыдущего вызова: за один кадр
+   конечности ставят цель по нескольку раз (сперва driveGuard, потом поверх
+   неё удар), и ограничение «от прошлого вызова» заставляло эти вызовы гасить
+   друг друга — удар переставал доставать до цели. */
+function limbSet(sp, v){
+  var b0 = sp.t0 == null ? sp.t : sp.t0, d = v - b0;
+  if(d > TELE) v = b0 + TELE; else if(d < -TELE) v = b0 - TELE;
+  return v;
+}
+function limbMark(b){
+  var k;
+  for(k = 0; k < 2; k++){
+    b.hand[k].x.t0 = b.hand[k].x.t; b.hand[k].y.t0 = b.hand[k].y.t;
+    b.foot[k].t0 = b.foot[k].t;     b.footY[k].t0 = b.footY[k].t;
+  }
+}
+function handTo(b, k, x, y, kk, dd){
+  b.hand[k].x.set(limbSet(b.hand[k].x, x), kk, dd);
+  b.hand[k].y.set(limbSet(b.hand[k].y, y), kk, dd);
+}
+function footTo(b, k, x, kk, dd){
+  b.foot[k].set(limbSet(b.foot[k], x), kk, dd);
+  b.footY[k].set(limbSet(b.footY[k], FLOOR), kk, dd);
+}
+function footToXY(b, k, x, y, kk, dd){
+  b.foot[k].set(limbSet(b.foot[k], x), kk, dd);
+  b.footY[k].set(limbSet(b.footY[k], y), kk, dd);
+}
 function headPt(o){ return {x:o.J.head.x + 5.5 * o.face, y:o.J.head.y + 2.2}; }
 function bodyPt(o){ return {x:o.J.hip.x + 5.5 * o.face, y:o.J.hip.y - 12}; }
 function guardPt(o){
@@ -1398,6 +1451,7 @@ function startTrans(pos, top){
   /* Роняет того, кто оказался снизу; если позиция та же, а роли поменялись
      (свип), — бывшего верхнего; если ушли в стойку — того, кто позицию потерял. */
   RP.tf = top >= 0 ? 1 - top : (RP.top >= 0 ? RP.top : 0);
+  RP.from = RP.pos;                              // откуда едем: константы позы блендятся по дороге
   RP.pos = pos; RP.top = top;
   RP.tm = m; RP.tk = 0; RP.land = false;
 }
@@ -1451,8 +1505,24 @@ function mixPt(a, c, e){ return {x:a.x + (c.x - a.x) * e, y:a.y + (c.y - a.y) * 
    маунт — колени, прижатые к рёбрам. Пока целями были абсолютные координаты,
    поза могла быть только приблизительно похожей. Чужой скелет берётся с
    прошлого кадра — при жёсткости пружин 160–200 отставание не видно. */
+/* Константы позиции на переходе смешиваются, а не переключаются рывком.
+   Раньше в момент смены RP.pos поза мгновенно бралась из новой строки
+   таблицы, и суставы проскакивали до 43 градусов за кадр. */
+var GKEYS = ['bLean','bHy','tOff','tLean','tHy','bBend','tBend','bTurn','tTurn'];
+function gposeNow(){
+  var g = GPOSE[RP.pos] || GPOSE.guard;
+  var f0 = RP.tk < 1 && RP.from ? GPOSE[RP.from] : null;
+  if(!f0) return g;
+  var e = RP.tk; e = e * e * (3 - 2 * e);        // мягко на входе и на выходе
+  var o = {bFoot:[f0.bFoot[0] + (g.bFoot[0] - f0.bFoot[0]) * e,
+                  f0.bFoot[1] + (g.bFoot[1] - f0.bFoot[1]) * e],
+           bFy:  [f0.bFy[0]   + (g.bFy[0]   - f0.bFy[0])   * e,
+                  f0.bFy[1]   + (g.bFy[1]   - f0.bFy[1])   * e]}, i;
+  for(i = 0; i < GKEYS.length; i++) o[GKEYS[i]] = f0[GKEYS[i]] + (g[GKEYS[i]] - f0[GKEYS[i]]) * e;
+  return o;
+}
 function driveGround(b){
-  var g = GPOSE[RP.pos] || GPOSE.guard, bot = 1 - RP.top, pos = RP.pos;
+  var g = gposeNow(), bot = 1 - RP.top, pos = RP.pos;
   B[bot].face = B[bot].face0;
   var bf = B[bot].face, bx = GCX + 6 * bf;
   var me = b.i === bot ? 'bot' : 'top', O = B[b.i === bot ? RP.top : bot].J;
@@ -1747,8 +1817,9 @@ var SUBMOVE = {
 function driveMMA(i, t, rec){
   var b = B[i], f = b.face, c = rec.choices[i], o = rec.out[i], id = c.id;
   var op = B[1 - i], A = ACT[id], n = b.J.neck;
-  var pre = clamp(t / T_IMPACT, 0, 1);
-  var out = t <= T_IMPACT ? 0 : clamp((t - T_IMPACT) / 380, 0, 1);
+  var IMP = impactMs(rec);
+  var pre = clamp(t / IMP, 0, 1);
+  var out = t <= IMP ? 0 : clamp((t - IMP) / 380, 0, 1);
   var punch = pre < 1 ? pre * pre : 1 - out;          // 0 → 1 → 0
   var ok = o && o.ok;
   /* Как только позиция сменилась на партер, движение стойки должно отпустить
@@ -1807,25 +1878,45 @@ function driveMMA(i, t, rec){
     var tgt = (o && o.dmg > 0)
       ? (A.body ? {x:op.J.hip.x, y:op.J.hip.y - 9} : {x:op.J.head.x, y:op.J.head.y + 1})
       : {x:op.J.head.x - 9 * f, y:op.J.head.y + 7};
+    /* Замах есть и в партере. Раньше у ударов снизу и сверху он был ровно
+       ноль: рука линейно ехала от своей шеи к цели и обратно. Теперь она
+       сперва уходит НАЗАД от цели тем дальше, чем тяжелее удар, и только
+       потом идёт вперёд — и не по прямой, а по дуге. */
+    var wf = windOf(id), aw = clamp(pre / .42, 0, 1), sw = clamp((pre - .42) / .58, 0, 1);
     if(id === 'cknee' || id === 'sbody'){             // колено: работает нога, не рука
       var kn = punch;
       b.hy.set((onGround() ? b.hy.t : HIP_Y) - 5 * kn, 190, 25);
-      b.lean.set(b.lean.t + .18 * kn, 150, 22);
-      footToXY(b, 1, b.base + (10 + 16 * kn) * f, FLOOR - 26 * kn, 220, 25);
+      b.lean.set(b.lean.t + (.18 * kn - .12 * aw * (1 - sw)), 150, 22);
+      var kBack = {x:b.base - (2 + wf) * f, y:FLOOR - 8};          // колено отводится назад и вниз
+      var kTo   = {x:b.base + 26 * f, y:FLOOR - 26};
+      if(sw <= 0) footToXY(b, 1, kBack.x, kBack.y, 220, 25);
+      else arcFoot(b, 1, kBack, kTo, sw, -9 * f, 240, 26);
       handTo(b, 0, n.x + 15 * f, n.y - 4, 200, 25);
       handTo(b, 1, n.x + 11 * f, n.y - 1, 200, 25);
       return;
     }
     if(id === 'upkick'){
-      var uk = punch;
-      footToXY(b, 0, b.base + (14 + 20 * uk) * f, FLOOR - (14 + 16 * uk), 220, 25);
+      var uBack = {x:b.base + (6 - wf * .7) * f, y:FLOOR - 10};
+      var uTo   = {x:b.base + 34 * f, y:FLOOR - 30};
+      if(sw <= 0) footToXY(b, 0, uBack.x, uBack.y, 220, 25);
+      else arcFoot(b, 0, uBack, uTo, sw, -8 * f, 240, 26);
       return;
     }
-    var hx = n.x + (tgt.x - n.x) * punch, hy2 = n.y + (tgt.y - n.y) * punch;
-    handTo(b, 1, hx, hy2, 250, 26);
+    /* Кулак: сперва отвод за плечо, потом дуга в цель. Отвод считается ПРОТИВ
+       направления на цель, а не по направлению взгляда: в партере рука уже
+       стоит позади шеи, и отвод «назад по f» уводил бы её вперёд. */
+    var tdx = tgt.x - n.x, tdy = tgt.y - n.y, td = Math.hypot(tdx, tdy) || 1;
+    var pBack = {x:n.x - tdx / td * wf, y:n.y - tdy / td * wf * .5 + (onGround() ? 3 : -3)};
+    if(sw <= 0){
+      handTo(b, 1, pBack.x, pBack.y, 240, 26);
+      b.twist.set(-0.34 * aw, 200, 25);                 // плечи копят скрутку назад
+      if(!onGround()) b.lean.set(0.14 - .12 * aw, 150, 22);
+    } else {
+      arcHand(b, 1, pBack, tgt, sw, -6 * f, 250, 26);
+      b.twist.set(-0.34 + 0.79 * sw, 200, 25);          // и раскручиваются в удар
+      if(!onGround()) b.lean.set(0.02 + .28 * sw, 150, 22);
+    }
     handTo(b, 0, n.x + (12 - 3 * punch) * f, n.y + (onGround() ? 6 : -2), 200, 25);
-    b.twist.set(0.45 * punch, 200, 25);
-    if(!onGround()) b.lean.set(0.14 + .16 * punch, 150, 22);
     return;
   }
 
@@ -2213,6 +2304,34 @@ function targetPoint(i, rec){
 }
 
 var SEQ_END = 1520, T_IMPACT = 520;
+/* Сила удара — единая мера для замаха и для времени. Урон уже ранжирует
+   удары ровно так, как нужно: от 8 (удар с низа) до 58 (вертушка). */
+function powOf(id){
+  var A = ACT[id];
+  return A ? clamp((A.dmg - 20) / 38, 0, 1) : 0;
+}
+/* До правки момент попадания был один на все удары — 520 мс и джебу, и
+   вертушке, — поэтому у тяжёлого удара просто не было времени на замах.
+   Теперь он растёт с силой: джеб 520, апперкот ~583, кросс ~678,
+   вертушка 720. */
+function impactOf(id){ return 520 + powOf(id) * 200; }
+/* Момент попадания у РАУНДА один, по самому тяжёлому из двух ударов.
+   Своё время каждому дать нельзя: попадания в этой игре одновременны, HUD
+   обновляется один раз, и разъезд читался бы как ошибка. */
+function impactMs(rec){
+  var m = 520, k, c;
+  for(k = 0; k < 2; k++){
+    c = rec.choices[k];
+    if(c && ACT[c.id]) m = Math.max(m, impactOf(c.id));
+  }
+  return Math.round(m);
+}
+/* Размах замаха в единицах сцены: джеб ~4, апперкот ~9, кросс ~15,
+   вертушка ~18 при ширине головы около 10. */
+function windOf(id){
+  var A = ACT[id]; if(!A) return 0;
+  return 4 * clamp(A.dmg / 20, .5, 1) + powOf(id) * 14;
+}
 /* В повторе боя размен обрывается сразу за реакцией на удар: дальше бойцы
    всё равно просто стоят в гарде, а следующий размен начинается вплотную.
    Тяжёлые моменты это не режет — seqExtend ставит максимум, поэтому нокаут,
@@ -2221,6 +2340,13 @@ var REPLAY_END = 1060;
 
 function driveActor(i, t, rec){
   var b = B[i], f = b.face, c = rec.choices[i], n = b.J.neck, p, kl = c.lvl || 'head';
+  /* Тяжёлому удару нужно больше времени на замах, поэтому момент попадания у
+     раунда свой. Чтобы не переписывать пороги фаз в каждом ударе, время
+     нормируется: внутри switch оно по-прежнему меряется в «джебовых»
+     миллисекундах, где попадание всегда на 520. */
+  var IMP = rec._imp || (rec._imp = impactMs(rec));
+  var ts = IMP / T_IMPACT, tn = t / ts;
+  var pw = ACT[c.id] ? powOf(c.id) : 0, wd = ACT[c.id] ? windOf(c.id) : 0;
   /* Под физикой поза ждёт возврата — но ждать она должна В ТОЙ ПОЗЕ, в
      которую вернётся. У нокаута это лежащий, а не стойка: иначе смешивание
      в конце тянуло бы тело с настила обратно на ноги. */
@@ -2232,63 +2358,65 @@ function driveActor(i, t, rec){
 
   switch(c.id){
     case 'jab':
-      if(t < 330){                                   // замах: плечо назад, вес на заднюю ногу
-        handTo(b, 0, n.x + 4 * f, n.y + 1, 240, 26);
-        b.twist.set(0.24, 210, 25);
-        b.lean.set(-0.07, 170, 22); b.hx.set(b.base - 2.5 * f, 150, 21);
-      } else if(t < 700){                            // вынос: переднее плечо уходит за кулаком
+      if(tn < 330){                                   // замах: плечо назад, вес на заднюю ногу
+        handTo(b, 0, n.x + (10 - wd * 1.7) * f, n.y + 1, 240, 26);
+        b.twist.set(0.24 + .05 * pw, 210, 25);
+        b.lean.set(-0.07 - .10 * pw, 170, 22); b.hx.set(b.base - (2.5 + 2 * pw) * f, 150, 21);
+        footTo(b, 1, b.base - (12.5 + 3 * pw) * f, 180, 23);   // вес переваливается на заднюю
+      } else if(tn < 700){                            // вынос: переднее плечо уходит за кулаком
         p = targetPoint(i, rec);
         handTo(b, 0, p.x, p.y, 950, 41);
         var jx = lungeX(b, 0, p, 3, 22, 30);
         b.twist.set(-0.92, 300, 22);
         b.lean.set(0.17, 230, 21); b.hx.set(jx, 230, 23);
         footTo(b, 0, jx + 11 * f, 220, 24); footTo(b, 1, jx - 12 * f, 210, 24);
-      } else if(t < 1010){                           // возврат такой же резкий, как вынос
+      } else if(tn < 1010){                           // возврат такой же резкий, как вынос
         handTo(b, 0, n.x + 9 * f, n.y - 1, 560, 31);
         b.twist.set(0, 260, 24);
       }
       break;
 
     case 'uppercut':
-      if(t < 320){                                   // просадка: кулак уходит вниз, плечи копят
-        handTo(b, 1, n.x - 3 * f, n.y + 17, 300, 27);
-        b.twist.set(-0.40, 210, 25);
-        b.hy.set(HIP_Y + 5, 240, 26); b.lean.set(0.10, 180, 22);
-      } else if(t < 430){                            // проносим кулак вперёд низом — это низ дуги
+      if(tn < 320){                                   // просадка: кулак уходит вниз, плечи копят
+        handTo(b, 1, n.x + (5 - wd) * f, n.y + 13 + wd * .5, 300, 27);
+        b.twist.set(-0.40 - .12 * pw, 210, 25);
+        b.hy.set(HIP_Y + 4 + 2 * pw, 240, 26); b.lean.set(0.10, 180, 22);
+        footTo(b, 1, b.base - (12.5 + 4 * pw) * f, 185, 23);
+      } else if(tn < 780){                            // взрыв снизу вверх, одной дугой
         p = targetPoint(i, rec);
-        handTo(b, 1, p.x - 3 * f, p.y + 16, 800, 38);
-        b.twist.set(0.40, 260, 23);
-        b.hy.set(HIP_Y + 1, 260, 25);
-      } else if(t < 780){                            // взрыв снизу вверх
-        p = targetPoint(i, rec);
-        handTo(b, 1, p.x, p.y, 1000, 40);
+        /* Раньше здесь были две отдельные цели — сперва точка внизу, потом
+           сама цель, — и на стыке кулак перескакивал: замер давал 45 градусов
+           на локте за кадр. Теперь кисть идёт одной непрерывной дугой от
+           просадки к цели, и низ дуги получается сам. */
+        var uFrom = {x:n.x + (5 - wd) * f, y:n.y + 13 + wd * .5};
+        arcHand(b, 1, uFrom, p, (tn - 320) / 200, 15 * f, 1000, 40);
         var ux = lungeX(b, 1, p, 6, 28, 29);
         b.twist.set(0.95, 320, 22);
         b.hy.set(HIP_Y - 5, 300, 24); b.lean.set(0.08, 230, 21);
         b.hx.set(ux, 240, 23);
         footTo(b, 0, ux + 12 * f, 220, 24); footTo(b, 1, ux - 12 * f, 210, 24);
-      } else if(t < 1080){
+      } else if(tn < 1080){
         handTo(b, 1, n.x + 4 * f, n.y - 3, 560, 31);
         b.twist.set(0, 260, 24);
       }
       break;
 
     case 'cross':                                    // замах: скрутка и удержание
-      handTo(b, 1, n.x - 13 * f, n.y + 2, t < 620 ? 230 : 210, 26);
+      handTo(b, 1, n.x - 13 * f, n.y + 2, tn < 620 ? 230 : 210, 26);
       handTo(b, 0, n.x + 9 * f, n.y - 1, 200, 25);
       b.twist.set(-0.55, 180, 24);
       b.lean.set(-0.21, 150, 22); b.hx.set(b.base - 4 * f, 130, 21);
       footTo(b, 1, b.base - 15 * f, 170, 24);
-      if(t > 560) b.charge = 'cross';
+      if(tn > 560) b.charge = 'cross';
       break;
 
     case 'crossLand':
-      if(t < 340){                                   // добирает скрутку
-        handTo(b, 1, n.x - 17 * f, n.y + 4, 260, 26);
-        b.twist.set(-0.85, 230, 24);
-        b.lean.set(-0.30, 190, 22); b.hx.set(b.base - 5 * f, 160, 21);
-        footTo(b, 1, b.base - 17 * f, 190, 24);
-      } else if(t < 800){                            // всем корпусом: плечо проносит через цель
+      if(tn < 340){                                   // добирает скрутку
+        handTo(b, 1, n.x - (2 + wd) * f, n.y + 4, 260, 26);
+        b.twist.set(-0.85 - .10 * pw, 230, 24);
+        b.lean.set(-0.30, 190, 22); b.hx.set(b.base - (3 + 4 * pw) * f, 160, 21);
+        footTo(b, 1, b.base - (13 + 5 * pw) * f, 190, 24);
+      } else if(tn < 800){                            // всем корпусом: плечо проносит через цель
         p = targetPoint(i, rec);
         handTo(b, 1, p.x, p.y, 1250, 43);
         var cxx = lungeX(b, 1, p, 7, 34, 24);
@@ -2296,7 +2424,7 @@ function driveActor(i, t, rec){
         b.lean.set(0.34, 280, 21); b.hx.set(cxx, 280, 23);
         footTo(b, 0, cxx + 14 * f, 250, 24); footTo(b, 1, cxx - 11 * f, 250, 24);
         b.charge = false;
-      } else if(t < 1120){                           // раскрутка обратно в стойку
+      } else if(tn < 1120){                           // раскрутка обратно в стойку
         handTo(b, 1, n.x + 4 * f, n.y - 3, 540, 31);
         b.twist.set(0, 240, 24);
         b.charge = false;
@@ -2304,14 +2432,27 @@ function driveActor(i, t, rec){
       break;
 
     case 'kick':
-      if(t < 340){                                   // замах: вес на опорную, корпус закручивается назад
-        b.twist.set(-0.5, 200, 24);
-        b.lean.set(-0.17, 170, 22);
+      /* Удар ногой — три такта, как в жизни: загрузка, подбор колена к груди
+         и выхлёст по дуге. Раньше тактов не было вовсе: стопа ставилась одним
+         вызовом прямо в голову и ехала туда из точки на настиле по прямой
+         (замер давал отклонение от прямой 0.035 при пути 79 единиц), а колено
+         при этом проскакивало 70 градусов за кадр — не движение, а телепорт. */
+      if(tn < 250){                                   // загрузка: вес на опорную, корпус закручивается назад
+        b.twist.set(-0.5 - .14 * pw, 200, 24);
+        b.lean.set(-0.17 - .16 * pw, 170, 22);
         b.hy.set(HIP_Y + 3, 200, 25);
-        footTo(b, 1, b.base - 16 * f, 200, 24);
+        b.hx.set(b.base - (2 + 4 * pw) * f, 150, 21);   // таз уводится с линии удара
+        footTo(b, 1, b.base - (12 + wd * 1.5) * f, 200, 24);   // отвод бьющей ноги растёт с силой
         handTo(b, 0, n.x + 8 * f, n.y - 2, 220, 25);
         handTo(b, 1, n.x + 2 * f, n.y - 4, 220, 25);
-      } else if(t < 790){                            // нога выносится, корпус отклоняется ей в противовес
+      } else if(tn < 395){                            // подбор: колено к груди, стопа собрана под таз
+        b.twist.set(-0.15, 230, 24);
+        b.lean.set(-0.30, 200, 22);
+        b.hy.set(HIP_Y, 240, 25);
+        footToXY(b, 1, b.J.hip.x + 9 * f, b.J.hip.y - 3, 480, 30);
+        handTo(b, 0, n.x + 11 * f, n.y + 2, 230, 25);
+        handTo(b, 1, n.x - 9 * f, n.y - 3, 230, 25);
+      } else if(tn < 790){                            // выхлёст по дуге из подбора в цель
         p = targetPoint(i, rec);
         var hiK = HIP_Y + (kl === 'head' ? -7 : 1);
         var kx = lungeLeg(b, p, hiK, kl === 'head' ? 22 : 30);
@@ -2319,11 +2460,12 @@ function driveActor(i, t, rec){
         b.hx.set(kx, 240, 23);
         b.twist.set(0.8, 300, 22);
         b.lean.set(kl === 'head' ? -0.44 : -0.22, 250, 21);
-        footToXY(b, 1, p.x, p.y, 900, 39);
+        var kFrom = {x:kx + 9 * f, y:hiK - 3};
+        arcFoot(b, 1, kFrom, p, (tn - 395) / 125, -30 * f, 900, 39);
         footTo(b, 0, kx + 5 * f, 220, 24);           // опорная уходит под таз
         handTo(b, 0, n.x + 12 * f, n.y + 5, 230, 25);   // руки разводятся на равновесие
         handTo(b, 1, n.x - 14 * f, n.y - 2, 230, 25);
-      } else if(t < 1160){                           // нога возвращается на настил
+      } else if(tn < 1160){                           // нога возвращается на настил
         b.twist.set(0, 240, 24);
         footToXY(b, 1, b.base - 12 * f, FLOOR, 420, 30);
       }
@@ -2335,7 +2477,16 @@ function driveActor(i, t, rec){
       break;
 
     case 'spinLand':
-      if(t < 290){                                   // колено собирается к груди, разворот доходит
+      if(tn < 150){                                   // отвод: нога уходит назад, разворот начинается
+        b.charge = 'spin';
+        b.turned = 1;
+        b.twist.set(0.9, 220, 23);
+        b.lean.set(-0.14, 200, 22);
+        b.hy.set(HIP_Y + 3, 230, 25);
+        footTo(b, 1, b.base - (10 + wd * .8) * f, 230, 25);    // самый тяжёлый удар — самый длинный отвод
+        handTo(b, 0, n.x + 4 * f, n.y + 2, 250, 26);
+        handTo(b, 1, n.x - 6 * f, n.y, 250, 26);
+      } else if(tn < 290){                            // колено собирается к груди, разворот доходит
         b.charge = 'spin';
         b.turned = 1;
         b.twist.set(1.35, 240, 22);
@@ -2345,7 +2496,7 @@ function driveActor(i, t, rec){
         footToXY(b, 1, b.base - 3 * f, FLOOR - 30, 620, 30);   // подобрано, а не отставлено назад
         handTo(b, 0, n.x + 1 * f, n.y + 5, 250, 26);
         handTo(b, 1, n.x - 4 * f, n.y + 3, 250, 26);
-      } else if(t < 820){
+      } else if(tn < 820){
         /* Удар. Главное здесь — качели: корпус складывается вперёд-вниз почти
            в горизонталь, голова уходит вниз и от цели, нога уходит вверх на
            цель, и вместе они лежат на одной прямой через таз. Опорная нога
@@ -2359,12 +2510,16 @@ function driveActor(i, t, rec){
         b.twist.set(1.5, 330, 21);
         b.lean.set(kl === 'head' ? -1.18 : -0.72, 210, 20);
         b.head.set(kl === 'head' ? 0.62 : 0.40, 200, 16);      // смотрит на цель из-под себя
-        footToXY(b, 1, p.x, p.y, 1050, 40);
+        /* Вертушка — самый круговой удар в игре, а шла почти по прямой
+           (замер: отклонение 0.079 при пути 76 единиц). Стопа обходит корпус
+           по дуге из подобранного положения. */
+        var sFrom = {x:sx - 3 * f, y:FLOOR - 30};
+        arcFoot(b, 1, sFrom, p, (tn - 290) / 230, -34 * f, 1050, 40);
         footTo(b, 0, sx - 1 * f, 240, 24);
         handTo(b, 0, n.x - 7 * f, n.y + 11, 240, 25);
         handTo(b, 1, n.x - 13 * f, n.y + 7, 240, 25);
         b.charge = false;
-      } else if(t < 1220){                           // раскладывается обратно в стойку
+      } else if(tn < 1220){                           // раскладывается обратно в стойку
         b.twist.set(0, 240, 24);
         b.lean.set(0.02, 190, 21);
         b.head.set(0, 240, 17);
@@ -2374,7 +2529,7 @@ function driveActor(i, t, rec){
       break;
 
     case 'block':
-      if(t > 90 && t < 980){                         // обе перчатки к лицу, локти внутрь
+      if(tn > 90 && tn < 980){                         // обе перчатки к лицу, локти внутрь
         handTo(b, 0, n.x + 5.5 * f, n.y - 3.5, 330, 27);
         handTo(b, 1, n.x - 0.5 * f, n.y - 4.5, 330, 27);
         b.lean.set(0.12, 210, 24); b.hy.set(HIP_Y + 2.5, 220, 26);
@@ -2382,7 +2537,7 @@ function driveActor(i, t, rec){
       break;
 
     case 'bblock':
-      if(t > 90 && t < 980){                         // локти вниз, перчатки закрывают низ
+      if(tn > 90 && tn < 980){                         // локти вниз, перчатки закрывают низ
         handTo(b, 0, n.x + 7 * f, n.y + 14, 330, 27);
         handTo(b, 1, n.x + 1 * f, n.y + 15, 330, 27);
         b.lean.set(0.20, 210, 24); b.hy.set(HIP_Y + 5, 220, 26);
@@ -2390,7 +2545,7 @@ function driveActor(i, t, rec){
       break;
 
     case 'slip':
-      if(t > 100 && t < 980){                        // присед: колени сгибает ИК, ступни на месте
+      if(tn > 100 && tn < 980){                        // присед: колени сгибает ИК, ступни на месте
         b.hy.set(HIP_Y + 14, 250, 25);
         b.lean.set(0.30, 210, 23);
         handTo(b, 0, n.x + 6 * f, n.y + 1, 270, 26);
@@ -2399,7 +2554,7 @@ function driveActor(i, t, rec){
       break;
 
     case 'step':
-      if(t > 90 && t < 1000){                        // разрыв дистанции
+      if(tn > 90 && tn < 1000){                        // разрыв дистанции
         b.hx.set(b.base - 13 * f, 200, 23);
         footTo(b, 0, b.base - 3 * f, 210, 24); footTo(b, 1, b.base - 23 * f, 210, 24);
         b.lean.set(-0.11, 170, 22);
@@ -2407,7 +2562,7 @@ function driveActor(i, t, rec){
       }
       break;
   }
-  if(b.charge === 'cross' && c.id === 'cross' && t >= 560) applyCharge(b);
+  if(b.charge === 'cross' && c.id === 'cross' && tn >= 560) applyCharge(b);
 }
 
 /* Тяжёлый ли это момент: только на них передаём тело физике.
@@ -4482,13 +4637,13 @@ function frame(now){
         sndWhoosh(sc.id === 'jab' ? .8 : (sc.id === 'crossLand' ? 1.25 : 1));
       }
     }
-    if(!seq.hit && seq.t >= T_IMPACT){
+    if(!seq.hit && seq.t >= seq.imp){
       seq.hit = true;
       applyImpact(seq.rec);
       for(var q = 0; q < 2; q++){ disp[q].hp = seq.rec.hp[q]; disp[q].st = seq.rec.st[q]; }
       paintHud(true);
     }
-    if(!seq.posDone && seq.t >= T_IMPACT + 160){
+    if(!seq.posDone && seq.t >= seq.imp + 160){
       seq.posDone = true;
       var ra = seq.rec.after;
       if(ra && (ra.pos !== RP.pos || ra.top !== RP.top)){
@@ -4500,7 +4655,7 @@ function frame(now){
       if(ra) RP.sub = ra.sub || null;
     }
     if(seqDark && seq.t >= seqDark){ seqDark = 0; darkT = .42; }
-    if(!seq.koDone && seq.t >= T_IMPACT + 240){
+    if(!seq.koDone && seq.t >= seq.imp + 240){
       seq.koDone = true;
       var brk = seq.rec.broke;
       for(var z = 0; z < 2; z++) if(seq.rec.ko[z] && !B[z].down){
@@ -4691,9 +4846,10 @@ function playRound(rec, done){
   rec._air = [airPoint(0, rec), airPoint(1, rec)];
   if(rec.mma) setRP(rec.before.pos, rec.before.top, rec.before.sub);
   drawOrder = (rec.out[0].dmg || 0) >= (rec.out[1].dmg || 0) ? [1, 0] : [0, 1];
-  seq = {t:0, rec:rec, hit:false, swung:false, koDone:false, posDone:false, winDone:false,
-         winAt:T_IMPACT + (rec.tap >= 0 ? 1500 : 900),
-         end:(phase === 'replay' ? REPLAY_END : SEQ_END), done:done};
+  var IMP = impactMs(rec);                       // момент попадания у этого раунда
+  seq = {t:0, rec:rec, imp:IMP, hit:false, swung:false, koDone:false, posDone:false, winDone:false,
+         winAt:IMP + (rec.tap >= 0 ? 1500 : 900),
+         end:(phase === 'replay' ? REPLAY_END : SEQ_END) + (IMP - T_IMPACT), done:done};
   animating = true;
 }
 
@@ -4721,6 +4877,7 @@ function settle(dt){
   for(var i = 0; i < 2; i++){
     var b = B[i], k;
     bodyMech(b);
+    limbMark(b);                                   // отметка для предохранителя на следующий кадр
     b.hx.step(dt); b.hy.step(dt); b.lean.step(dt); b.head.step(dt); b.twist.step(dt); b.pelvis.step(dt);
     b.bend.step(dt); b.turn3.step(dt);
     for(k = 0; k < 2; k++){ b.hand[k].x.step(dt); b.hand[k].y.step(dt); b.foot[k].step(dt); b.footY[k].step(dt); }
