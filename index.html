@@ -1215,6 +1215,7 @@ function Boxer(i){
   this.charge = false; this.down = false; this.tired = false; this.winded = false; this.rocked = false;
   this.win = null; this.mood = 0; this.tapping = 0; this.broke = null;
   this.turned = 0;                              // 0 — лицом к сопернику, 1 — спиной
+  this.flexA = null; this.flexL = null;         // сторона сгиба локтей и коленей, null — по взгляду
   this.J = null;
   this.solve();
 }
@@ -1228,7 +1229,7 @@ Boxer.prototype.reset = function(){
   this.footY[0].reset(FLOOR); this.footY[1].reset(FLOOR);
   this.charge = false; this.down = false; this.tired = false; this.winded = false; this.rocked = false;
   this.win = null; this.mood = 0; this.tapping = 0; this.broke = null;
-  this.turned = 0;
+  this.turned = 0; this.flexA = null; this.flexL = null;
   this.trail = [[], []];
   this.solve();
   this.hand[0].x.reset(this.J.neck.x + 8 * f); this.hand[0].y.reset(this.J.neck.y - 1);
@@ -1275,7 +1276,11 @@ Boxer.prototype.solve = function(){
     var h = {x:this.hand[k].x.x, y:this.hand[k].y.x};
     /* Перелом: сустав выгибается в обратную сторону. Это и есть весь эффект —
        знак сгиба у одной конечности инвертирован, остальное делает поза. */
-    var ba = f > 0 ? 1 : -1;
+    /* Сторона сгиба берётся из направления взгляда. Для стоящего это верно,
+       для лежащего на спине — нет: локоть и колено выгибаются не в ту
+       сторону. Поза может задать сторону сама; по умолчанию null и всё
+       работает как прежде. */
+    var ba = this.flexA != null ? this.flexA : (f > 0 ? 1 : -1);
     if(bk && bk.limb === 'arm' && bk.k === k) ba = -ba;
     var e = ik(sh[k].x, sh[k].y, h.x, h.y, UPARM, FOREARM, ba);
     arms.push({sh:sh[k], el:{x:e.x, y:e.y}, hand:{x:e.ex, y:e.ey}});
@@ -1287,7 +1292,7 @@ Boxer.prototype.solve = function(){
     var spread = (k === 0 ? 2 : -2) * (1 + tn * 3.2);
     var hipK = {x:hip.x + fw.x * (spread + pv * (k === 0 ? 3.4 : -3.4)), y:hip.y + 1};
     var ft = {x:this.foot[k].x, y:this.footY[k].x};
-    var bl = f > 0 ? -1 : 1;
+    var bl = this.flexL != null ? this.flexL : (f > 0 ? -1 : 1);
     if(bk && bk.limb === 'leg' && bk.k === k) bl = -bl;
     var kn = ik(hipK.x, hipK.y, ft.x, ft.y, THIGH, SHIN, bl);
     legs.push({hip:hipK, knee:{x:kn.x, y:kn.y}, foot:{x:kn.ex, y:kn.ey}});
@@ -1367,9 +1372,12 @@ function lungeLeg(b, p, hipY, sep){
    состояния GR: повтор боя и пересмотр раунда читают позицию из записи,
    иначе сцена показала бы не тот бой, который был.
    ========================================================================= */
-var RP = {pos:'stand', top:-1, tk:1, tf:0, tm:0, land:false};
+var RP = {pos:'stand', top:-1, tk:1, tf:0, tm:0, land:false, sub:null};
 function onGround(){ return RP.pos !== 'stand' && RP.pos !== 'clinch'; }
-function setRP(pos, top){ RP.pos = pos; RP.top = top; RP.tk = 1; RP.tm = 0; RP.land = true; }
+/* sub — какой приём сейчас держат: {by, kind, tight}. Приходит из записи
+   раунда, поэтому повтор показывает то же удержание, что живой бой. */
+function setRP(pos, top, sub){ RP.pos = pos; RP.top = top; RP.tk = 1; RP.tm = 0; RP.land = true;
+  RP.sub = sub || null; }
 
 /* Переход между позициями. Раньше позиция менялась мгновенно, и пружины
    просто переносили тела из одной расстановки в другую — со стороны это
@@ -1415,8 +1423,11 @@ var GPOSE = {
          bBend:-0.18, tBend: 0.18, bTurn:0.20, tTurn:0.50},
   mount:{bLean:-1.52, bHy:5,  bFoot:[23, 19], bFy:[0, 1],   tOff: -3, tLean:0.08, tHy:20,
          bBend:-0.14, tBend: 0.12, bTurn:0.25, tTurn:0.80},
-  back: {bLean: 0.44, bHy:18, bFoot:[13,  8], bFy:[0, 0],   tOff:-17, tLean:-0.10, tHy:13,
-         bBend: 0.22, tBend: 0.14, bTurn:0.25, tTurn:0.45}
+  /* back: грудь атакующего ложится на спину, поэтому корпуса сведены (tOff
+     −10, а не −17: при −17 между ними была дыра в полкорпуса) и атакующий
+     наклонён вперёд над спиной, а не откинут назад. */
+  back: {bLean: 0.44, bHy:18, bFoot:[13,  8], bFy:[0, 0],   tOff:-13, tLean: 0.34, tHy:25,
+         bBend: 0.22, tBend: 0.10, bTurn:0.25, tTurn:0.45}
 };
 var GCX = 84;                                  // середина партера на настиле
 
@@ -1467,8 +1478,8 @@ function driveGround(b){
       /* Руки нижнего дерутся с рукой на горле — у своей же шеи, а не над
          головой: прежняя цель уводила их за затылок и связывала в узел. */
       var ch = O.arms[0].hand, cel = O.arms[0].el;
-      graspTo(b, 0, ch.x - 2 * bf, ch.y + 6, 180, 24);            // держит предплечье, а не своё лицо
-      graspTo(b, 1, (ch.x + cel.x) / 2, (ch.y + cel.y) / 2 + 7, 180, 24);
+      graspTo(b, 0, (ch.x + cel.x) / 2, (ch.y + cel.y) / 2 + 2, 180, 24);   // обеими за предплечье на горле
+      graspTo(b, 1, cel.x + 2 * bf, cel.y + 4, 180, 24);
       hookTo(b, 0, bx + g.bFoot[0] * bf, FLOOR - g.bFy[0], 160, 23);
       hookTo(b, 1, bx + g.bFoot[1] * bf, FLOOR - g.bFy[1], 160, 23);
     } else if(pos === 'guard'){
@@ -1485,6 +1496,7 @@ function driveGround(b){
       hookTo(b, 0, bx + (g.bFoot[0] + w1 * 1.6) * bf, FLOOR - g.bFy[0], 160, 23);
       hookTo(b, 1, bx + (g.bFoot[1] + w2 * 1.4) * bf, FLOOR - g.bFy[1], 160, 23);
     }
+    driveSubHold(b, O, bf);                      // приём держится поверх позы позиции
     return;
   }
 
@@ -1500,10 +1512,15 @@ function driveGround(b){
   if(pos === 'back'){
     /* Заход на удушение: предплечье ложится под подбородок, вторая рука
        замыкает захват, а стопы крюками заходят изнутри бёдер соперника. */
-    graspTo(b, 0, O.neck.x - 7 * bf, O.neck.y + 3, 175, 24);      // предплечье поперёк горла
-    graspTo(b, 1, O.neck.x - 1 * bf, O.neck.y + 8, 175, 24);      // вторая замыкает захват
+    /* Предплечье идёт ПОПЕРЁК ГОРЛА СПЕРЕДИ — кисть уходит ЗА шею по ходу
+       взгляда соперника. Прежняя цель (−7 по bf) ставила её позади шеи, со
+       своей стороны: рука висела у соперника за плечом, и удушения на
+       картинке не было вовсе. */
+    graspTo(b, 0, O.neck.x + 6 * bf, O.neck.y + 2.5, 175, 24);    // предплечье поперёк горла
+    graspTo(b, 1, b.J.sh[0].x - 2 * bf, b.J.sh[0].y - 2, 175, 24); // вторая замыкает захват у своего плеча
     hookTo(b, 0, O.legs[0].knee.x + 2 * bf, O.legs[0].knee.y + 2, 160, 23);
-    footToXY(b, 1, tx - 6 * f, FLOOR, 160, 23);
+    hookTo(b, 1, O.legs[1].knee.x - 1 * bf, O.legs[1].knee.y + 3, 160, 23);
+    driveSubHold(b, O, bf);
     return;
   }
   var chest = mixPt(O.hip, O.neck, .6);
@@ -1523,6 +1540,148 @@ function driveGround(b){
     graspTo(b, 1, nk.x - 10 * bf, nk.y + 1 + w2 * 1.5, 175, 24);   // вторая взведена у плеча
     footToXY(b, 0, O.hip.x + 11 * bf, FLOOR, 160, 23);             // колени прижаты к рёбрам
     footToXY(b, 1, O.hip.x - 7 * bf, FLOOR, 160, 23);
+  }
+  driveSubHold(b, O, bf);
+}
+
+/* =========================================================================
+   УДЕРЖАНИЕ ПРИЁМА
+   -------------------------------------------------------------------------
+   Раньше приёма на картинке не существовало вовсе. SUBMOVE — это рывок
+   туда-обратно: цель кисти интерполируется коэффициентом, который к концу
+   анимации падает к нулю, и рука уезжает обратно к своей шее. Всё остальное
+   время — выбор действия, «дожать», тугость 2 из 3 — пара стояла в чистой
+   позе позиции, и понять по экрану, что на ком-то висит рычаг локтя, было
+   нельзя.
+   Здесь приём ДЕРЖИТСЯ: поза накладывается поверх позиции, пока RP.sub жив,
+   и затягивается вместе с тугостью. Данные приходят из записи раунда,
+   поэтому повтор показывает ровно то же, что живой бой.
+   ========================================================================= */
+function driveSubHold(b, O, bf){
+  var sb = RP.sub; if(!sb) return;
+  var att = sb.by === b.i;                       // я держу приём или меня держат
+  var k = .72 + Math.min(3, sb.tight) * .09;     // 1 из 3 свободнее, 3 из 3 туже
+  var f = b.face, J = b.J;
+  var kind = sb.kind;
+
+  if(kind === 'rnc'){
+    if(att){
+      /* Предплечье ложится ПОПЕРЁК ГОРЛА СПЕРЕДИ: кисть уходит за шею по ходу
+         взгляда соперника. Прежняя цель ставила её позади шеи, со своей
+         стороны, и удушения не получалось совсем. */
+      graspTo(b, 0, O.neck.x + (5 + 3 * k) * bf, O.neck.y + 2.5, 210, 25);
+      graspTo(b, 1, J.sh[0].x - 2 * bf, J.sh[0].y - 3, 205, 25);   // вторая замыкает захват у своего плеча
+      /* Крюки заходят изнутри бёдер у пояса, а не к коленям: по коленям
+         сидящего ноги задирались через грудь. */
+      hookTo(b, 0, mixPt(O.hip, O.legs[0].knee, .55).x + 2 * bf, mixPt(O.hip, O.legs[0].knee, .55).y + 3, 175, 24);
+      hookTo(b, 1, mixPt(O.hip, O.legs[1].knee, .40).x, mixPt(O.hip, O.legs[1].knee, .40).y + 5, 175, 24);
+      b.lean.set(b.lean.t + .12 * k, 150, 22);
+      /* Подбородок над плечом соперника. Наклон подобран замером: при 0.62
+         голова душащего уходила ровно за чужой затылок, два черепа
+         сливались в один и удушение читалось как один боец. При −0.25
+         между центрами голов 12.7 при радиусе 5.3 — голова видна целиком. */
+      b.head.set(-0.25, 190, 18);
+      b.bend.set(b.bend.t + .10 * k, 160, 22);
+    } else {
+      var ch = O.arms[0].hand, cel = O.arms[0].el;
+      graspTo(b, 0, (ch.x + cel.x) / 2, (ch.y + cel.y) / 2 + 2, 195, 25);  // обе руки дерутся с предплечьем
+      graspTo(b, 1, cel.x + 2 * bf, cel.y + 4, 195, 25);
+      b.head.set(b.head.t - .26 * k, 200, 18);                      // подбородок задран
+      b.lean.set(b.lean.t - .16 * k, 150, 22);
+    }
+    return;
+  }
+
+  if(kind === 'armbar'){
+    if(att){
+      /* Рычаг локтя: атакующий ЛОЖИТСЯ НА СПИНУ, таз у плеча соперника, обе
+         ноги перекинуты через него — одна через грудь, вторая через шею, —
+         а вытянутая рука зажата между бёдер и прижата запястьем к своей
+         груди. Без этого на экране был просто клубок. */
+      /* Оба тела должны лежать НАВСТРЕЧУ, головами в разные стороны: пока
+         атакующий лежал вдоль соперника, он просто накрывал его собой и
+         рычаг было не разглядеть. Направление берём от оси соперника, а не
+         от взгляда — так поза верна из любой позиции. */
+      var oux = O.up.x, sgn = oux >= 0 ? 1 : -1;
+      b.flexA = -1; b.flexL = 1;
+      b.hx.set(O.sh[0].x - oux * 3, 130, 20);      // таз вплотную к плечу соперника
+      b.hy.set(FLOOR - 6, 150, 21);
+      /* Голова атакующего уходит ЗА голову соперника, а не поперёк его тела:
+         при встречной укладке они лежали друг на друге и силуэт превращался
+         в кашу. Так два тела вытягиваются в линию и перекрываются только
+         плечами — ровно как на фотографии рычага сбоку. */
+      b.lean.set(1.45 * sgn * f, 130, 20);
+      b.bend.set(0.14, 150, 22);
+      b.turn3.set(0.36, 150, 22);
+      b.head.set(0.34, 190, 18);
+      b.solve();
+      /* Одна нога через грудь, вторая через шею и лицо — это и есть рычаг. */
+      var ch2 = mixPt(O.hip, O.neck, .78);
+      hookTo(b, 0, ch2.x, ch2.y - 5 * k, 190, 24);
+      hookTo(b, 1, O.head.x, O.head.y + 1, 190, 24);
+      var wr = O.arms[0].hand, myc = b.J.chest;
+      graspTo(b, 0, myc.x - 2 * f, myc.y + 1, 215, 25);   // запястье соперника прижато к своей груди
+      graspTo(b, 1, myc.x + 2 * f, myc.y + 4, 215, 25);
+    } else {
+      /* Соперник развёрнут на бок, рука вытянута к груди атакующего. */
+      /* Рука тянется к груди атакующего — она там и зажата. */
+      var ash = B[sb.by].J.chest;
+      graspTo(b, 0, ash.x, ash.y + 1, 215, 25);
+      graspTo(b, 1, O.hip.x, O.hip.y - 3, 200, 25);      // вторая пытается сцепиться
+      b.turn3.set(0.42, 150, 22);
+      b.lean.set(b.lean.t + .10 * k, 145, 21);
+    }
+    return;
+  }
+
+  if(kind === 'tri'){
+    if(att){
+      b.flexL = 1;
+      hookTo(b, 0, O.neck.x + 3 * bf, O.neck.y - 2 * k, 195, 25);   // голень поперёк шеи
+      hookTo(b, 1, O.head.x - 4 * bf, O.head.y - 5, 190, 24);       // вторая замыкает восьмёрку
+      graspTo(b, 0, O.head.x, O.head.y + 3, 205, 25);               // руки тянут голову вниз
+      graspTo(b, 1, O.head.x - 5 * bf, O.head.y + 5, 205, 25);
+      b.lean.set(b.lean.t + .18 * k, 150, 22);
+    } else {
+      graspTo(b, 0, O.legs[0].knee.x, O.legs[0].knee.y + 3, 195, 25);
+      b.head.set(b.head.t + .22 * k, 200, 18);
+      b.bend.set(b.bend.t + .16 * k, 160, 22);
+    }
+    return;
+  }
+
+  if(kind === 'kimura'){
+    if(att){
+      /* Кимура: рука соперника согнута под прямым углом и заведена за спину,
+         кисти держат его запястье и своё предплечье — «восьмёрка». */
+      var ow = O.arms[0].hand, oe = O.arms[0].el;
+      graspTo(b, 0, ow.x - 3 * bf, ow.y - 5 * k, 215, 25);
+      graspTo(b, 1, oe.x - 1 * bf, oe.y + 2, 215, 25);
+      b.twist.set(.34 * k, 195, 25);
+      b.lean.set(b.lean.t + .14 * k, 150, 22);
+    } else {
+      b.twist.set(-.28 * k, 190, 25);
+      b.bend.set(b.bend.t - .18 * k, 160, 22);
+    }
+    return;
+  }
+
+  if(kind === 'leglock'){
+    if(att){
+      /* Узел на ногу: стопа соперника зажата под мышкой, руки обхватывают
+         щиколотку, свои ноги треугольником вокруг его бедра. */
+      b.flexA = -1;
+      var of = O.legs[0].foot, ok2 = O.legs[0].knee;
+      graspTo(b, 0, of.x - 2 * bf, of.y - 2, 215, 25);
+      graspTo(b, 1, mixPt(of, ok2, .45).x, mixPt(of, ok2, .45).y + 2, 215, 25);
+      hookTo(b, 0, ok2.x + 4 * bf, ok2.y - 3 * k, 185, 24);
+      b.lean.set(b.lean.t - .30 * k, 145, 21);
+      b.hy.set(b.hy.t + 4 * k, 175, 23);
+    } else {
+      b.lean.set(b.lean.t - .12 * k, 145, 21);
+      graspTo(b, 0, O.hip.x - 4 * bf, O.hip.y - 2, 195, 25);
+    }
+    return;
   }
 }
 
@@ -1730,6 +1889,7 @@ function driveMMA(i, t, rec){
 }
 
 function driveGuard(b){
+  b.flexA = null; b.flexL = null;               // стоящему сторона сгиба считается по взгляду
   if(game === 'mma' && RP.pos !== 'stand'){
     if(RP.pos === 'clinch') driveClinchPose(b); else driveGround(b);
     return;
@@ -1786,17 +1946,42 @@ function applyCharge(b){                        // заряженный удар
   footTo(b, 1, b.base - 15 * f, 170, 24);
 }
 
-function driveDown(b){                          // нокдаун: тело оседает на настил
+/* Тело в отключке. Раньше таз висел в десяти единицах над настилом, обе
+   ступни были прибиты к полу, и колени торчали вверх — человек так не лежит.
+   Теперь боец лежит на спине: таз и плечи на настиле, голова завалена набок,
+   одна рука отведена с мягко согнутым локтем, вторая у бедра, одна нога
+   прямая, у второй колено чуть завалено внутрь.
+   Все цели держатся ВНУТРИ длины конечности, а не на пределе: на пределе
+   двухзвенная ИК выпрямляет руку в мёртвую палку. */
+function driveDown(b){
   var f = b.face;
-  b.bend.set(-0.26, 110, 18); b.turn3.set(0.18, 120, 20);   // спина проседает, а не остаётся доской
-  b.hy.set(FLOOR - 10, 95, 15);
-  b.hx.set(b.base + 5 * f, 60, 14);
-  b.lean.set(-1.16, 62, 12);
-  b.head.set(-0.30, 95, 13);
-  footTo(b, 0, b.J.hip.x + 16 * f, 80, 16);
-  footTo(b, 1, b.J.hip.x - 4 * f, 80, 16);
-  handTo(b, 0, b.J.hip.x - 6 * f, FLOOR - 4, 80, 17);
-  handTo(b, 1, b.J.hip.x - 14 * f, FLOOR - 2, 80, 17);
+  /* Лежащему на спине сторона сгиба по взгляду даёт вывернутые локти и
+     колени — задаём её явно. */
+  /* Знаки подобраны замером: при них локоть ложится на мат, а колено
+     остаётся чуть выше таза — как у лежащего человека, а не задрано вверх
+     и не утоплено под настил. */
+  b.flexA = -1; b.flexL = 1;
+  b.bend.set(0.13, 110, 18);                    // грудь чуть раскрыта, спина не доска
+  b.turn3.set(0.30, 120, 20);                   // разворот к зрителю: видно, что лежит на спине
+  b.hy.set(FLOOR - 4.5, 95, 15);                // таз на настиле, а не в воздухе
+  b.hx.set(b.base, 60, 14);
+  b.lean.set(-1.49, 62, 12);                    // корпус горизонтально
+  b.head.set(0.34, 95, 13);                     // голова завалена набок
+  b.twist.set(0.16, 150, 21);
+  /* Куда «вниз по телу» — считаем от оси корпуса, а не от направления
+     взгляда. По взгляду ноги уходили в ту же сторону, что и голова, и тело
+     складывалось пополам. J.up смотрит от таза к голове, значит ноги идут
+     против него. */
+  var J = b.J, ux = J.up.x, hp = J.hip;
+  /* Расстояния подобраны замером высоты колена и локтя над настилом. Ноги
+     почти вытянуты: сильно согнутая нога уводит колено на десяток единиц от
+     оси, и лежащий выглядит поджавшим колени к груди. */
+  footToXY(b, 0, hp.x - ux * 36.5, FLOOR - 2.2, 80, 16);   // нога вытянута
+  footToXY(b, 1, hp.x - ux * 34.5, FLOOR - 3.0, 80, 16);   // вторая чуть согнута
+  /* Одна рука отброшена на мат, вторая упала поперёк груди: обе вдоль тела
+     на одной высоте складывались в один комок посреди корпуса. */
+  handTo(b, 0, J.sh[0].x - ux * 26.5, FLOOR - 4.5, 80, 17);
+  handTo(b, 1, J.sh[1].x - ux * 17.0, FLOOR - 10.0, 80, 17);
   if(b.broke){                                  // здоровая рука тянется к суставу
     var jt = b.broke.limb === 'arm' ? b.J.arms[0].el : b.J.legs[0].knee;
     handTo(b, 1, jt.x - 2 * f, jt.y - 3, 130, 20);
@@ -1871,13 +2056,17 @@ function startWin(w){
 function driveWin(b){
   var w = b.win, P = WIN_POSE[w.pose], id = P.id, t = w.t;
   var f = b.face0, o = B[1 - b.i], e = clamp(t / 650, 0, 1), n;
-  b.face = f; b.turned = 0;
+  /* Опираемся на НАРИСОВАННЫЙ скелет лежащего, а не на его позный. Пока он
+     под физикой, позный стоит в полный рост, и победитель ставил ногу на
+     призрака — на сорок с лишним единиц выше настила. */
+  var oJ = o.drawJ || poseOf(o);
+  b.face = f; b.turned = 0; b.flexA = null; b.flexL = null;
   b.twist.set(0, 170, 24);
 
   if(id === 'foot_arm' || id === 'foot_shrug'){
     /* Ставит ногу на поверженного и выпрямляется над ним. Опора идёт по
        его тазу, поэтому поза держится, куда бы тот ни упал. */
-    b.base = o.J.hip.x - 17 * f;
+    b.base = oJ.hip.x - 17 * f;
     b.hx.set(b.base, 110, 20);
     b.hy.set(HIP_Y - 2 + Math.sin(t / 430) * .8, 150, 22);
     b.lean.set(id === 'foot_arm' ? -0.12 : -0.10, 130, 20);
@@ -1897,7 +2086,7 @@ function driveWin(b){
       handTo(b, 1, n.x - (4 + 15 * e) * f, n.y + 11, 165, 23);
       b.mood = 1;
     }
-    footToXY(b, 0, o.J.hip.x - 2 * f, o.J.hip.y - 7, 150, 22);
+    footToXY(b, 0, oJ.hip.x - 2 * f, oJ.hip.y - 7, 150, 22);
     footTo(b, 1, b.base - 10 * f, 160, 23);
     return;
   }
@@ -1962,7 +2151,7 @@ function driveWin(b){
     /* Присел рядом и заглядывает в лицо. Садиться прямо НАД головой нельзя:
        корпус победителя целиком закрывает лежащего, и вся соль пропадает —
        поэтому он держится на отлёте и наклоняется к ней сверху-сбоку. */
-    b.base = o.J.head.x - 30 * f;
+    b.base = oJ.head.x - 30 * f;
     b.hx.set(b.base, 105, 19);
     b.hy.set(FLOOR - 24 - Math.sin(t / 500) * 1.2, 130, 20);
     b.lean.set(0.44 * e, 120, 20);
@@ -1971,7 +2160,7 @@ function driveWin(b){
     b.head.set(0.40, 190, 17);
     b.solve(); n = b.J.neck;
     handTo(b, 0, n.x + 11 * f, n.y + 19, 160, 23);            // локоть на колене
-    graspTo(b, 1, o.J.head.x - 11 * f, o.J.head.y - 9, 160, 23);
+    graspTo(b, 1, oJ.head.x - 11 * f, oJ.head.y - 9, 160, 23);
     footTo(b, 0, b.base + 8 * f, 155, 22);
     footTo(b, 1, b.base - 7 * f, 155, 22);
     b.mood = 1;
@@ -1982,7 +2171,7 @@ function driveWin(b){
     /* Рука указывает НАПРАВЛЕНИЕ вниз-вперёд, а не тычет в конкретную точку:
        стоящий боец физически не достаёт до головы лежащего, и цель на ней
        всё равно обрезалась по длине руки — палец уходил в горизонт. */
-    b.base = o.J.hip.x - 24 * f;
+    b.base = oJ.hip.x - 24 * f;
     b.hx.set(b.base, 110, 20);
     b.hy.set(HIP_Y + 4, 150, 22);
     b.lean.set(0.30 * e, 130, 20);
@@ -1999,7 +2188,7 @@ function driveWin(b){
   }
 
   /* sleep: ложится рядом с поверженным в той же позе — насмешка, а не отдых. */
-  b.base = o.J.hip.x - 30 * f;
+  b.base = oJ.hip.x - 30 * f;
   b.hx.set(b.base, 100, 19);
   b.hy.set(FLOOR - 9, 110, 19);
   b.lean.set(-1.30, 90, 17);
@@ -2032,7 +2221,10 @@ var REPLAY_END = 1060;
 
 function driveActor(i, t, rec){
   var b = B[i], f = b.face, c = rec.choices[i], n = b.J.neck, p, kl = c.lvl || 'head';
-  if(b.rd){ driveGuard(b); return; }
+  /* Под физикой поза ждёт возврата — но ждать она должна В ТОЙ ПОЗЕ, в
+     которую вернётся. У нокаута это лежащий, а не стойка: иначе смешивание
+     в конце тянуло бы тело с настила обратно на ноги. */
+  if(b.rd){ if(b.rd.mode === 'down') driveDown(b); else driveGuard(b); return; }
   if(b.win){ driveWin(b); return; }
   if(b.down){ driveDown(b); return; }
   driveGuard(b);
@@ -2544,8 +2736,26 @@ function updateRd(b, ms){
   var r = b.rag;
   rd.t += ms;
   b.hx.x = r.torso.position.x; b.hx.v = 0;         // поза едет за телом, чтобы возврат был без прыжка
-  if(rd.mode === 'down') return;                    // остаётся лежать, возврата нет
   if(ragSpeed(r) < .55) rd.still += ms; else rd.still = 0;
+  if(rd.mode === 'down'){
+    /* Нокаут раньше оставался под физикой НАВСЕГДА, и всё это время боец был
+       нарисован тряпичной куклой: рука и нога там по одному жёсткому телу,
+       поэтому конечности — идеально прямые палки, корпус — доска без излома
+       и без разворота, а углов не ограничивает ничто. Отсюда и «кучка мусора»
+       с вывернутыми суставами. Механизм плавного возврата в позу уже был
+       написан для оглушения — для нокаута он просто никогда не запускался.
+       Теперь, когда тело улеглось, оно тем же способом переходит в
+       нарисованную вручную позу лежащего. */
+    if(rd.phase === 'sim' && rd.t > 700 && (rd.still > 250 || rd.t > 1800)){
+      rd.phase = 'blend'; rd.blend = 0;
+      b.base = r.torso.position.x;                  // остаётся там, где упал, а не уползает на свою метку
+    }
+    if(rd.phase === 'blend'){
+      rd.blend += ms / 520;
+      if(rd.blend >= 1){ setRagStatic(r, true); b.rd = null; }
+    }
+    return;
+  }
   if(rd.phase === 'sim' && rd.t > 620 && (rd.still > 170 || rd.t > 1350)){
     rd.phase = 'blend'; rd.blend = 0;
     r.sup[0].stiffness = 1; r.sup[0].damping = .08;
@@ -4245,7 +4455,7 @@ function seqExtend(ms){ if(seq) seq.end = Math.max(seq.end, seq.t + ms); }
 function driveIdle(){
   for(var i = 0; i < 2; i++){
     var b = B[i];
-    if(b.rd){ driveGuard(b); continue; }        // телом управляет физика, поза ждёт возврата
+    if(b.rd){ if(b.rd.mode === 'down') driveDown(b); else driveGuard(b); continue; }
     if(b.win){ driveWin(b); continue; }         // победная сцена перекрывает всё
     if(b.down){ driveDown(b); continue; }
     driveGuard(b);
@@ -4285,6 +4495,9 @@ function frame(now){
         startTrans(ra.pos, ra.top);
         seqExtend(TRANS_MS + 220);
       }
+      /* Удержание приёма обновляем отдельно от позиции: приём чаще всего
+         берут БЕЗ смены позиции, и на startTrans полагаться нельзя. */
+      if(ra) RP.sub = ra.sub || null;
     }
     if(seqDark && seq.t >= seqDark){ seqDark = 0; darkT = .42; }
     if(!seq.koDone && seq.t >= T_IMPACT + 240){
@@ -4476,7 +4689,7 @@ function playRound(rec, done){
   crowdLevel(.022);
   clearPops(); parts.length = 0; rays.length = 0; freeze = 0; slowT = 0;
   rec._air = [airPoint(0, rec), airPoint(1, rec)];
-  if(rec.mma) setRP(rec.before.pos, rec.before.top);
+  if(rec.mma) setRP(rec.before.pos, rec.before.top, rec.before.sub);
   drawOrder = (rec.out[0].dmg || 0) >= (rec.out[1].dmg || 0) ? [1, 0] : [0, 1];
   seq = {t:0, rec:rec, hit:false, swung:false, koDone:false, posDone:false, winDone:false,
          winAt:T_IMPACT + (rec.tap >= 0 ? 1500 : 900),
@@ -4487,7 +4700,7 @@ function playRound(rec, done){
 /* мгновенно доиграть раунд до конца — по тапу или при «меньше движения» */
 function snapEnd(rec){
   var i;
-  if(rec.mma && rec.after) setRP(rec.after.pos, rec.after.top);
+  if(rec.mma && rec.after) setRP(rec.after.pos, rec.after.top, rec.after.sub);
   freeze = 0; slowT = 0; parts.length = 0; rays.length = 0; clearPops();
   dark = 0; darkT = 0; cineT = 0; cineFollow = -1; koCardT = 0; cut = null; cutQ = null;
   for(i = 0; i < 2; i++) B[i].gh = [];
@@ -5611,7 +5824,7 @@ function rewatchRound(){
     B[i].rocked = !!(rec.before.rocked && rec.before.rocked[i]);
     disp[i].hp = rec.before.hp[i]; disp[i].st = rec.before.st[i];
   }
-  if(rec.mma) setRP(rec.before.pos, rec.before.top);
+  if(rec.mma) setRP(rec.before.pos, rec.before.top, rec.before.sub);
   for(i = 0; i < 14; i++){ driveIdle(); settle(1 / 60); }
   ragResetAll();
   paintHud(false);
@@ -5623,7 +5836,7 @@ function rewatchRound(){
         B[j].tired = F[j].st < LOW_ST; B[j].winded = F[j].winded; B[j].rocked = !!F[j].rocked;
       }
       restoreFinish();
-      setRP(GR.pos, GR.top);
+      setRP(GR.pos, GR.top, GR.sub);
       syncDisp();
       revealDone = true; render();
     });
@@ -5654,7 +5867,7 @@ function replayNext(){
     B[i].rocked = !!(rec.before.rocked && rec.before.rocked[i]);
     disp[i].hp = rec.before.hp[i]; disp[i].st = rec.before.st[i];
   }
-  if(rec.mma) setRP(rec.before.pos, rec.before.top);
+  if(rec.mma) setRP(rec.before.pos, rec.before.top, rec.before.sub);
   /* Никакого досаживания в стойку: бойцы продолжают из той позы, в которой их
      застал конец прошлого размена, а пружины driveActor доведут их до новой
      цели сами. Прежние 14 кадров settle() возвращали обоих на исходные метки —
@@ -5677,7 +5890,7 @@ function replayStop(){
                               B[i].tired = F[i].st < LOW_ST; B[i].winded = F[i].winded;
                               B[i].rocked = !!F[i].rocked; }
   restoreFinish();
-  setRP(GR.pos, GR.top);
+  setRP(GR.pos, GR.top, GR.sub);
   syncDisp();
   for(var n = 0; n < 40; n++){ driveIdle(); settle(1/60); }
   phase = 'over'; musicPlay('ko'); render();
@@ -5743,7 +5956,7 @@ function beginFight(){
 }
 
 function resetRing(){
-  setRP(GR ? GR.pos : 'stand', GR ? GR.top : -1);
+  setRP(GR ? GR.pos : 'stand', GR ? GR.top : -1, GR ? GR.sub : null);
   clearTimeout(rpTimer); clearTimeout(openT); replay = null; paused = false;
   seq = null; animating = false; skipEl.classList.add('off'); musicStop();
   clearPops(); parts.length = 0; rays.length = 0; cams.length = 0; conf.length = 0; winFx = 0; freeze = 0; slowT = 0; shake = 0; flashA = 0;
