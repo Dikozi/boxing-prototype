@@ -1177,8 +1177,14 @@ Sp.prototype.step = function(dt){
     this.v += ((this.t - this.x) * this.k - this.v * this.d) * h;
     this.x += this.v * h;
   }
+  /* Отметка цели на конец кадра — от неё предохранитель конечностей
+     (limbSet) считает допустимый сдвиг на следующем кадре. Ставится здесь, в
+     самой пружине, а не в одном из циклов: когда она жила в settle(), живой
+     цикл кадра, который шагает пружины сам, её не обновлял, и предохранитель
+     прибивал каждую цель кисти и стопы к месту старта боя. */
+  this.t0 = this.t;
 };
-Sp.prototype.reset = function(v){ this.x = v; this.t = v; this.v = 0; };
+Sp.prototype.reset = function(v){ this.x = v; this.t = v; this.v = 0; this.t0 = v; };
 
 function Boxer(i){
   this.i = i; this.face0 = i === 0 ? 1 : -1; this.face = this.face0; this.base = POS[i];
@@ -1352,21 +1358,14 @@ function arcFoot(b, k, from, to, u, bow, kk, dd){
    замечает, а мгновенные перескоки цели при смене позиции в партере
    (замер давал до 39 градусов на сустав за кадр) сглаживаются. */
 var TELE = 9;
-/* Считаем от цели на НАЧАЛО кадра, а не от предыдущего вызова: за один кадр
-   конечности ставят цель по нескольку раз (сперва driveGuard, потом поверх
-   неё удар), и ограничение «от прошлого вызова» заставляло эти вызовы гасить
-   друг друга — удар переставал доставать до цели. */
+/* Считаем от цели на НАЧАЛО кадра (Sp.t0), а не от предыдущего вызова: за
+   один кадр конечности ставят цель по нескольку раз (сперва driveGuard, потом
+   поверх неё удар), и ограничение «от прошлого вызова» заставляло эти вызовы
+   гасить друг друга — удар переставал доставать до цели. */
 function limbSet(sp, v){
   var b0 = sp.t0 == null ? sp.t : sp.t0, d = v - b0;
   if(d > TELE) v = b0 + TELE; else if(d < -TELE) v = b0 - TELE;
   return v;
-}
-function limbMark(b){
-  var k;
-  for(k = 0; k < 2; k++){
-    b.hand[k].x.t0 = b.hand[k].x.t; b.hand[k].y.t0 = b.hand[k].y.t;
-    b.foot[k].t0 = b.foot[k].t;     b.footY[k].t0 = b.footY[k].t;
-  }
 }
 function handTo(b, k, x, y, kk, dd){
   b.hand[k].x.set(limbSet(b.hand[k].x, x), kk, dd);
@@ -2167,14 +2166,14 @@ function driveWin(b){
     b.solve(); n = b.J.neck;
     if(id === 'foot_arm'){
       handTo(b, 1, n.x + 4 * f, n.y - 31 * e, 150, 22);       // рука в небо
-      handTo(b, 0, n.x + 9 * f, n.y + 9, 170, 24);
+      handTo(b, 0, n.x + 13 * f, n.y - 2 * e, 170, 24);        // вторая на уровне плеча, не висит
       b.mood = 1;                                            // улыбка во всю ширь
     } else {
-      /* Руки разведены в стороны — «и это всё?». Скрещённые на груди в строгом
-         профиль накладывались одна на другую и читались сутулостью: обе кисти
-         оказывались в одной точке. Разведённые дают ясный широкий силуэт. */
-      handTo(b, 0, n.x + (7 + 15 * e) * f, n.y + 14, 165, 23);
-      handTo(b, 1, n.x - (4 + 15 * e) * f, n.y + 11, 165, 23);
+      /* «И это всё?» — обе руки раскинуты ВЫШЕ плеч, локти наружу, ладони
+         к залу. Раньше они расходились ниже плеч и читались опущенными:
+         пользователь дважды сказал, что руки не подняты. */
+      handTo(b, 0, n.x + (9 + 14 * e) * f, n.y - 9 * e, 165, 23);
+      handTo(b, 1, n.x - (6 + 14 * e) * f, n.y - 11 * e, 165, 23);
       b.mood = 1;
     }
     footToXY(b, 0, oJ.hip.x - 2 * f, oJ.hip.y - 7, 150, 22);
@@ -4877,7 +4876,6 @@ function settle(dt){
   for(var i = 0; i < 2; i++){
     var b = B[i], k;
     bodyMech(b);
-    limbMark(b);                                   // отметка для предохранителя на следующий кадр
     b.hx.step(dt); b.hy.step(dt); b.lean.step(dt); b.head.step(dt); b.twist.step(dt); b.pelvis.step(dt);
     b.bend.step(dt); b.turn3.step(dt);
     for(k = 0; k < 2; k++){ b.hand[k].x.step(dt); b.hand[k].y.step(dt); b.foot[k].step(dt); b.footY[k].step(dt); }
