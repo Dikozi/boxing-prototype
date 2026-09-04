@@ -3,7 +3,7 @@
 const { chromium } = require('./pw');
 const FILE = process.argv[2] || 'file://' + require('path').resolve(__dirname, '..', 'index.html');
 const OUT = require('path').join(__dirname, '.out'); require('fs').mkdirSync(OUT, {recursive:true});
-const ID   = process.argv[3] || 'kick';       // удар, либо win:0 / win:1 — победная поза
+const ID   = process.argv[3] || 'kick';       // удар, win:0 / win:1 — победная поза, ko:<удар> — нокдаун
 const TAG  = process.argv[4] || 'now';
 (async()=>{
   const b=await chromium.launch();
@@ -17,12 +17,17 @@ const TAG  = process.argv[4] || 'now';
     if(typeof film!=='undefined'){ film=false; filmTier=0; }
     await new Promise(r=>setTimeout(r,250));
     const win = id.indexOf('win:')===0 ? +id.slice(4) : -1;
-    const A = win>=0 ? ACT.cross : ACT[id];
+    const ko = id.indexOf('ko:')===0 ? id.slice(3) : null;
+    const A = win>=0 ? ACT.cross : ACT[ko || id];
     const rec = win>=0
       ? {round:1,choices:[{id:'cross',lvl:'head'},{id:'jab',lvl:'head'}],
          out:[{type:'atk',dmg:60,mult:1,why:'',ok:true},{type:'def',dmg:0}],
          hp:[100,0],st:[10,10],ko:[false,true],win:{i:0,pose:win},
          before:{hp:[100,60],st:[10,10],pending:[true,false]}}
+      : ko
+      ? {round:1,choices:[{id:ko,lvl:'head'},{id:'step'}],
+         out:[{type:'atk',dmg:A.dmg,mult:1,why:'',ok:true},{type:'def',dmg:0}],
+         hp:[100,0],st:[70,20],ko:[false,true],before:{hp:[100,A.dmg-1],st:[100,40],pending:[null,null]}}
       : {round:1,choices:[{id:id,lvl:'head'},{id:'block'}],
          out:[{type:'atk',dmg:A.dmg,mult:1,why:'',ok:true},{type:'def',dmg:0}],
          hp:[100,80],st:[80,90],ko:[false,false],before:{hp:[100,100],st:[100,100],pending:[null,null]}};
@@ -30,6 +35,7 @@ const TAG  = process.argv[4] || 'now';
     const N=8, shots=[];
     // расписание снимков: удар — до попадания; победа — по ходу сцены
     const times = win>=0 ? [1500,2000,2400,2800,3200,3600,4000,4400]
+                 : ko    ? [IMP, IMP+120, IMP+260, IMP+420, IMP+620, IMP+900, IMP+1300, IMP+1900]
                          : Array.from({length:N},(_,k)=>Math.round(k*IMP/(N-1)));
     playRound(rec,()=>{});
     let k=0;
