@@ -1,0 +1,8 @@
+{
+  "name": "klinch-tools",
+  "private": true,
+  "description": "Пробники «Клинча»: sh tools/check.sh. Playwright той же версии, что в контейнере разработки.",
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}

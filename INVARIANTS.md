@@ -2,7 +2,9 @@
 
 Пороги, установленные замерами. Каждый — ответ на реальную поломку, которую
 глаз ловил позже, чем число. Прогон всего: `sh tools/check.sh` (нужен node
-с Playwright и Chromium). Один пробник: `node tools/live.js`.
+с Playwright и Chromium; `cd tools && npm install` ставит нужную версию).
+Один пробник: `node tools/live.js`. На каждый push в ветку GitHub Actions
+гоняет тот же `check.sh`, и деплой на Pages ждёт зелёного прогона.
 
 ## Правила пробников
 

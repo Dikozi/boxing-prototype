@@ -7,7 +7,7 @@ name: Deploy to Pages
 on:
   push:
     branches: [claude/boxing-game-prototype-6gs9m8]
-    paths: ['index.html', '.github/workflows/pages.yml']
+    paths: ['index.html', 'tools/**', 'INVARIANTS.md', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:
@@ -20,7 +20,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Пробники из tools/ — пороги из INVARIANTS.md. Деплой ждёт зелёного прогона:
+  # красный файл на сайт не попадает.
+  check:
+    name: Пробники
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Playwright
+        working-directory: tools
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Все пробники
+        run: sh tools/check.sh
+
   deploy:
+    needs: check
     runs-on: ubuntu-latest
     environment:
       name: github-pages
