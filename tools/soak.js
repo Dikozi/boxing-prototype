@@ -6,7 +6,7 @@ const FILE = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
   const errs=[]; p.on('pageerror',e=>errs.push('PAGEERROR '+e));
   p.on('console',m=>{ if(m.type()==='error') errs.push('console: '+m.text()); });
   await p.goto(FILE);
-  const stat = {fights:0, ko:0, sub:0, dec:0}; const pos = new Set(); const acts = new Set();
+  const stat = {fights:0, over:0, ko:0, sub:0, dec:0}; const pos = new Set(); const acts = new Set();
   for (let f=0; f<4; f++){
     const mma = f < 3, cpu = f % 2 === 0;
     await p.evaluate(()=>{ replayStop&&0; });
@@ -36,7 +36,7 @@ const FILE = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
     function game_over(s){ return s.ph==='over'; }
     const v = await p.evaluate(()=>({ph:phase, t:document.querySelector('#panel h1')?.textContent||'',
                                      s:document.querySelector('#panel .sub')?.textContent||''}));
-    stat.fights++;
+    stat.fights++; if (v.ph === 'over') stat.over++;
     if (/Сдача/.test(v.s)) stat.sub++; else if (/Нокаут/.test(v.s)) stat.ko++; else stat.dec++;
     console.log(` бой ${f+1} ${mma?'ММА':'бокс'} ${cpu?'vs CPU':'2 игрока'}: ${v.ph} — ${v.t} / ${v.s}`);
     // повтор боя целиком
@@ -55,5 +55,10 @@ const FILE = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
   console.log('позиции:', [...pos].sort().join(' '));
   console.log('действий предложено:', [...acts].length);
   console.log('ERRORS:', errs.length?errs.slice(0,10).join('\n'):'none');
+  /* Бой обязан ДОЙТИ до финала через интерфейс. Раньше пробник смотрел только
+     на ошибки страницы, и застрявший экран (кнопка «В ГОЛОВУ» глохла из-за
+     чужого слушателя) четыре боя подряд считался успехом. */
+  const ok = stat.over === 4 && errs.length === 0;
+  console.log(ok ? '✔ четыре боя доиграны через интерфейс до финала' : '✖ бой не дошёл до финала или есть ошибки: доиграно ' + stat.over + ' из 4');
   await b.close();
 })();

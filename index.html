@@ -5692,15 +5692,19 @@ function screenOpp(){
       : 'Чистый бокс в стойке — правила прежние.') + '</div><div class="spacer"></div>' +
     '<button class="btn gold big" data-go="opp-cpu">🤖 ПРОТИВ CPU</button>' +
     '<div class="lvl"><span>уровень</span>' + ['easy', 'mid', 'hard'].map(function(l){
-      return '<button class="btn lv' + (botLevel === l ? ' on' : '') + '" data-lvl="' + l + '">' + LVL_NAME[l] + '</button>';
+      return '<button class="btn lv' + (botLevel === l ? ' on' : '') + '" data-bot="' + l + '">' + LVL_NAME[l] + '</button>';
     }).join('') + '</div>' +
     '<button class="btn big" data-go="opp-pvp">👥 ДВА ИГРОКА</button>' +
     '<button class="btn ghost" data-go="home">← Назад</button>';
 }
-document.addEventListener('click', function(ev){    // уровень бота: свой слушатель, чтобы не трогать общий
-  var t = ev.target && ev.target.closest ? ev.target.closest('[data-lvl]') : null;
+/* Уровень бота: свой слушатель, чтобы не трогать общий. Атрибут — СВОЙ
+   (data-bot): раньше здесь стоял data-lvl, тот же, что у кнопок «В ГОЛОВУ» и
+   «В КОРПУС», и слушатель в фазе захвата глушил выбор уровня удара — кнопка
+   молча сбрасывала бота на средний и перерисовывала тот же экран. */
+document.addEventListener('click', function(ev){
+  var t = ev.target && ev.target.closest ? ev.target.closest('[data-bot]') : null;
   if(!t) return;
-  ev.stopPropagation(); setBotLevel(t.dataset.lvl); render();
+  ev.stopPropagation(); setBotLevel(t.dataset.bot); render();
 }, true);
 
 /* Выбор бойца. Бюджет характеристик у всех одинаковый, поэтому экран честно
