@@ -2747,6 +2747,7 @@ function driveActor(i, t, rec){
       } else if(tn < 800){                            // всем корпусом: плечо проносит через цель
         p = targetPoint(i, rec);
         handTo(b, 1, p.x, p.y, 1250, 43);
+        handToZ(b, 1, 0, 700, 36);                   // кулак идёт из глубины плеча к линии удара
         var cxx = stepTo(function(){ return lungeX(b, 1, p, 7, 34, 24); });
         b.twist.set(1.15, 340, 22);
         b.lean.set(0.34, 280, 21); b.hx.set(cxx, 215, 23);
@@ -2802,6 +2803,7 @@ function driveActor(i, t, rec){
         b.lean.set(kl === 'head' ? -0.44 : -0.22, 250, 21);
         var kFrom = {x:kx + 9 * f, y:hiK - 3};
         arcFoot(b, 1, kFrom, p, (tn - 395) / 100, -30 * f, 900, 39);
+        footToZ(b, 1, 8 * Math.sin(Math.PI * clamp((tn - 395) / 100, 0, 1)), 900, 40);   // проходит перед корпусом
         stepFoot(b, 0, kx + 5 * f, 300, 26);           // опорная уже стоит, только доводится
         handTo(b, 0, n.x + 12 * f, n.y + 5, 230, 25);   // руки разводятся на равновесие
         handTo(b, 1, n.x - 14 * f, n.y - 2, 230, 25);
@@ -2861,6 +2863,7 @@ function driveActor(i, t, rec){
            по дуге из подобранного положения. */
         var sFrom = {x:sx - 3 * f, y:FLOOR - 30};
         arcFoot(b, 1, sFrom, p, (tn - 290) / 200, -34 * f, 1050, 40);
+        footToZ(b, 1, -8 * Math.sin(Math.PI * clamp((tn - 290) / 200, 0, 1)), 900, 40);   // обходит корпус сзади
         stepFoot(b, 0, sx - 1 * f, 300, 26);
         handTo(b, 0, n.x - 7 * f, n.y + 11, 240, 25);
         handTo(b, 1, n.x - 13 * f, n.y + 7, 240, 25);
@@ -3982,7 +3985,7 @@ function boxerParts(b, out){
   var NEAR = dyn ? zDim(zPart.nearArm) : 1, NEARL = dyn ? zDim(zPart.nearLeg) : 1;
   function put(part, fn){
     var z = (D.ov && D.ov[part] != null) ? D.ov[part] : (dyn ? D.base + 500 + zPart[part] * 10 : D.base + PZ[part]);
-    out.push({z:z, d:fn});
+    out.push({z:z, d:fn, name:part});
   }
   var legOut = !dyn && J.legs[1].foot.y < FLOOR - 5;         // партер/клинч: задняя нога пошла в удар
   var rearOut = !dyn && (J.arms[1].hand.x - J.neck.x) * f > 7;   // партер/клинч: задняя рука вылетела вперёд
