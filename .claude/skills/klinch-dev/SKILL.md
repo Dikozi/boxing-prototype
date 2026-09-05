@@ -45,6 +45,10 @@ Pages деплоит её после зелёных пробников (`.github
   `GZ`/`depthFor`. Пробник `tools/depth.js`.
 - Ведущая рука — `leadOf(id)` (прямой, хук — 0; остальное — 1); не
   хардкодить `'jab' ? 0 : 1`.
+- Кнопки интерфейса: у каждого экрана свой атрибут (`data-go`, `data-pick`,
+  `data-lvl` — уровень удара, `data-bot` — уровень бота). Слушатель в фазе
+  захвата на документе с чужим атрибутом глушил кнопку «В ГОЛОВУ»; soak
+  обязан доводить бой до финала, иначе такое не ловится.
 - Картинки врезок и музыка — в хвостовом `<script id="tail">` в конце файла
   (`tailArt`/`tailMusic`); `chk.py` берёт игровой скрипт по последнему
   точному `<script>`. Музыка собирается `tools/music.py` (нужен ffmpeg).
@@ -55,7 +59,7 @@ Pages деплоит её после зелёных пробников (`.github
 (`solve`, `reset`), цели `handTo/footTo/footToXY/stepFoot/stepAir/stepArc/walkTo`,
 глубина `handToZ/footToZ`, проекция `projJ/zScale/zDim`.
 Стойка и действия: `driveGuard` (живая стойка — переступы, `b.drift`),
-`driveActor` (удары, `stepTo`, `hopFrom`), `driveMMA`, `driveClinchPose`,
+`driveActor` (удары, `stepTo`, `hopFrom`), позы замаха `chargePose`/`applyCharge`, `driveMMA`, `driveClinchPose`,
 `driveGround`, `driveSubHold`, `driveHurt/hurtSet/HURT`, `driveWin`, `driveDown`.
 Попадание: `applyImpact` (реакция, брызги `spray`, следы `marksAdd`, нокаут
 через `koWait` → `koFall` после панели). Физика: `makeRag` (шарниры,
