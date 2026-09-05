@@ -1226,6 +1226,7 @@ function Boxer(i){
   this.drift = [0, 0]; this.driftN = -1; this.driftK = 0; this.driftT = -9; this.driftFrom = 0; this.driftTo = 0;   // живая стойка
   this.tx0 = null; this.tf0 = null;                                          // откуда шагаем при переходе
   this.koWait = null;                                                        // нокаут ждёт конца панели
+  this.marks = {head:0, body:0, cut:false}; this.marksN = -1;                // следы боя
   this.charge = false; this.down = false; this.tired = false; this.winded = false; this.rocked = false;
   this.win = null; this.mood = 0; this.tapping = 0; this.broke = null; this.hurt = null;
   this.turned = 0;                              // 0 — лицом к сопернику, 1 — спиной
@@ -1244,6 +1245,7 @@ Boxer.prototype.reset = function(){
   this.charge = false; this.down = false; this.tired = false; this.winded = false; this.rocked = false;
   this.win = null; this.mood = 0; this.tapping = 0; this.broke = null;
   this.turned = 0; this.flexA = null; this.flexL = null;
+  this.marks = {head:0, body:0, cut:false}; this.marksN = -1;
   this.trail = [[], []];
   this.solve();
   this.hand[0].x.reset(this.J.neck.x + 8 * f); this.hand[0].y.reset(this.J.neck.y - 1);
@@ -2836,6 +2838,7 @@ function applyImpact(rec){
 
     if(o.dmg > 0){
       var k = o.dmg / 50;                            // сила удара 0..1
+      marksAdd(d.marks, lvl, o.dmg);                 // след появляется в момент удара
       /* Замораживаем точку контакта и величину доводки: дальше цель берётся
          отсюда, а не от живой головы соперника. */
       if(!rec._hit) rec._hit = [null, null];
@@ -3642,7 +3645,7 @@ function glove(p, prev, dir, f, col, colD, wrap, r){
 
 /* Лицо. Рисуется в системе координат головы: +x — вперёд, на противника,
    +y — вниз. Без него голова читалась просто кружком. */
-function face(J, f, s, mix, turned, mood){
+function face(J, f, s, mix, turned, mood, marks){
   cx.save();
   cx.translate(J.head.x, J.head.y);
   cx.rotate(J.ha * f);
@@ -3669,6 +3672,13 @@ function face(J, f, s, mix, turned, mood){
     return;
   }
 
+  /* Следы боя: отёк у глаза растёт с уроном в голову, после тяжёлого
+     попадания — рассечение брови со струйкой. Под чертами, поверх кожи. */
+  var mk = marks || {head:0, body:0, cut:false}, hd = clamp(mk.head / 60, 0, 1);
+  if(hd > .12){
+    cx.fillStyle = 'rgba(118,26,58,' + (.16 + .4 * hd).toFixed(2) + ')';
+    cx.beginPath(); cx.ellipse(2.3, 1.1, .9 + 1.0 * hd, .7 + .8 * hd, .25, 0, 6.284); cx.fill();
+  }
   /* Мимика. 0 — обычное лицо, 1 — улыбка во всю ширь, 2 — рёв на трибуны,
      3 — гримаса боли. Победные сцены без этого не работают: поза уже
      торжествующая, а лицо остаётся тем же, что и в бою. */
@@ -3681,6 +3691,12 @@ function face(J, f, s, mix, turned, mood){
   else if(mood === 3){ cx.moveTo(0.1, -3.1); cx.lineTo(3.9, -0.8); }     // сведена от боли
   else { cx.moveTo(0.2, -2.7); cx.lineTo(3.7, -1.6); }
   cx.stroke();
+  if(mk.cut){                                    // рассечение брови и струйка по щеке
+    cx.strokeStyle = '#8a1220'; cx.lineWidth = .55;
+    cx.beginPath(); cx.moveTo(1.9, -2.3); cx.lineTo(2.9, -1.75); cx.stroke();
+    cx.strokeStyle = 'rgba(150,20,35,.7)'; cx.lineWidth = .32;
+    cx.beginPath(); cx.moveTo(2.0, -2.0); cx.quadraticCurveTo(1.2, 0, 1.3, 1.9); cx.stroke();
+  }
 
   if(mood === 1){                                // прищур радости
     cx.lineWidth = 1.5;
@@ -3885,6 +3901,15 @@ function boxerParts(b, out){
       var y1 = p(9.4 - ab * 3.1, 5.6), y2 = p(9.4 - ab * 3.1, -4.6);
       cx.beginPath(); cx.moveTo(y1.x, y1.y); cx.lineTo(y2.x, y2.y); cx.stroke();
     }
+    /* Следы боя: покраснение на рёбрах растёт с уроном в корпус. */
+    var mkb = b.marks ? clamp(b.marks.body / 70, 0, 1) : 0;
+    if(mkb > .1){
+      var rb = p(13.5, 4.5), rr = 3 + 3.5 * mkb;
+      var rg = cx.createRadialGradient(rb.x, rb.y, 0, rb.x, rb.y, rr);
+      rg.addColorStop(0, 'rgba(170,40,60,' + (.16 + .34 * mkb).toFixed(2) + ')');
+      rg.addColorStop(1, 'rgba(170,40,60,0)');
+      cx.fillStyle = rg; cx.beginPath(); cx.arc(rb.x, rb.y, rr, 0, 6.284); cx.fill();
+    }
     /* Смыкания. Там, где рука или нога входит в корпус, свет не достаёт, и
        без этого затемнения конечность выглядит приклеенной поверх плоской
        доски. Ложится внутри отсечения по корпусу, поэтому за силуэт не
@@ -3977,7 +4002,7 @@ function boxerParts(b, out){
     cx.fillStyle = hg; cx.fill(HP);
     cx.fillStyle = mix(blend(s.skin, s.skinD, .7));               // узкая тень под скулой
     cx.beginPath(); cx.ellipse(J.head.x + J.fw1.x * .4, J.head.y + HEAD_R * .86, 2.4 * HS, .95 * HS, 0, 0, 6.284); cx.fill();
-    face(J, f, s, mix, b.turned > .5, b.mood);
+    face(J, f, s, mix, b.turned > .5, b.mood, b.marks);
   });
 
   if(rearOut) put('rearArm', function(){ arm(J.arms[1], 4.5, 3.1, 2.4, TN, .88); });
@@ -4923,7 +4948,28 @@ var freeze = 0, slowT = 0, seq = null, lastT = 0, animating = false, paused = fa
 var darkT = 0, dark = 0, seqDark = 0;
 function seqExtend(ms){ if(seq) seq.end = Math.max(seq.end, seq.t + ms); }
 
+/* Следы боя: урон, полученный бойцом j по записям [0, n). Считается от
+   записей, а не копится по ходу, — поэтому в повторе и при пересмотре
+   раунда следы те же, что были в живом бою. Рассечение — от тяжёлого
+   попадания в голову. */
+function marksAdd(m, lvl, dmg){ m[lvl] += dmg; if(lvl === 'head' && dmg >= 24) m.cut = true; }
+function marksUpTo(j, n){
+  var m = {head:0, body:0, cut:false}, i;
+  for(i = 0; i < Math.min(n, bouts.length); i++){
+    var rec = bouts[i], o = rec.out && rec.out[1 - j], c = rec.choices && rec.choices[1 - j];
+    if(!o || o.type !== 'atk' || !(o.dmg > 0)) continue;
+    marksAdd(m, c && c.lvl === 'body' ? 'body' : 'head', o.dmg);
+  }
+  return m;
+}
+/* в простое — по всем сыгранным записям; в повторе — по уже показанным */
+function marksIdle(){
+  var n = (phase === 'replay' && replay) ? replay.idx : bouts.length, i;
+  for(i = 0; i < 2; i++) if(B[i].marksN !== n){ B[i].marksN = n; B[i].marks = marksUpTo(i, n); }
+}
+
 function driveIdle(){
+  marksIdle();
   for(var i = 0; i < 2; i++){
     var b = B[i];
     if(b.rd){ if(b.rd.mode === 'down') driveDown(b); else driveGuard(b); continue; }
@@ -5182,6 +5228,8 @@ function playRound(rec, done){
   }
   rec._air = [airPoint(0, rec), airPoint(1, rec)];
   B[0].koWait = B[1].koWait = null;
+  var mn = bouts.indexOf(rec); if(mn < 0) mn = bouts.length;   // следы — по записям до этого раунда
+  for(var mi = 0; mi < 2; mi++){ B[mi].marks = marksUpTo(mi, mn); B[mi].marksN = -1; }
   if(rec.mma) setRP(rec.before.pos, rec.before.top, rec.before.sub);
   drawOrder = (rec.out[0].dmg || 0) >= (rec.out[1].dmg || 0) ? [1, 0] : [0, 1];
   var IMP = impactMs(rec);                       // момент попадания у этого раунда
