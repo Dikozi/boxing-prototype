@@ -144,6 +144,10 @@ button{font-family:inherit;color:inherit;cursor:pointer;touch-action:manipulatio
 .btn.red{background:linear-gradient(#ff4d5e,#d02536);border-color:#ffa3ab;color:#fff}
 .btn.gold{background:linear-gradient(#ffcf6b,#e19100);border-color:#ffe3a6;color:#2a1c00}
 .btn.ghost{background:none;color:var(--dim);font-size:16px;padding:13px;border-style:dashed}
+.lvl{display:flex;gap:6px;align-items:center;margin:-6px 0 4px}
+.lvl span{flex:0 0 auto;font-size:11px;font-weight:700;color:var(--dim);letter-spacing:.12em;text-transform:uppercase;padding:0 4px}
+.btn.lv{flex:1 1 0;width:auto;padding:9px 4px;font-size:13px;border-radius:11px}
+.btn.lv.on{border-color:var(--gold);color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold)}
 .row{display:flex;gap:8px}
 .row .btn{flex:1 1 0}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -643,7 +647,8 @@ function newFight(){
   syncDisp();
   document.getElementById('cn0').textContent = F[0].name + ' УГОЛ';
   document.getElementById('cn1').textContent = F[1].name + ' УГОЛ';
-  document.getElementById('log').innerHTML = '<div class="empty">Бой ещё не начался.</div>';
+  document.getElementById('log').innerHTML = '<div class="empty">Бой ещё не начался.' +
+    (mode === 'cpu' ? ' Соперник — CPU, уровень ' + LVL_NAME[botLevel].toLowerCase() + '.' : '') + '</div>';
 }
 function syncDisp(){ for(var i=0;i<2;i++){ disp[i].hp = F[i].hp; disp[i].st = F[i].st; } }
 
@@ -5353,9 +5358,17 @@ function screenOpp(){
       ? 'Полный бой: стойка, проход в ноги, клинч, партер и приёмы. У каждого бойца свои характеристики.'
       : 'Чистый бокс в стойке — правила прежние.') + '</div><div class="spacer"></div>' +
     '<button class="btn gold big" data-go="opp-cpu">🤖 ПРОТИВ CPU</button>' +
+    '<div class="lvl"><span>уровень</span>' + ['easy', 'mid', 'hard'].map(function(l){
+      return '<button class="btn lv' + (botLevel === l ? ' on' : '') + '" data-lvl="' + l + '">' + LVL_NAME[l] + '</button>';
+    }).join('') + '</div>' +
     '<button class="btn big" data-go="opp-pvp">👥 ДВА ИГРОКА</button>' +
     '<button class="btn ghost" data-go="home">← Назад</button>';
 }
+document.addEventListener('click', function(ev){    // уровень бота: свой слушатель, чтобы не трогать общий
+  var t = ev.target && ev.target.closest ? ev.target.closest('[data-lvl]') : null;
+  if(!t) return;
+  ev.stopPropagation(); setBotLevel(t.dataset.lvl); render();
+}, true);
 
 /* Выбор бойца. Бюджет характеристик у всех одинаковый, поэтому экран честно
    показывает и сильную сторону, и её цену. */
@@ -6095,6 +6108,76 @@ function render(){
    соперника: реагировать на него честно, это не скрытая информация.
    Лёгкая память по прошлым вскрытым раундам не даёт боту быть слишком
    однотипным и слегка подстраивается под манеру игрока. */
+/* Уровень бота. Замер (tools/bot.js, случайный игрок, 600 боёв): прежний
+   бот на весах проигрывал случайному игроку в 54% боёв, а «острые веса»
+   делали его ещё слабее. Поэтому лестница другая. Лёгкий — прежний бот на
+   весах по состоянию (в ММА — с ошибками почти в половине раундов).
+   Средний и трудный — расчёт ожидаемого размена: для каждого своего
+   действия считается, сколько урона оно даст и получит против
+   распределения ходов игрока, теми же формулами, что и правила. Средний —
+   в половине раундов расчёт, в половине прежние веса (шум в оценке не
+   помогал: замер 21–33% побед игрока при любом шуме). Подглядывания нет
+   ни на одном уровне: объявленный кросс и так виден. Хранится в klinch.bot. */
+var botLevel = 'mid', LVL_NAME = {easy:'Лёгкий', mid:'Средний', hard:'Трудный'}, BOT_ERR = .45, BOT_MIX = .5;
+try { var _bl = localStorage.getItem('klinch.bot'); if(_bl === 'easy' || _bl === 'hard') botLevel = _bl; } catch(e){}
+function setBotLevel(l){
+  botLevel = LVL_NAME[l] ? l : 'mid';
+  try { localStorage.setItem('klinch.bot', botLevel); } catch(e){}
+}
+function botRandomLegal(i){                          // ошибка лёгкого уровня: любой допустимый ход
+  var ids = legal(i), id = ids[Math.floor(Math.random() * ids.length)];
+  return ACT[id].level ? {id:id, lvl:Math.random() < .5 ? 'head' : 'body'} : {id:id};
+}
+/* Распределение ходов игрока: его последние десять ходов с добавкой, чтобы
+   невиданное не обнулялось. Уже объявленный ход (заряд) — точка. */
+function botPlayerDist(){
+  if(choices[0]) return [{c:choices[0], p:1}];
+  var L = legal(0), opts = [], i, k, id;
+  for(i = 0; i < L.length; i++){ id = L[i];
+    if(ACT[id].level){ opts.push({id:id, lvl:'head'}); opts.push({id:id, lvl:'body'}); } else opts.push({id:id}); }
+  var n = bouts.length, w = [], tot = 0;
+  for(k = 0; k < opts.length; k++) w[k] = .5;
+  for(i = Math.max(0, n - 10); i < n; i++){
+    var hc = bouts[i].choices[0]; if(!hc) continue;
+    for(k = 0; k < opts.length; k++) if(opts[k].id === hc.id && (opts[k].lvl || null) === (hc.lvl || null)) w[k] += 1;
+  }
+  for(k = 0; k < opts.length; k++) tot += w[k];
+  return opts.map(function(c, k){ return {c:c, p:w[k] / tot}; });
+}
+/* Урон размена по формулам правил, без побочных эффектов и без кубика. */
+function botExchange(mine, his){
+  var tired = [F[0].st < LOW_ST, F[1].st < LOW_ST], ch = [his, mine], dmg = [0, 0], i;
+  for(i = 0; i < 2; i++){
+    var c = ch[i], A = ACT[c.id];
+    if(A.kind !== 'attack' || c.id === 'cross' || c.id === 'spin') continue;
+    var r = resolve(c, ch[1 - i]);
+    dmg[i] = Math.round(dmgOf(c) * (tired[i] ? TIRED_MULT : 1) * r.mult);
+  }
+  return {dealt:dmg[1], taken:dmg[0]};
+}
+function botChooseHard(noise){
+  var dist = botPlayerDist(), L = legal(1), best = null, bestV = -1e9, i, k, j, c;
+  var meTired = F[1].st < LOW_ST;
+  for(i = 0; i < L.length; i++){
+    var id = L[i], cands = ACT[id].level ? [{id:id, lvl:'head'}, {id:id, lvl:'body'}] : [{id:id}];
+    for(k = 0; k < cands.length; k++){
+      c = cands[k];
+      var v = 0;
+      for(j = 0; j < dist.length; j++){
+        var e = botExchange(c, dist[j].c), val = e.dealt - e.taken * 1.1;
+        if(c.id === 'cross' || c.id === 'spin'){       // замах: платит сейчас, бьёт в следующем раунде
+          var nxt = c.id === 'cross' ? {id:'crossLand'} : {id:'spinLand', lvl:c.lvl || 'head'};
+          val += .8 * botExchange(nxt, dist[j].c).dealt;
+        }
+        v += dist[j].p * val;
+      }
+      v -= ACT[id].st * (meTired ? .35 : .12);          // выносливость — тоже ресурс
+      v += (Math.random() - .5) * noise;                // крошечный шум: не быть часами
+      if(v > bestV){ bestV = v; best = c; }
+    }
+  }
+  return best;
+}
 var botLastKey = null;
 function botHistoryBias(w){
   var n = bouts.length, from = Math.max(0, n - 6), i;
@@ -6139,6 +6222,7 @@ function pickWeightedKey(w){
   return keys[keys.length - 1];
 }
 function botChoose(){
+  if(botLevel === 'hard' || (botLevel === 'mid' && Math.random() >= BOT_MIX)) return botChooseHard(.6);
   var me = F[1], op = F[0], tiredMe = me.st < LOW_ST;
   var w = {jabH:20, jabB:14, upH:10, upB:7, kickH:7, kickB:6, spinH:4, spinB:4, cross:7,
            block:12, bblock:10, slip:12, step:8};
@@ -6185,6 +6269,8 @@ var MMA_W = {
   cinch:28, release:3, endure:9, escape:24
 };
 function botChooseMMA(){
+  /* В ММА расчёта размена нет: средний и трудный играют на весах, лёгкий — с ошибками. */
+  if(botLevel === 'easy' && Math.random() < BOT_ERR) return botRandomLegal(1);
   var me = F[1], op = F[0], g = GR, ids = legal(1), w = {}, i, id, S = statOf(1);
   var tiredMe = me.st < LOW_ST, amTop = g.top === 1;
   for(i = 0; i < ids.length; i++) w[ids[i]] = MMA_W[ids[i]] || 8;
