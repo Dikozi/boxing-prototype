@@ -8,7 +8,7 @@ const BASE = path.join(__dirname, 'baseline', 'boxing.txt');
 
 // детерминированный прогон боксёрского боя по фиксированному сценарию
 const SCRIPT = `(() => {
-  game = 'klinch'; mode='pvp'; newFight(); round=1;
+  game = 'klinch'; mode='pvp'; newFight(); rngS = fightSeed = 12345; round=1;   // зерно кубика правил: эталон детерминирован
   const seq = ['jab','uppercut','kick','spin','cross','block','bblock','slip','step'];
   const lv = ['head','body'];
   const out = [];

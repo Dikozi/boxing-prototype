@@ -644,6 +644,7 @@ function newFight(){
   GR = newGrapple(); setRP('stand', -1);
   round = 1; choices = [null,null]; pendLevel = null; lastRec = null; revealDone = false;
   bouts = []; eyesDone = false; botLastKey = null;
+  fightSeed = (Math.random() * 2147483647) | 0; rngS = fightSeed;   // зерно кубика правил на весь бой
   syncDisp();
   document.getElementById('cn0').textContent = F[0].name + ' УГОЛ';
   document.getElementById('cn1').textContent = F[1].name + ' УГОЛ';
@@ -729,6 +730,82 @@ function label(c){
   return a.name + (c.lvl ? (c.lvl === 'head' ? ' в голову' : ' в корпус') : '');
 }
 
+/* Кубик правил — с зерном. Раньше правила бросали Math.random(): бой был
+   детерминирован только через запись раунда. Теперь исход целиком
+   восстанавливается из зерна и ходов — на этом держатся «продолжить бой»
+   после перезагрузки и код боя, которым можно поделиться. Бот и выбор
+   архетипа CPU остаются на Math.random(): их решения попадают в код явно. */
+var fightSeed = 0, rngS = 0;
+function rng(){
+  rngS = (rngS + 0x6D2B79F5) | 0;
+  var t = Math.imul(rngS ^ (rngS >>> 15), 1 | rngS);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+/* Код боя: KL1.<k|m><c|p>.<архетип0>.<архетип1>.<зерно36>.<ходы>; ход —
+   индекс действия в CODE_IDS двумя знаками base36 и уровень h/b/-.
+   Список — литерал, чтобы новые действия не сдвигали старые коды. */
+var CODE_IDS = ['jab', 'uppercut', 'kick', 'spin', 'spinLand', 'cross', 'block', 'bblock', 'slip', 'step', 'crossLand', 'shoot', 'clinchIn', 'sprawl', 'cpunch', 'cknee', 'throw', 'frame', 'breakout', 'gpunch', 'gbody', 'pass', 'kimura', 'leglock', 'hold', 'sweep', 'standup', 'gblock', 'tri', 'upkick', 'elbow', 'sbody', 'tomount', 'takeback', 'armbar', 'reguard', 'pound', 'bridge', 'toguard', 'rnc', 'bpunch', 'hooks', 'shed', 'neckdef', 'spinout', 'cinch', 'release', 'endure', 'escape'];
+var sharedCode = (function(){ var m = /^#f=(.+)$/.exec(location.hash || ''); try { return m ? decodeURIComponent(m[1]) : null; } catch(e){ return null; } })();
+function codeOf(){
+  var rounds = bouts.map(function(r){ return r.choices.map(function(c){
+    var k = CODE_IDS.indexOf(c.id);
+    return (k < 36 ? '0' : '') + k.toString(36) + (c.lvl === 'head' ? 'h' : (c.lvl === 'body' ? 'b' : '-'));
+  }).join(''); }).join('');
+  return 'KL1.' + (game === 'mma' ? 'm' : 'k') + (mode === 'cpu' ? 'c' : 'p') + '.' + pick[0] + '.' + pick[1] +
+         '.' + (fightSeed >>> 0).toString(36) + '.' + rounds;
+}
+function parseCode(str){
+  var m = /^KL1\.([km])([cp])\.([a-z]+)\.([a-z]+)\.([0-9a-z]+)\.([0-9a-z\-hb]*)$/.exec((str || '').trim());
+  if(!m || m[6].length % 6) return null;
+  var rounds = [], t = m[6], i, k;
+  for(i = 0; i < t.length; i += 6){
+    var ch = [];
+    for(k = 0; k < 2; k++){
+      var idx = parseInt(t.substr(i + k * 3, 2), 36), lv = t.charAt(i + k * 3 + 2), id = CODE_IDS[idx];
+      if(!id) return null;
+      ch.push(lv === 'h' ? {id:id, lvl:'head'} : (lv === 'b' ? {id:id, lvl:'body'} : {id:id}));
+    }
+    rounds.push(ch);
+  }
+  return {game:m[1] === 'm' ? 'mma' : 'klinch', mode:m[2] === 'c' ? 'cpu' : 'pvp', pick:[m[3], m[4]],
+          seed:parseInt(m[5], 36) | 0, rounds:rounds};
+}
+/* Восстановить бой из кода: те же ходы, то же зерно — те же записи. */
+function loadCode(str){
+  var c = parseCode(str); if(!c || !archOf(c.pick[0]) || !archOf(c.pick[1])) return false;
+  game = c.game; mode = c.mode; pick = [c.pick[0], c.pick[1]];
+  newFight();
+  fightSeed = c.seed; rngS = c.seed;
+  for(var r = 0; r < c.rounds.length; r++){
+    round = r + 1; choices = c.rounds[r];
+    resolveRound();
+    if(isOver()) break;
+  }
+  round = bouts.length + 1;
+  syncDisp();
+  return true;
+}
+/* Автосохранение: код боя после каждого раунда; окончен — снимается. */
+function fightSave(){
+  try {
+    if(isOver() || bouts.length >= MAX_ROUNDS) localStorage.removeItem('klinch.fight');
+    else localStorage.setItem('klinch.fight', codeOf());
+  } catch(e){}
+}
+function fightSaved(){ try { return localStorage.getItem('klinch.fight'); } catch(e){ return null; } }
+function fightShare(btn){
+  var code = codeOf(), web = location.protocol === 'http:' || location.protocol === 'https:';
+  var url = web ? location.origin + location.pathname + '#f=' + encodeURIComponent(code) : code;
+  var done = function(msg){ if(!btn) return; var t0 = btn.textContent; btn.textContent = msg; setTimeout(function(){ btn.textContent = t0; }, 1600); };
+  if(navigator.share && location.protocol === 'https:'){ navigator.share({title:'Клинч', text:'Мой бой в «Клинче»', url:url}).catch(function(){}); return; }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(function(){ done('СКОПИРОВАНО ✓'); }, function(){ window.prompt('Код боя:', url); });
+    return;
+  }
+  window.prompt('Код боя:', url);
+}
+
 /* просчёт раунда: оба удара считаются от состояния НА НАЧАЛО раунда */
 function resolveRound(){
   if(game === 'mma'){ resolveRoundMMA(); return; }
@@ -755,7 +832,7 @@ function resolveRound(){
   var winded = [false, false];
   for(i = 0; i < 2; i++)
     if(out[i].type === 'atk' && out[i].dmg > 0 && choices[i].lvl === 'body'
-       && Math.random() < LIVER_CHANCE){
+       && rng() < LIVER_CHANCE){
       out[i].liver = true;
       winded[1 - i] = true;
     }
@@ -796,6 +873,7 @@ function resolveRound(){
   rollFinish(lastRec);
   bouts.push(lastRec);
   pushLog(lastRec);
+  fightSave();
 }
 
 /* =========================================================================
@@ -803,7 +881,7 @@ function resolveRound(){
    -------------------------------------------------------------------------
    Тот же контракт, что и в боксе: ОДИН бросок кубика на событие, и он
    оседает в записи раунда. Пересмотр раунда и повтор боя читают запись и
-   поэтому показывают ровно тот бой, который был. Ни одного Math.random()
+   поэтому показывают ровно тот бой, который был. Ни одного rng()
    за пределами этой функции.
    ========================================================================= */
 
@@ -852,7 +930,7 @@ function grapChance(i, base, lo, hi){
 }
 
 /* Попытка приёма. Возвращает объект исхода; позицию меняет сама.
-   Единственный источник случайности — ровно один Math.random() на попытку. */
+   Единственный источник случайности — ровно один rng() на попытку. */
 function tryGrap(i, out){
   var g = GR, j = 1 - i, id = choices[i].id, oc = choices[j];
   var d = oc ? oc.id : null, dk = d ? ACT[d].kind : null;
@@ -863,7 +941,7 @@ function tryGrap(i, out){
   if(id === 'escape'){                       // выход из захвата
     var t = g.sub ? g.sub.tight : 1;
     ch = grapChance(i, 0.45 - t * 0.10, ESC_FLOOR, 0.90);
-    o.chance = ch; o.ok = Math.random() < ch;
+    o.chance = ch; o.ok = rng() < ch;
     if(o.ok){
       var was = g.pos;
       g.sub = null; g.pos = POS_DOWN[was] || 'guard'; g.ctrl = 0;
@@ -875,7 +953,7 @@ function tryGrap(i, out){
   if(id === 'cinch'){                        // дожать
     ch = grapChance(i, 0.55 + g.ctrl * 0.02, 0.25, 0.85);
     if(d === 'endure') ch *= 0.7;            // терпит — держит защиту сустава
-    o.chance = ch; o.ok = Math.random() < ch;
+    o.chance = ch; o.ok = rng() < ch;
     if(o.ok){ g.sub.tight = Math.min(3, g.sub.tight + 1); o.note = 'приём затянулся туже'; }
     else o.note = 'дожать не дал';
     return o;
@@ -884,7 +962,7 @@ function tryGrap(i, out){
   if(ACT[id].sub){                           // взять приём
     ch = grapChance(i, 0.55 + g.ctrl * 0.03, 0.20, 0.85);
     if(d === 'gblock' || d === 'neckdef' || d === 'hold') ch *= 0.4;
-    o.chance = ch; o.ok = Math.random() < ch;
+    o.chance = ch; o.ok = rng() < ch;
     if(o.ok){
       g.sub = {by:i, kind:id, tight:g.pos === 'mount' ? 2 : 1};
       o.note = ACT[id].name + ' взят';
@@ -906,7 +984,7 @@ function tryGrap(i, out){
     else if(d === 'slip')                    ch *= 1.15;
     else if(dk === 'attack')                 ch *= 1.25;
     ch = ch <= 0 ? 0 : clamp(ch, TD_MIN, TD_MAX);
-    o.chance = ch; o.ok = ch > 0 && Math.random() < ch;
+    o.chance = ch; o.ok = ch > 0 && rng() < ch;
     if(o.ok){
       g.pos = 'guard'; g.top = i; g.ctrl = 0; g.sub = null;
       o.dmg = Math.round(TD_DMG * dmgMul(i) * takeMul(j));
@@ -917,7 +995,7 @@ function tryGrap(i, out){
 
   if(id === 'clinchIn'){
     ch = d === 'sprawl' ? 0 : (d === 'step' ? 0.5 : 1);
-    o.chance = ch; o.ok = ch >= 1 || (ch > 0 && Math.random() < ch);
+    o.chance = ch; o.ok = ch >= 1 || (ch > 0 && rng() < ch);
     if(o.ok){ g.pos = 'clinch'; g.top = i; g.ctrl = 0; o.note = 'вошёл в клинч, захват его'; }
     else o.note = 'в клинч не пустили';
     return o;
@@ -927,7 +1005,7 @@ function tryGrap(i, out){
     ch = grapChance(i, 0.40 + (g.top === i ? 0.12 : 0), 0.15, 0.80);
     if(d === 'frame')    ch *= 0.5;
     if(d === 'breakout') ch *= 1.15;
-    o.chance = ch; o.ok = Math.random() < ch;
+    o.chance = ch; o.ok = rng() < ch;
     if(o.ok){
       g.pos = 'side'; g.top = i; g.ctrl = 0;
       o.dmg = Math.round(10 * dmgMul(i) * takeMul(j));
@@ -940,20 +1018,20 @@ function tryGrap(i, out){
 
   if(id === 'pass'){
     ch = grapChance(i, 0.45 + g.ctrl * 0.04 + (d === 'gblock' ? 0.10 : 0), 0.15, 0.85);
-    o.chance = ch; o.ok = Math.random() < ch;
+    o.chance = ch; o.ok = rng() < ch;
     if(o.ok){ g.pos = 'side'; g.ctrl = 0; o.note = 'прошёл гард'; } else o.note = 'гард не пройден';
     return o;
   }
   if(id === 'tomount'){
     ch = grapChance(i, 0.50 + g.ctrl * 0.03, 0.15, 0.85);
-    o.chance = ch; o.ok = Math.random() < ch;
+    o.chance = ch; o.ok = rng() < ch;
     if(o.ok){ g.pos = 'mount'; g.ctrl = 0; o.note = 'сел верхом'; } else o.note = 'в маунт не пустили';
     return o;
   }
   if(id === 'takeback'){
     var open = g.turned[j] || d === 'standup' || d === 'reguard';
     ch = grapChance(i, (open ? 0.60 : 0.30) + g.ctrl * 0.02, 0.15, 0.85);
-    o.chance = ch; o.ok = Math.random() < ch;
+    o.chance = ch; o.ok = rng() < ch;
     if(o.ok){ g.pos = 'back'; g.ctrl = 0; o.note = open ? 'соперник отвернулся — спина взята' : 'зашёл за спину'; }
     else o.note = 'за спину зайти не дал';
     return o;
@@ -962,46 +1040,46 @@ function tryGrap(i, out){
   /* --- выходы снизу: у каждого есть пол ESC_FLOOR --- */
   if(id === 'sweep'){
     ch = grapChance(i, 0.35 - g.ctrl * 0.05 - (d === 'hold' ? 0.12 : 0), ESC_FLOOR, 0.80);
-    o.chance = ch; o.ok = Math.random() < ch;
+    o.chance = ch; o.ok = rng() < ch;
     if(o.ok){ g.top = i; g.ctrl = 0; o.note = 'свип — теперь он сверху'; } else o.note = 'свип не прошёл';
     return o;
   }
   if(id === 'bridge'){
     ch = grapChance(i, 0.22 - g.ctrl * 0.03, ESC_FLOOR, 0.70);
-    o.chance = ch; o.ok = Math.random() < ch;
+    o.chance = ch; o.ok = rng() < ch;
     if(o.ok){ g.pos = 'guard'; g.top = i; g.ctrl = 0; o.note = 'мост — перевернул и оказался сверху'; }
     else o.note = 'мост не вышел';
     return o;
   }
   if(id === 'toguard'){
     ch = grapChance(i, 0.45 - g.ctrl * 0.03, ESC_FLOOR, 0.85);
-    o.chance = ch; o.ok = Math.random() < ch;
+    o.chance = ch; o.ok = rng() < ch;
     if(o.ok){ g.pos = 'guard'; g.ctrl = 0; o.note = 'вернул его в гард'; } else o.note = 'из-под маунта не выбрался';
     return o;
   }
   if(id === 'reguard'){
     ch = grapChance(i, 0.42 - g.ctrl * 0.03, ESC_FLOOR, 0.85);
-    o.chance = ch; o.ok = Math.random() < ch;
+    o.chance = ch; o.ok = rng() < ch;
     if(o.ok){ g.pos = 'guard'; g.ctrl = 0; o.note = 'вернул гард'; } else o.note = 'гард вернуть не дал';
     return o;
   }
   if(id === 'shed'){
     ch = grapChance(i, 0.35 - g.ctrl * 0.03, ESC_FLOOR, 0.80);
-    o.chance = ch; o.ok = Math.random() < ch;
+    o.chance = ch; o.ok = rng() < ch;
     if(o.ok){ g.pos = 'mount'; g.ctrl = 0; o.note = 'сбросил спину — но он остался сверху'; }
     else o.note = 'со спины не сбросил';
     return o;
   }
   if(id === 'spinout'){
     ch = grapChance(i, 0.20, ESC_FLOOR, 0.70);
-    o.chance = ch; o.ok = Math.random() < ch;
+    o.chance = ch; o.ok = rng() < ch;
     if(o.ok){ g.pos = 'guard'; g.top = 1 - i; g.ctrl = 0; o.note = 'выкрутился в гард'; }
     else o.note = 'выкрутиться не удалось';
     return o;
   }
   if(id === 'standup'){
     ch = grapChance(i, (g.pos === 'side' ? 0.25 : 0.40) - g.ctrl * 0.03 - (d === 'hold' ? 0.10 : 0), ESC_FLOOR, 0.80);
-    o.chance = ch; o.ok = Math.random() < ch;
+    o.chance = ch; o.ok = rng() < ch;
     if(o.ok){ g.pos = 'stand'; g.top = -1; g.ctrl = 0; g.sub = null; o.note = 'поднялся в стойку'; }
     else { o.turned = true; o.note = 'встать не дал — и спина открылась'; }
     return o;
@@ -1045,7 +1123,7 @@ function resolveRoundMMA(){
     order = [1 - g.sub.by, g.sub.by];
   } else if(wants[0] && wants[1]){
     var p = clamp(0.5 + (statOf(0).grap - statOf(1).grap) * 0.04, 0.15, 0.85);
-    order = Math.random() < p ? [0, 1] : [1, 0];
+    order = rng() < p ? [0, 1] : [1, 0];
   }
   var moved = false, turnedNow = [false, false];
   for(var k = 0; k < 2; k++){
@@ -1063,7 +1141,7 @@ function resolveRoundMMA(){
   if(g.sub && g.sub.tight >= 3){
     tapped = 1 - g.sub.by;
     var sk2 = g.sub.kind;
-    if((sk2 === 'armbar' || sk2 === 'kimura' || sk2 === 'leglock') && Math.random() < BREAK_CHANCE)
+    if((sk2 === 'armbar' || sk2 === 'kimura' || sk2 === 'leglock') && rng() < BREAK_CHANCE)
       broke = {i:tapped, limb:sk2 === 'leglock' ? 'leg' : 'arm'};
   }
   /* «Терпеть» стоит здоровья сустава — приём и без затяжки разрушает. */
@@ -1092,7 +1170,7 @@ function resolveRoundMMA(){
   /* --- 5. Печень: один бросок здесь, результат в записи. --- */
   var winded = [false, false];
   for(i = 0; i < 2; i++)
-    if(out[i].type === 'atk' && out[i].dmg > 0 && isBody(choices[i]) && Math.random() < LIVER_CHANCE){
+    if(out[i].type === 'atk' && out[i].dmg > 0 && isBody(choices[i]) && rng() < LIVER_CHANCE){
       out[i].liver = true; winded[1 - i] = true;
     }
 
@@ -1152,6 +1230,7 @@ function resolveRoundMMA(){
   rollFinish(lastRec);
   bouts.push(lastRec);
   pushLog(lastRec);
+  fightSave();
 }
 
 /* =========================================================================
@@ -5373,6 +5452,8 @@ var P = document.getElementById('panel');
 function screenStart(){
   return '<h1>КЛИНЧ</h1>' +
     '<div class="sub">Две игры в одном ринге. Ход выбирается втайне, ходы вскрываются одновременно и разыгрываются на ринге.</div>' +
+    (sharedCode ? '<button class="btn gold big" data-go="shared">📼 СМОТРЕТЬ ПРИСЛАННЫЙ БОЙ</button>' : '') +
+    (fightSaved() ? '<button class="btn big" data-go="resume">⏯ ПРОДОЛЖИТЬ БОЙ</button>' : '') +
     '<button class="btn gold big" data-go="game-klinch">🥊 КЛИНЧ<br><span class="s">бокс в стойке</span></button>' +
     '<button class="btn big" data-go="game-mma">🤼 ММА<br><span class="s">удары, клинч, партер и приёмы</span></button>' +
     '<details><summary>Правила бокса</summary><div class="body">' +
@@ -5719,6 +5800,7 @@ function screenOver(){
   return '<h1>' + v.t + '</h1><div class="sub">' + v.s + '</div>' + say + statCard() +
     '<div class="spacer"></div>' +
     '<button class="btn gold big" data-go="replay">▶ СМОТРЕТЬ ВЕСЬ БОЙ</button>' +
+    '<button class="btn" data-go="share">🔗 ПОДЕЛИТЬСЯ БОЕМ</button>' +
     '<button class="btn" data-go="restart">ИГРАТЬ ЗАНОВО</button>';
 }
 
@@ -6554,6 +6636,16 @@ P.addEventListener('click', function(ev){
     return;
   }
   var go = t.dataset.go;
+  if(go === 'resume'){                              // бой из автосохранения: та же партия, тот же раунд
+    if(loadCode(fightSaved())){ resetRing(); if(isOver() || bouts.length >= MAX_ROUNDS) phase = 'over'; else startRound(); musicPlay('fight'); }
+    else { try { localStorage.removeItem('klinch.fight'); } catch(e){} }
+    render(); return;
+  }
+  if(go === 'shared'){                              // присланный код — сразу в повтор
+    if(loadCode(sharedCode)){ resetRing(); replayStart(); } else { sharedCode = null; render(); }
+    return;
+  }
+  if(go === 'share'){ fightShare(t); return; }
   if(go === 'game-klinch' || go === 'game-mma'){
     game = go === 'game-mma' ? 'mma' : 'klinch';
     phase = 'opp'; render();
