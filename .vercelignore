@@ -1,0 +1,7 @@
+# На сайт уезжает ровно один файл — index.html. Остальное это разработка.
+tools/
+art/
+music/
+.github/
+.claude/
+*.md
