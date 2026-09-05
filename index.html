@@ -3859,10 +3859,10 @@ function glove(p, prev, dir, f, col, colD, wrap, r){
   CF.quadraticCurveTo(-r * .46, 0, -r * .6, r * .76); CF.lineTo(-r * 1.3, r * .64);
   CF.quadraticCurveTo(-r * 1.42, 0, -r * 1.3, -r * .64); CF.closePath();
   cx.save(); cx.translate(-lx * OUTL, -ly * OUTL); cx.fillStyle = INK; cx.fill(CF); cx.restore();
-  var cg = cx.createLinearGradient(0, -r, 0, r);
-  cg.addColorStop(0, blend(col, '#ffffff', .06)); cg.addColorStop(.5, blend(col, colD, .35)); cg.addColorStop(1, blend(colD, col, .3));
+  var cg = cx.createLinearGradient(0, -r, 0, r);        // белая манжета с бинтом, как у классической перчатки
+  cg.addColorStop(0, blend(wrap, '#ffffff', .4)); cg.addColorStop(.55, wrap); cg.addColorStop(1, blend(wrap, '#000000', .28));
   cx.fillStyle = cg; cx.fill(CF);
-  cx.strokeStyle = 'rgba(0,0,0,.38)'; cx.lineWidth = .8;         // шнуровка: стежки наискось
+  cx.strokeStyle = 'rgba(0,0,0,.45)'; cx.lineWidth = .8;         // шнуровка: стежки наискось
   for(var li = -1; li <= 1; li++){
     cx.beginPath(); cx.moveTo(-r * 1.16, r * .3 * li - r * .2); cx.lineTo(-r * .8, r * .3 * li + r * .2); cx.stroke();
   }
@@ -4354,11 +4354,11 @@ function boxerParts(b, out){
   put('nearArm', function(){
     arm(J.arms[0], 4.8, 3.3, 2.5, TN, NEAR);
     glove(J.arms[0].hand, b.trail[0][0], unitV(J.arms[0].el, J.arms[0].hand), f,
-          mix(s.glove), mix(s.gloveD), mix(s.trunkL), gloveR() * zScale(J.arms[0].hand.z || 0));
+          mix(s.glove), mix(s.gloveD), mix(s.tape), gloveR() * zScale(J.arms[0].hand.z || 0));
   });
   if(rearOut) put('rearGlove', function(){
     glove(J.arms[1].hand, b.trail[1][0], unitV(J.arms[1].el, J.arms[1].hand), f,
-          mix(s.glove), mix(s.gloveD), mix(s.trunkL), gloveR());
+          mix(s.glove), mix(s.gloveD), mix(s.tape), gloveR());
   });
 }
 
