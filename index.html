@@ -3898,155 +3898,144 @@ function glove(p, prev, dir, f, col, colD, wrap, r){
 
 /* Лицо. Рисуется в системе координат головы: +x — вперёд, на противника,
    +y — вниз. Без него голова читалась просто кружком. */
-function face(J, f, s, mix, turned, mood, marks){
+/* =========================================================================
+   ГОЛОВА СПРАЙТОМ (пиксель-арт)
+   -------------------------------------------------------------------------
+   В ринге голова занимает около двадцати текселей. На этом размере векторные
+   кривые превращаются в кляксу (пользователь: «лица как будто в Paint»), а
+   рисованный спрайт читается как лицо: глаз — два пикселя, бровь — четыре.
+   Спрайт не приходит файлом: он собирается в рантайме из плоских заливок на
+   сетке 26×28, затем альфа режется порогом (никакого сглаживания), цвета
+   притягиваются к палитре из девяти, и силуэт обводится в один пиксель.
+   Кэш на бойца, выражение и затемнение — рисуется один раз за бой.
+   ========================================================================= */
+var HPW = 26, HPH = 28, HPCX = 12, HPCY = 12, HPR = 9;   // сетка, центр черепа, его радиус
+var headCache = {};
+function headArt(i, variant, dim){
+  var key = i + '|' + variant + '|' + (dim < 1 ? 'd' : 'n');
+  if(headCache[key]) return headCache[key];
+  var s = SKIN[i], C = document.createElement('canvas'), g;
+  C.width = HPW; C.height = HPH; g = C.getContext('2d');
+  function tn(c){ return dim < 1 ? shadeHex(c, dim) : c; }
+  var SK = tn(s.skin), SL = tn(s.skinL), SD = tn(blend(s.skin, s.skinD, .5)),
+      HR = tn(s.hair), HL = tn(blend(s.hair, '#ffffff', .24)),
+      EW = tn('#efe6da'), MO = tn('#20090f'), TT = tn('#fff3e6');
+  var PAL = [SK, SL, SD, HR, HL, EW, MO, TT, INK];
+  function el(x, y, rx, ry, col, rot){ g.fillStyle = col; g.beginPath(); g.ellipse(x, y, rx, ry, rot || 0, 0, 6.284); g.fill(); }
+  function rc(x, y, w, h, col){ g.fillStyle = col; g.fillRect(x, y, w, h); }
+  var back = variant === 'back', mood = variant;
+  /* Силуэт: череп, угловатая челюсть с подбородком вперёд, нос и причёска —
+     РАЗДЕЛЬНЫМИ заливками. Одним контуром нельзя: подпути с противоположной
+     намоткой вычитаются, и в челюсти появлялась дыра. Дальше composite
+     'source-atop' держит все детали внутри силуэта — это и есть отсечение. */
+  function poly(col, pts){
+    g.fillStyle = col; g.beginPath(); g.moveTo(pts[0], pts[1]);
+    for(var q = 2; q < pts.length; q += 2) g.lineTo(pts[q], pts[q + 1]);
+    g.closePath(); g.fill();
+  }
+  el(12, 11.5, 8.6, 9.2, SK);
+  poly(SK, [6.5, 14.5, 20, 14.5, 19.4, 20.4, 12.5, 21.8]);        // челюсть с подбородком
+  if(!back) poly(SK, [18.5, 12, 22.8, 15.2, 18.5, 16.4]);         // нос — часть силуэта
+  el(back ? 12 : 9.5, back ? 11 : 4.2, back ? 9.3 : 8.2, back ? 9.0 : 4.4, HR);   // линия волос выше: иначе лоб съеден и бровь не видна
+  if(!back) rc(6, 9.5, 2.6, 4.5, HR);                             // бакенбард
+  g.globalCompositeOperation = 'source-atop';
+  el(6.2, 13.5, 3.6, 5.2, back ? tn(blend(s.hair, '#000000', .35)) : SD);   // затылок в тени, у спины — тенью волос
+  el(14.5, 21.2, 4.0, 1.4, SD);                                   // тень под челюстью
+  if(!back) el(15.2, 8.2, 2.8, 1.1, SL);                          // блик по лбу, НАД бровью
+  el(back ? 10.5 : 8.6, back ? 6.5 : 3.6, back ? 3.6 : 3.4, 1.2, HL);   // блик на волосах
+  el(back ? 15.5 : 8.5, 14.4, 1.6, 2.2, SD);                      // ухо
+  el(back ? 15.7 : 8.7, 14.4, .7, 1.1, tn(blend(s.skin, s.skinD, .8)));
+  if(!back){
+    var bl = mood === 'pain' ? 1.0 : (mood === 'shout' ? .6 : (mood === 'smile' ? -.8 : 0));
+    el(15, 12.8, 3.4, 1.6, tn(blend(s.skin, s.skinD, .35)));      // скула тенью — форма лица
+    rc(14, 9.9 + bl, 2.6, 1.4, INK);                              // бровь клином, к виску тоньше
+    rc(16.4, 9.4 + bl * 1.3, 3.4, 1.5, INK);
+    if(mood === 'pain') rc(16.2, 12.2, 3.8, 1.1, INK);            // зажмурился
+    else {
+      el(17.6, 12.6, 2.2, mood === 'shout' ? 1.7 : 1.4, EW);
+      el(18.4, 12.7, 1.1, 1.2, INK);
+    }
+    el(19.2, 15.9, 2.2, .9, SD);                                  // тень под носом
+    rc(19.5, 14.9, 1.3, .9, MO);                                  // ноздря
+    if(mood === 'shout'){ el(17.8, 18.9, 2.5, 2.4, MO); rc(15.8, 17.2, 4.2, 1.1, TT); }
+    else if(mood === 'pain'){ rc(16.4, 17.9, 4.2, 1.9, TT); rc(18.2, 17.9, .8, 1.9, MO); }
+    else if(mood === 'smile'){ rc(16, 17.7, 4.6, 1.8, TT); rc(16, 17.1, 4.6, .8, MO); }
+    else { rc(17.4, 17.9, 3.4, 1.0, MO); rc(17.6, 19.0, 2.9, .7, SL); }
+  }
+  g.globalCompositeOperation = 'source-over';
+  /* Жёсткая альфа, палитра, обводка в пиксель — этим спрайт и отличается от
+     уменьшенной векторной картинки. */
+  var id = g.getImageData(0, 0, HPW, HPH), d = id.data, n = HPW * HPH, q, k, best, bd, dd, cc = [];
+  for(k = 0; k < PAL.length; k++){ var v = parseInt(PAL[k].slice(1), 16); cc.push([v >> 16 & 255, v >> 8 & 255, v & 255]); }
+  for(q = 0; q < n; q++){
+    var o = q * 4;
+    if(d[o + 3] < 128){ d[o + 3] = 0; continue; }
+    d[o + 3] = 255; best = 0; bd = 1e9;
+    for(k = 0; k < cc.length; k++){
+      dd = (d[o] - cc[k][0]) * (d[o] - cc[k][0]) + (d[o + 1] - cc[k][1]) * (d[o + 1] - cc[k][1]) + (d[o + 2] - cc[k][2]) * (d[o + 2] - cc[k][2]);
+      if(dd < bd){ bd = dd; best = k; }
+    }
+    d[o] = cc[best][0]; d[o + 1] = cc[best][1]; d[o + 2] = cc[best][2];
+  }
+  var ink = parseInt(INK.slice(1), 16), ir = ink >> 16 & 255, ig = ink >> 8 & 255, ib = ink & 255;
+  var src = new Uint8ClampedArray(d);
+  for(var y = 0; y < HPH; y++) for(var x = 0; x < HPW; x++){
+    var o2 = (y * HPW + x) * 4;
+    if(src[o2 + 3]) continue;
+    var near = (x > 0 && src[o2 - 4 + 3]) || (x < HPW - 1 && src[o2 + 4 + 3]) ||
+               (y > 0 && src[o2 - HPW * 4 + 3]) || (y < HPH - 1 && src[o2 + HPW * 4 + 3]);
+    if(near){ d[o2] = ir; d[o2 + 1] = ig; d[o2 + 2] = ib; d[o2 + 3] = 255; }
+  }
+  g.putImageData(id, 0, 0);
+  headCache[i + '|' + variant + '|' + (dim < 1 ? 'd' : 'n')] = C;
+  return C;
+}
+/* Голова на сцене: спрайт поворачивается вместе с ней, без сглаживания. */
+function headPix(J, f, b, dim){
+  var v = b.turned > .5 ? 'back'
+        : (b.mood === 1 ? 'smile' : (b.mood === 2 ? 'shout' : (b.mood === 3 ? 'pain' : 'idle')));
+  var C = headArt(b.i, v, dim), px = HEAD_R / HPR * zScale(J.head.z || 0);
   cx.save();
   cx.translate(J.head.x, J.head.y);
   cx.rotate(J.ha * f);
-  cx.scale(f * HS, HS);                          // лицо нарисовано под HEAD_R = 7
-  var HEAD_R = 7.0;
-  cx.lineJoin = 'round'; cx.lineCap = 'round';
-
-  cx.save();                                     // причёска обрезается по черепу
-  cx.beginPath(); cx.ellipse(0, 0, HEAD_R * 1.0, HEAD_R * 1.04, 0, 0, 6.284); cx.clip();
-  cx.fillStyle = s.hair;
-  cx.beginPath();
-  if(turned)      cx.ellipse(0.6, -2.2, HEAD_R * 1.2, HEAD_R * 1.0, 0, 0, 6.284);   // затылок закрыт волосами
-  else if(s.crop) cx.ellipse(-2.2, -4.4, HEAD_R * 1.16, HEAD_R * .96, -.20, 0, 6.284);   // назад, с зачёсом
-  else            cx.ellipse(-0.9, -5.4, HEAD_R * 1.10, HEAD_R * .82, -.05, 0, 6.284);   // низкий ёжик
-  cx.fill();
-  cx.strokeStyle = blend(s.hair, '#ffffff', .22); cx.lineWidth = .7; cx.stroke();          // кромка причёски
-  cx.fillStyle = blend(s.hair, '#ffffff', .16);                                             // блик на макушке
-  cx.beginPath(); cx.ellipse(-2.2 + LDIR.x * 1.5, -6.6, 3.6, 1.6, -.15, 0, 6.284); cx.fill();
+  cx.scale(f * px, px);
+  cx.imageSmoothingEnabled = false;
+  cx.drawImage(C, -HPCX, -HPCY);
+  cx.imageSmoothingEnabled = true;
   cx.restore();
-
-  /* Боец развернулся спиной: лица не видно, только затылок и ухо с другой
-     стороны. Это и читается как разворот — в строгом профиле иначе никак. */
-  if(turned){
-    cx.fillStyle = mix(s.bodyD);
-    cx.beginPath(); cx.ellipse(3.6, 1.0, .95, 1.35, -.1, 0, 6.284); cx.fill();
-    cx.restore();
-    return;
-  }
-
-  /* Ухо и бакенбард: без них голова — кружок с шапкой. Ухо у заднего края
-     черепа, чуть ниже линии глаза. */
-  cx.fillStyle = mix(blend(s.skin, s.skinD, .35)); cx.strokeStyle = INK; cx.lineWidth = .75;
-  cx.beginPath(); cx.ellipse(-4.0, .7, .95, 1.3, .12, 0, 6.284); cx.fill(); cx.stroke();
-  cx.strokeStyle = 'rgba(0,0,0,.35)'; cx.lineWidth = .55;
-  cx.beginPath(); cx.moveTo(-3.75, -.1); cx.quadraticCurveTo(-3.3, .7, -3.85, 1.35); cx.stroke();   // завиток
-  cx.fillStyle = s.hair;                                                                            // бакенбард
-  cx.beginPath(); cx.moveTo(-4.9, -1.6); cx.lineTo(-4.35, -1.9); cx.lineTo(-4.05, .3); cx.lineTo(-4.75, .2); cx.closePath(); cx.fill();
-  cx.fillStyle = 'rgba(0,0,0,.07)';                                                                 // висок и глазница чуть в тени
-  cx.beginPath(); cx.ellipse(1.8, -.2, 2.3, 1.7, .15, 0, 6.284); cx.fill();
-  cx.strokeStyle = 'rgba(0,0,0,.2)'; cx.lineWidth = .6;                                              // линия челюсти от уха к подбородку
-  cx.beginPath(); cx.moveTo(-3.2, 2.7); cx.quadraticCurveTo(.6, 5.3, 4.6, 3.7); cx.stroke();
-  if(s.beard){                                                                                       // щетина по челюсти
-    cx.fillStyle = s.hair; cx.globalAlpha = .28;
-    cx.beginPath(); cx.moveTo(-3.0, 2.2); cx.quadraticCurveTo(.4, 5.6, 4.9, 3.4); cx.quadraticCurveTo(4.6, 2.2, 3.9, 1.6);
-    cx.quadraticCurveTo(1.5, 3.4, -2.6, 1.0); cx.closePath(); cx.fill(); cx.globalAlpha = 1;
-  }
-
-  /* Следы боя: отёк у глаза растёт с уроном в голову, после тяжёлого
-     попадания — рассечение брови со струйкой. Под чертами, поверх кожи. */
+}
+/* Следы боя поверх спрайта: отёк, покраснение, рассечение со струйкой.
+   Рисуются в системе координат головы, как раньше рисовалось лицо. */
+function faceMarks(J, f, s, mix, turned, marks){
   var mk = marks || marksNew(), hd = clamp(mk.head / 60, 0, 1), hv = mk.heavy || 0;
+  if(turned || (!hv && hd <= .12 && !mk.cut)) return;
+  cx.save();
+  cx.translate(J.head.x, J.head.y);
+  cx.rotate(J.ha * f);
+  cx.scale(f * HS, HS);
+  cx.lineJoin = 'round'; cx.lineCap = 'round';
   if(hv > 0){                                    // покраснение после сильных ударов: скула и нос
     cx.fillStyle = 'rgba(196,44,52,' + (.06 + .07 * Math.min(hv, 3)).toFixed(2) + ')';
     cx.beginPath(); cx.ellipse(2.6, .6, 3.0, 3.1, .1, 0, 6.284); cx.fill();
   }
-  if(hd > .12){
+  if(hd > .12){                                  // отёк у глаза
     cx.fillStyle = 'rgba(118,26,58,' + (.16 + .4 * hd).toFixed(2) + ')';
     cx.beginPath(); cx.ellipse(2.3, 1.1, .9 + 1.0 * hd, .7 + .8 * hd, .25, 0, 6.284); cx.fill();
   }
-  /* Мимика. 0 — обычное лицо, 1 — улыбка во всю ширь, 2 — рёв на трибуны,
-     3 — гримаса боли. Победные сцены без этого не работают: поза уже
-     торжествующая, а лицо остаётся тем же, что и в бою. */
-  mood = mood || 0;
-  /* Бровь — не палка, а сужающийся клин: у переносицы толще, к виску тоньше.
-     Мимика двигает концы: радость поднимает, крик и боль сводят к носу. */
-  var bIn = mood === 1 ? -3.0 : (mood === 2 ? -1.0 : (mood === 3 ? -.8 : -1.55));   // конец у носа (x ≈ 3.9)
-  var bOut = mood === 1 ? -3.55 : (mood === 2 ? -2.55 : (mood === 3 ? -3.15 : -2.75)); // конец у виска (x ≈ .2)
-  cx.fillStyle = INK;
-  cx.beginPath();
-  cx.moveTo(.1, bOut - .3); cx.quadraticCurveTo(2.0, (bIn + bOut) / 2 - .6, 3.95, bIn - .6);
-  cx.lineTo(4.1, bIn + .5); cx.quadraticCurveTo(2.0, (bIn + bOut) / 2 + .15, .25, bOut + .22);
-  cx.closePath(); cx.fill();
   if(mk.cut){                                    // рассечение брови; струйка стекает по щеке
-    var ln = Math.min(1, (performance.now() - mk.cutT) / 2200);   // свежее — растёт, давнее — уже стекло
+    var ln = Math.min(1, (performance.now() - mk.cutT) / 2200);
     cx.strokeStyle = '#8a1220'; cx.lineWidth = .7;
     cx.beginPath(); cx.moveTo(1.9, -2.3); cx.lineTo(2.9, -1.75); cx.stroke();
     cx.strokeStyle = 'rgba(150,20,35,.75)'; cx.lineWidth = .36;
     var ex = 2.0 + (1.3 - 2.0) * ln, ey = -2.0 + (1.9 + 2.0) * ln;
     cx.beginPath(); cx.moveTo(2.0, -2.0); cx.quadraticCurveTo(1.2 + (2.0 - 1.2) * (1 - ln), -2.0 + 2.0 * ln, ex, ey); cx.stroke();
     cx.fillStyle = 'rgba(150,20,35,.8)';
-    cx.beginPath(); cx.arc(ex, ey, .3 + .1 * ln, 0, 6.284); cx.fill();   // капля на конце
-    if(hv >= 2){                                   // после второго сильного — из носа к губе
+    cx.beginPath(); cx.arc(ex, ey, .3 + .1 * ln, 0, 6.284); cx.fill();
+    if(hv >= 2){                                 // после второго сильного — из носа к губе
       cx.strokeStyle = 'rgba(150,20,35,.6)'; cx.lineWidth = .3;
       cx.beginPath(); cx.moveTo(4.5, 1.3); cx.quadraticCurveTo(4.2, 2.0, 3.8, 2.5); cx.stroke();
     }
   }
-
-  /* Глаз: белок-миндалина, радужка, зрачок и блик; верхнее веко темнее нижнего. */
-  if(mood === 1){                                // прищур радости
-    cx.strokeStyle = INK; cx.lineWidth = 1.3;
-    cx.beginPath(); cx.moveTo(1.5, .3); cx.quadraticCurveTo(2.6, -1.3, 3.6, .2); cx.stroke();
-  } else if(mood === 3){                         // зажмурился
-    cx.strokeStyle = INK; cx.lineWidth = 1.3;
-    cx.beginPath(); cx.moveTo(1.6, .1); cx.lineTo(3.5, .3); cx.stroke();
-  } else {
-    var ew = mood === 2 ? 1.5 : 1.05, eh = mood === 2 ? 1.35 : .95;
-    var EY = new Path2D();
-    EY.moveTo(2.6 - ew * 1.15, .15); EY.quadraticCurveTo(2.65, .15 - eh * 1.15, 2.6 + ew * 1.1, .05);
-    EY.quadraticCurveTo(2.65, .15 + eh * .95, 2.6 - ew * 1.15, .15); EY.closePath();
-    cx.fillStyle = '#f2ebe3'; cx.fill(EY);
-    cx.save(); cx.clip(EY);
-    cx.fillStyle = s.eye || '#3b2a1c';           // радужка
-    cx.beginPath(); cx.arc(2.85, .1, mood === 2 ? .62 : .58, 0, 6.284); cx.fill();
-    cx.fillStyle = INK;                          // зрачок
-    cx.beginPath(); cx.arc(2.9, .12, mood === 2 ? .34 : .3, 0, 6.284); cx.fill();
-    cx.fillStyle = 'rgba(0,0,0,.14)';            // тень от верхнего века
-    cx.beginPath(); cx.ellipse(2.6, -.55, 1.5, .5, 0, 0, 6.284); cx.fill();
-    cx.restore();
-    cx.fillStyle = 'rgba(255,255,255,.9)';
-    cx.beginPath(); cx.arc(3.05, -.12, .17, 0, 6.284); cx.fill();
-    cx.strokeStyle = INK; cx.lineWidth = .8;     // верхнее веко
-    cx.beginPath(); cx.moveTo(2.6 - ew * 1.15, .15); cx.quadraticCurveTo(2.65, .15 - eh * 1.15, 2.6 + ew * 1.1, .05); cx.stroke();
-    cx.strokeStyle = 'rgba(0,0,0,.4)'; cx.lineWidth = .45;   // нижнее веко
-    cx.beginPath(); cx.moveTo(2.6 - ew * 1.05, .25); cx.quadraticCurveTo(2.65, .15 + eh * .95, 2.6 + ew * 1.05, .1); cx.stroke();
-  }
-
-  /* Нос в профиль: спинка от переносицы, кончик, ноздря с тенью под ней. */
-  cx.strokeStyle = INK; cx.lineWidth = 1.05; cx.lineCap = 'round';
-  cx.beginPath(); cx.moveTo(4.35, -1.0); cx.quadraticCurveTo(5.45, .35, 5.05, 1.3); cx.quadraticCurveTo(4.65, 1.8, 4.0, 1.45); cx.stroke();
-  cx.fillStyle = 'rgba(0,0,0,.3)';
-  cx.beginPath(); cx.ellipse(4.4, 1.55, .42, .22, .3, 0, 6.284); cx.fill();
-  cx.fillStyle = 'rgba(0,0,0,.09)';              // тень от носа на щеку
-  cx.beginPath(); cx.ellipse(3.9, .9, .8, .55, .4, 0, 6.284); cx.fill();
-
-  if(mood === 1){                                // улыбка во всю ширь, с зубами
-    cx.beginPath(); cx.moveTo(1.1, 1.9); cx.quadraticCurveTo(3.0, 5.6, 5.0, 1.6);
-    cx.closePath();
-    cx.fillStyle = '#fff6ea'; cx.fill();
-    cx.strokeStyle = INK; cx.lineWidth = 1.3; cx.stroke();
-  } else if(mood === 2){                         // рот открыт в крике
-    cx.fillStyle = INK;
-    cx.beginPath(); cx.ellipse(3.2, 3.0, 1.85, 2.35, -.22, 0, 6.284); cx.fill();
-    cx.fillStyle = '#7a2530';
-    cx.beginPath(); cx.ellipse(3.3, 3.5, 1.15, 1.35, -.22, 0, 6.284); cx.fill();
-  } else if(mood === 3){                         // стиснутые зубы
-    cx.fillStyle = '#fff6ea';
-    cx.beginPath(); cx.ellipse(3.0, 2.9, 1.9, 1.05, -.1, 0, 6.284); cx.fill();
-    cx.strokeStyle = INK; cx.lineWidth = 1.1; cx.stroke();
-    cx.beginPath(); cx.moveTo(3.0, 1.9); cx.lineTo(3.0, 3.9); cx.stroke();
-  } else {                                       // сжатые губы: линия рта, нижняя губа объёмом
-    cx.strokeStyle = INK; cx.lineWidth = 1.0;
-    cx.beginPath(); cx.moveTo(1.9, 2.95); cx.quadraticCurveTo(3.0, 2.55, 4.15, 2.6); cx.stroke();
-    cx.strokeStyle = 'rgba(255,255,255,.16)'; cx.lineWidth = .8;
-    cx.beginPath(); cx.moveTo(2.3, 3.3); cx.quadraticCurveTo(3.1, 3.55, 3.95, 3.05); cx.stroke();
-    cx.strokeStyle = 'rgba(0,0,0,.28)'; cx.lineWidth = .6;
-    cx.beginPath(); cx.moveTo(2.5, 3.7); cx.quadraticCurveTo(3.2, 3.95, 3.9, 3.5); cx.stroke();
-  }
-  cx.strokeStyle = 'rgba(0,0,0,.28)'; cx.lineWidth = .6;   // подбородок
-  cx.beginPath(); cx.moveTo(3.4, 4.5); cx.quadraticCurveTo(4.3, 4.35, 4.85, 3.5); cx.stroke();
   cx.restore();
 }
 
@@ -4330,24 +4319,10 @@ function boxerParts(b, out){
     boot(J.legs[1], f, 4.7, 2.55, mix(s.trunkL));
   });
 
-  put('head', function(){                       // шея и голова одним силуэтом: череп + челюсть вперёд
+  put('head', function(){                       // шея под спрайтом головы
     line(J.neck, {x:J.head.x, y:J.head.y + HEAD_R * .6}, 5.6, mix(blend(s.skin, s.skinD, .45)));
-    /* Череп и челюсть одним путём, тёмная подложка со сдвигом в тень, внутри —
-       шаровой градиент от источника света с рефлексом угла по дальнему краю. */
-    var HP = new Path2D();
-    HP.ellipse(J.head.x + J.fw1.x * 2.1 * HS, J.head.y + J.fw1.y * 2.1 * HS + 2.9 * HS, 4.3 * HS, 3.7 * HS, 0, 0, 6.284);
-    HP.ellipse(J.head.x, J.head.y, HEAD_R * 1.0, HEAD_R * 1.04, J.ha * f, 0, 6.284);
-    inkPath(HP, 1.25);
-    var hg = cx.createRadialGradient(J.head.x + LDIR.x * HEAD_R * .7, J.head.y + LDIR.y * HEAD_R * .7,
-                                     HEAD_R * .12, J.head.x, J.head.y, HEAD_R * 1.7);
-    hg.addColorStop(0, mix(blend(s.skin, s.skinL, .8)));
-    hg.addColorStop(.46, mix(s.skin));
-    hg.addColorStop(.84, mix(blend(s.skin, s.skinD, .64)));
-    hg.addColorStop(1, mix(blend(s.skinD, s.skinR, .5)));
-    cx.fillStyle = hg; cx.fill(HP);
-    cx.fillStyle = mix(blend(s.skin, s.skinD, .7));               // узкая тень под скулой
-    cx.beginPath(); cx.ellipse(J.head.x + J.fw1.x * .4, J.head.y + HEAD_R * .86, 2.4 * HS, .95 * HS, 0, 0, 6.284); cx.fill();
-    face(J, f, s, mix, b.turned > .5, b.mood, b.marks);
+    headPix(J, f, b, dim);
+    faceMarks(J, f, s, mix, b.turned > .5, b.marks);
   });
 
   if(rearOut) put('rearArm', function(){ arm(J.arms[1], 4.5, 3.1, 2.4, TN, .88); });
