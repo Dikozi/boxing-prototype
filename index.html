@@ -1286,6 +1286,7 @@ Sp.prototype.step = function(dt){
 };
 Sp.prototype.reset = function(v){ this.x = v; this.t = v; this.v = 0; this.t0 = v; };
 
+var DRIFT_P = 6.5;                               // период переступа живой стойки, в единицах дыхания
 function Boxer(i){
   this.i = i; this.face0 = i === 0 ? 1 : -1; this.face = this.face0; this.base = POS[i];
   this.hx = new Sp(POS[i], 130, 21);
@@ -1343,6 +1344,13 @@ Boxer.prototype.reset = function(){
   this.charge = false; this.down = false; this.tired = false; this.winded = false; this.rocked = false;
   this.win = null; this.mood = 0; this.tapping = 0; this.broke = null;
   this.turned = 0; this.flexA = null; this.flexL = null;
+  /* Живая стойка начинается с чистого листа: переступ, начатый ещё на экране
+     выбора, иначе доигрывался в новом бою — ступня в первые кадры ползла к
+     чужому смещению (замер: «переступ» на 25-й мс с подъёмом 0.26–0.39
+     вместо 1.5). Текущий час считается занятым: первый переступ придёт со
+     следующего, как и раньше. */
+  this.drift = [0, 0]; this.driftFrom = 0; this.driftTo = 0;
+  this.driftN = Math.floor(this.breath / DRIFT_P); this.driftT = -9;
   this.marks = marksNew(); this.marksN = -1;
   this.trail = [[], []];
   this.solve();
@@ -2250,7 +2258,7 @@ function driveGuard(b){
      Двигается ТОЛЬКО ступня: метка (b.base) стоит намертво, поэтому
      дистанция, выпад и шаг удара считаются от того же места, что и раньше,
      и повтор боя не расходится. Часы — дыхание: оно уже идёт по кадрам. */
-  var P = 6.5, dn = Math.floor(b.breath / P), stepK = -1;
+  var dn = Math.floor(b.breath / DRIFT_P), stepK = -1;
   if(!seq && !b.rd && !b.hurt && !walking && dn !== b.driftN){
     b.driftN = dn; b.driftT = b.breath;                  // час начала переступа — свой, не доля цикла
     var hs = Math.sin(dn * 12.9898 + b.i * 78.233) * 43758.5453; hs -= Math.floor(hs);
