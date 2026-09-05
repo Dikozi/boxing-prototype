@@ -1,0 +1,69 @@
+---
+name: klinch-dev
+description: Работа над игрой «Клинч» (index.html в этом репозитории и tools/). Подгружать при любой правке игры, анимации, звука, правил или пробников — метод работы, инварианты и карта кода.
+---
+
+# «Клинч»: как здесь работают
+
+Игра — ОДИН файл `index.html` без сборки и сервера, открывается офлайн в
+браузере телефона. Ветка `claude/boxing-game-prototype-6gs9m8`, GitHub
+Pages деплоит её после зелёных пробников (`.github/workflows/pages.yml`).
+
+## Метод: сначала число, потом код
+
+1. Порог «пройдено/нет» пишется ДО правки; правка меряется тем же пробником
+   после. Код читается по наводке замера, не разведкой: `grep -n` по имени
+   функции, `sed -n` диапазона. Агенты-исследователи не окупаются.
+2. Пробники — память проекта: `sh tools/check.sh` гоняет все (около
+   десяти минут), один — `node tools/<имя>.js`. Список и пороги —
+   `INVARIANTS.md`. Новый класс ошибки → новое правило в пробнике.
+3. Снимок только когда число не решает: `node tools/strip.js <файл> <удар|win:0|ko:crossLand> <метка>`
+   даёт ленту из восьми кадров живого цикла в `tools/.out/`.
+4. Отчёт пользователю — с честными цифрами, включая «замерено, не починено».
+
+## Инварианты, которые уже стоили циклов
+
+- Пробник читает НАРИСОВАННЫЙ скелет `b.drawJ || poseOf(b)`, никогда `b.J`:
+  под физикой (`b.rd`) бойца рисует `ragJ`.
+- Живой цикл, не обходной: `frame()` шагает пружины сам; `settle()` — только
+  для сцен без времени. Покадровое состояние — в `Sp.step` (например `t0`
+  для предохранителя `limbSet`, порог `TELE = 9`).
+- Пороги «за кадр» врут под нагрузкой — метрики в единицах за секунду.
+- Случайность правил — только `rng()` (зерно `fightSeed`) внутри
+  `resolveRound`/`resolveRoundMMA`; бот и выбор архетипа CPU — `Math.random`.
+  Анимация читает запись раунда `rec`; повтор и код боя (`codeOf`/`loadCode`)
+  восстанавливают бой до цифры. Эталон бокса — `tools/baseline/boxing.txt`.
+- Следы боя (`marks`) считаются от записей (`marksUpTo`), не копятся по ходу.
+- Дуга шага стартует от положения пружины раз за размен (`hopFrom`), не от
+  текущей цели: стойка (`driveGuard`) идёт раньше удара и цели переставляет.
+- Картинки врезок и музыка — в хвостовом `<script id="tail">` в конце файла
+  (`tailArt`/`tailMusic`); `chk.py` берёт игровой скрипт по последнему
+  точному `<script>`. Музыка собирается `tools/music.py` (нужен ffmpeg).
+
+## Карта кода (искать по именам)
+
+Сцена: `STAGE_W/STAGE_H/FLOOR/HIP_Y/POS`, пружины `Sp`, `ik`, `Boxer`
+(`solve`, `reset`), цели `handTo/footTo/footToXY/stepFoot/stepAir/stepArc/walkTo`.
+Стойка и действия: `driveGuard` (живая стойка — переступы, `b.drift`),
+`driveActor` (удары, `stepTo`, `hopFrom`), `driveMMA`, `driveClinchPose`,
+`driveGround`, `driveSubHold`, `driveHurt/hurtSet/HURT`, `driveWin`, `driveDown`.
+Попадание: `applyImpact` (реакция, брызги `spray`, следы `marksAdd`, нокаут
+через `koWait` → `koFall` после панели). Физика: `makeRag` (шарниры,
+`limitHinges`), `ragHit`, `updateRd`, `ragJ`, `lerpJ` (сустав в осях
+конечности). Рисование: `boxerParts` (корпус, следы на рёбрах), `face`
+(отёк, рассечение, покраснение), `drawStage`, `filmPass`, `drawCut`/`CUT`.
+Звук: `tone/hiss`, `sndHit`, `sndCrack`, `sndSnap`, музыка `musLoop`.
+Правила: `ACT/MMA_ACT`, `resolve`, `resolveRound`, `resolveRoundMMA`,
+`legal`, `heavyMode`, бот `botChoose` (уровни `botLevel`: веса /
+расчёт размена `botChooseHard`), `botChooseMMA`. Интерфейс: `render`,
+`screen*`, обработчик кликов по `t.dataset.go`, `startRound/nextChooser`,
+`playRound`, `replayStart`, `fightSave/fightShare`.
+
+## Соглашения
+
+- Коммиты — на русском, с причиной и замером; концовка:
+  `Co-Authored-By: Claude <модель> <noreply@anthropic.com>` и
+  `Claude-Session: <ссылка>`; автор `Claude <noreply@anthropic.com>`.
+- Никаких идентификаторов модели в коде, комментариях и артефактах.
+- Перед коммитом — целевые пробники, перед push — полный `check.sh`.
+- После push — республикация артефакта `6a26fcdc-021c-4874-8faf-8693d8dfcd06`.
