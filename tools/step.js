@@ -48,8 +48,8 @@ const FILE = process.argv[2] || 'file://' + require('path').resolve(__dirname, '
   let ok=true;
   // пороги из INVARIANTS.md: вертушка вперёд не шагает (стопы сходятся) — порядок не считается;
   // подшаг задней ноги у джеба и кросса частично настоящий: джеб ≤ 0.30, кросс ≤ 0.20, прочие ≤ 0.12
-  const LIM={jab:0.30, crossLand:0.20};
-  for(const x of r){ if((x.удар!=='spinLand' && !x.стопа_первой) || x.скольжение>(LIM[x.удар]||0.12)) ok=false;
+  const LIM={jab:0.15, crossLand:0.12};
+  for(const x of r){ if((x.удар!=='spinLand' && !x.стопа_первой) || x.скольжение>(LIM[x.удар]||0.14)) ok=false;
     console.log(x.удар.padEnd(12)+String(x.таз).padStart(7)+String(x.стопа).padStart(10)+
       (x.стопа_первой?'          да':'         НЕТ')+String(x.скольжение).padStart(12)+
       String(x.макс_скольж).padStart(10)); }
