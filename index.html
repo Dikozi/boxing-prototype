@@ -43,8 +43,8 @@ body{
 .corner.b{border-color:#1d3a63} .corner.r{border-color:#5c2129}
 .cname{font-family:var(--disp);font-size:14px;font-weight:700;letter-spacing:.08em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:6px}
 .corner.b .cname{color:var(--blueL)} .corner.r .cname{color:var(--redL)}
-.lab{display:flex;justify-content:space-between;align-items:baseline;gap:4px;font-size:9px;font-weight:700;color:var(--dim);letter-spacing:.1em;padding-left:6px}
-.lab b{font-family:var(--disp);color:var(--txt);font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
+.lab{display:flex;justify-content:space-between;align-items:baseline;gap:4px;font-size:11px;font-weight:700;color:var(--dim);letter-spacing:.1em;padding-left:6px}
+.lab b{font-family:var(--disp);color:var(--txt);font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
 .bar{position:relative;height:11px;border-radius:6px;background:#04060a;border:1px solid #2c3547;overflow:hidden;margin-left:6px}
 .bar i{position:absolute;inset:0 auto 0 0;display:block;height:100%;width:0;transition:width .3s cubic-bezier(.3,0,.2,1),background .3s ease}
 .bar u{position:absolute;top:0;bottom:0;left:20%;width:2px;background:#ffffff4d}
@@ -163,7 +163,7 @@ button{font-family:inherit;color:inherit;cursor:pointer;touch-action:manipulatio
 .act.atk .t{color:var(--redL)}
 .act.def{border-color:#26445f;background:linear-gradient(#141d29,#101720)}
 .act.def .t{color:var(--blueL)}
-.hdr{font-size:10px;font-weight:800;letter-spacing:.22em;color:var(--dim);text-transform:uppercase}
+.hdr{font-size:11px;font-weight:800;letter-spacing:.22em;color:var(--dim);text-transform:uppercase}
 
 /* ===================== СТАТИСТИКА БОЯ ===================== */
 .st{gap:6px}
@@ -205,7 +205,7 @@ button{font-family:inherit;color:inherit;cursor:pointer;touch-action:manipulatio
 #logWrap.rev{display:none}
 @media (max-height:800px){ #ring.full{height:clamp(148px,25vh,230px)} }
 #logHead{display:flex;justify-content:space-between;align-items:center;padding:5px 12px 3px;
-  font-size:9px;font-weight:800;letter-spacing:.22em;color:var(--dim);text-transform:uppercase}
+  font-size:10px;font-weight:800;letter-spacing:.22em;color:var(--dim);text-transform:uppercase}
 #log{height:15vh;min-height:66px;max-height:150px;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 12px 9px;font-size:12.5px;line-height:1.4}
 #log .ent{padding:6px 0;border-top:1px solid #1f2634;animation:rise .3s ease-out both}
 #log .ent:first-child{border-top:none}
@@ -253,8 +253,8 @@ details .body b{color:var(--txt)} details .body .k{color:var(--gold);font-weight
   #ring{height:48px}
   #log{height:48px;min-height:48px}
   .act{min-height:42px} .act.wide{min-height:38px}
-  .act .em{font-size:15px} .act .t{font-size:14px} .act .s{font-size:9px}
-  .grid{gap:6px} .hdr{font-size:9px;letter-spacing:.18em}
+  .act .em{font-size:15px} .act .t{font-size:14px} .act .s{font-size:10px}
+  .grid{gap:6px} .hdr{font-size:10px;letter-spacing:.18em}
   .btn.big{padding:16px 12px;font-size:19px}
   .btn.ghost{padding:10px;font-size:14px}
   .card{padding:10px 12px;gap:6px}
@@ -328,7 +328,7 @@ details .body b{color:var(--txt)} details .body .k{color:var(--gold);font-weight
   #hud{padding:9px 12px;gap:8px}
   .corner{padding:8px 12px 9px;gap:4px}
   .cname{font-size:15px}
-  .lab{font-size:10px} .lab b{font-size:16px}
+  .lab{font-size:12px} .lab b{font-size:17px}
   .bar{height:11px}
   #panel{padding:14px;gap:8px}
   h2{font-size:clamp(19px,2.6vw,23px)}
@@ -337,7 +337,7 @@ details .body b{color:var(--txt)} details .body .k{color:var(--gold);font-weight
   .act.wide{min-height:46px}
   .act .em{font-size:19px}
   .act .t{font-size:16px}
-  .act .s{font-size:10px}
+  .act .s{font-size:11px}
 }
 @media (prefers-reduced-motion:reduce){
   #panel>*,#log .ent,.tag,#again{animation-duration:.01ms!important;animation-iteration-count:1!important}
@@ -1854,8 +1854,7 @@ var GMOVE = {
   reguard: {hy: -4, lean:-.20, tw:-.50, hx: -8, bd: .32},
   shed:    {hy: -5, lean:-.15, tw:-.85, hx:  6, bd: .28},
   spinout: {hy: -6, lean: .20, tw:-1.1, hx:  5, bd: .30},
-  throw:   {hy:  6, lean: .50, tw: 1.0, hx:  7, bd: .35},
-  escape:  {hy: -8, lean: .30, tw:-.70, hx: -4, bd:-.40, plant:1}
+  throw:   {hy:  6, lean: .50, tw: 1.0, hx:  7, bd: .35}
 };
 
 /* Болевые и удушения тоже были одним рывком на всех. Разница между ними —
@@ -1990,7 +1989,7 @@ function driveMMA(i, t, rec){
   if(A.kind === 'grap'){
     var h = punch * (ok ? 1 : .62);
     var mv = GMOVE[id];
-    if(mv && id !== 'escape'){
+    if(mv){
       b.hy.set(b.hy.t + mv.hy * h, 185, 24);
       b.hx.set(b.hx.t + mv.hx * h * f, 135, 20);
       b.lean.set(b.lean.t + mv.lean * h, 145, 21);
