@@ -3823,6 +3823,97 @@ function leg(L, r0, r1, r2, T, dim){ var sc = zScale(zMean3(L.hip, L.knee, L.foo
 /* Перчатка развёрнута по предплечью и «смотрит» туда, куда летит удар:
    тупая масса у костяшек, бинт на запястье, шов большого пальца. Кружок
    с бликом читался воздушным шариком, а не кулаком. */
+/* Перчатка — тоже спрайт: та же сетка плоских заливок, палитра и обводка,
+   что у головы. Векторный кулак с бликом читался фруктом («перчатки как
+   Манго»). Кэш по трём цветам, поэтому затемнение дальнего бойца попадает
+   в ключ само. Сетка 20×16: манжета с бинтом слева, набитая варежка,
+   отдельная доля большого пальца снизу. */
+/* Сетка подобрана так, чтобы пиксель спрайта совпал с текселем конвейера
+   (радиус варежки восемь пикселей при радиусе перчатки в мире 4.3): иначе
+   каждый четвёртый пиксель удваивался и кулак «дрожал». */
+var GPW = 26, GPH = 20, GPCX = 11.9, GPCY = 10, GPR = 8;
+var gloveCache = {};
+function gloveArt(col, colD, wrap){
+  var key = col + '|' + colD + '|' + wrap;
+  if(gloveCache[key]) return gloveCache[key];
+  var C = document.createElement('canvas'); C.width = GPW; C.height = GPH;
+  var g = C.getContext('2d');
+  var CL = blend(col, '#ffffff', .5), WD = blend(wrap, '#000000', .32);
+  var PAL = [col, colD, CL, wrap, WD, INK];
+  function el(x, y, rx, ry, c, rot){ g.fillStyle = c; g.beginPath(); g.ellipse(x, y, rx, ry, rot || 0, 0, 6.284); g.fill(); }
+  function rc(x, y, w, h, c){ g.fillStyle = c; g.fillRect(x, y, w, h); }
+  rc(0, 5.5, 6.8, 9.0, wrap);                     // манжета с бинтом
+  el(1.3, 10, 1.5, 4.5, wrap);
+  el(14.4, 10, 7.5, 6.8, col);                    // варежка
+  el(17.8, 8.8, 4.3, 5.3, col);                   // фронт костяшек — вертикальный, как у кулака
+  el(9.8, 15, 3.3, 2.5, col);                     // доля большого пальца
+  g.globalCompositeOperation = 'source-atop';
+  /* Тени и свет — узкими полосами по краю. Крупные пятна съедали форму:
+     кулак читался дыркой, а не набитой перчаткой. */
+  el(16.8, 5.8, 4.0, 1.6, CL);                    // свет по костяшкам
+  el(16.5, 14.9, 4.5, 1.4, colD);                 // тень по низу
+  el(8.5, 10, 1.8, 3.8, colD);                    // тень у запястья
+  el(11.8, 13.5, 3.0, .9, colD);                  // шов большого пальца
+  rc(6.5, 5.5, 1.1, 9.0, WD);                     // край манжеты
+  rc(1.8, 7.8, 3.5, 1.1, WD); rc(1.8, 11.3, 3.5, 1.1, WD);   // стежки шнуровки
+  g.globalCompositeOperation = 'source-over';
+  var id = g.getImageData(0, 0, GPW, GPH), d = id.data, n = GPW * GPH, q, k, best, bd, dd, cc = [];
+  for(k = 0; k < PAL.length; k++){ var v = parseInt(PAL[k].slice(1), 16); cc.push([v >> 16 & 255, v >> 8 & 255, v & 255]); }
+  for(q = 0; q < n; q++){
+    var o = q * 4;
+    if(d[o + 3] < 128){ d[o + 3] = 0; continue; }
+    d[o + 3] = 255; best = 0; bd = 1e9;
+    for(k = 0; k < cc.length; k++){
+      dd = (d[o] - cc[k][0]) * (d[o] - cc[k][0]) + (d[o + 1] - cc[k][1]) * (d[o + 1] - cc[k][1]) + (d[o + 2] - cc[k][2]) * (d[o + 2] - cc[k][2]);
+      if(dd < bd){ bd = dd; best = k; }
+    }
+    d[o] = cc[best][0]; d[o + 1] = cc[best][1]; d[o + 2] = cc[best][2];
+  }
+  var ink = parseInt(INK.slice(1), 16), ir = ink >> 16 & 255, ig = ink >> 8 & 255, ib = ink & 255;
+  var src = new Uint8ClampedArray(d);
+  for(var y = 0; y < GPH; y++) for(var x = 0; x < GPW; x++){
+    var o2 = (y * GPW + x) * 4;
+    if(src[o2 + 3]) continue;
+    if((x > 0 && src[o2 - 4 + 3]) || (x < GPW - 1 && src[o2 + 4 + 3]) ||
+       (y > 0 && src[o2 - GPW * 4 + 3]) || (y < GPH - 1 && src[o2 + GPW * 4 + 3])){
+      d[o2] = ir; d[o2 + 1] = ig; d[o2 + 2] = ib; d[o2 + 3] = 255;
+    }
+  }
+  g.putImageData(id, 0, 0);
+  gloveCache[key] = C;
+  return C;
+}
+function glove(p, prev, dir, f, col, colD, wrap, r){
+  if(prev){                                     // смаз на быстрой перчатке
+    var d = Math.hypot(p.x - prev.x, p.y - prev.y);
+    if(d > 2.4){
+      cx.globalAlpha = 0.18; cx.fillStyle = col;
+      for(var t = 0.3; t < 1; t += 0.3){
+        cx.beginPath();
+        cx.ellipse(prev.x + (p.x - prev.x) * t, prev.y + (p.y - prev.y) * t,
+                   r * (0.5 + t * 0.5), r * (0.38 + t * 0.45),
+                   Math.atan2(p.y - prev.y, p.x - prev.x), 0, 6.284);
+        cx.fill();
+      }
+      cx.globalAlpha = 1;
+    }
+  }
+  var C = gloveArt(col, colD, wrap), px = r / GPR;
+  cx.save();
+  cx.translate(p.x, p.y);
+  cx.rotate(Math.atan2(dir.y, dir.x));
+  cx.scale(px, px * f);                         // боец смотрит влево — палец всё равно снизу
+  cx.imageSmoothingEnabled = false;
+  cx.drawImage(C, -GPCX, -GPCY);
+  cx.imageSmoothingEnabled = true;
+  cx.restore();
+}
+function arm(A, r0, r1, r2, T, dim){ var sc = zScale(zMean3(A.sh, A.el, A.hand)); limb(A.sh, A.el, A.hand, r0 * sc, r1 * sc, r2 * sc, T, dim); }
+function leg(L, r0, r1, r2, T, dim){ var sc = zScale(zMean3(L.hip, L.knee, L.foot)); limb(L.hip, L.knee, L.foot, r0 * sc, r1 * sc, r2 * sc, T, dim); }
+
+/* Перчатка развёрнута по предплечью и «смотрит» туда, куда летит удар:
+   тупая масса у костяшек, бинт на запястье, шов большого пальца. Кружок
+   с бликом читался воздушным шариком, а не кулаком. */
 function glove(p, prev, dir, f, col, colD, wrap, r){
   if(prev){                                     // смаз на быстрой перчатке
     var d = Math.hypot(p.x - prev.x, p.y - prev.y);
