@@ -5152,6 +5152,11 @@ function frame(now){
           continue;
         }
         if(seq.rec.tap === z){                        // сдача: сперва отстучит, потом ляжет
+          var sb = (seq.rec.before && seq.rec.before.sub) || (seq.rec.after && seq.rec.after.sub);
+          var sk = sb ? sb.kind : null;
+          if(sk === 'armbar' || sk === 'kimura' || sk === 'leglock'){   // сустав хрустнул; удушения без хруста
+            sndCrack(.85); shake = Math.max(shake, 4); freeze += 90;
+          }
           B[z].tapping = 1250; B[z].mood = 3;
           popAt(B[z].J.head.x, B[z].J.head.y - 20, 'СДАЁТСЯ!', 'half');
           crowdCheer(1.1); musicKO();
@@ -5977,18 +5982,35 @@ function sndWhoosh(power){                        // рассекание воз
 /* Попадание собирается из трёх слоёв: короткий яркий транзиент даёт «щелчок»,
    полосовой шлепок — мясо удара, синус снизу — вес. Чем сильнее удар, тем
    глубже и длиннее низ; на самых тяжёлых добавляется саб и гулкий хвост. */
+/* Удар — плотный и глухой, а не щелчок. Слои: твёрдый стук (низкий шум с
+   резкой атакой — кость под перчаткой), короткий шлепок кожи, тело удара и
+   суб, который и даёт вес. Яркое шипение оставлено едва слышным: от него
+   звук читался как хлопок. Замер tools/sound.js: доля энергии ниже 300 Гц
+   и частота переходов через ноль. */
 function sndHit(power, body){
   if(!AC) return;
-  var t = AC.currentTime, p = Math.min(1, power);
+  var t = AC.currentTime, p = Math.min(1, power), fm = body ? .75 : 1;
   musicDuck(.45 * Math.min(1, p + .25));          // удар пробивается сквозь музыку
-  hiss('highpass', 5200, 2600, t, .035, .55 * p, .7);
-  hiss('bandpass', body ? 420 : 1100, body ? 200 : 470, t, body ? .17 : .12, .72 * p, .9);
-  tone('sine', (body ? 92 : 128) * (1 + p * .1), body ? 30 : 40, t, .18 + .22 * p, 1.05 * p);
-  if(p > .55){
-    tone('sine', 62, 26, t + .01, .34 + .3 * p, .85 * p);
-    tone('triangle', 190, 70, t, .16, .3 * p);
+  hiss('lowpass', 1500 * fm, 420 * fm, t, .022, .95 * p, .8);                       // стук: твёрдость
+  hiss('highpass', 5200, 2600, t, .025, .22 * p, .7);                                // перчатка, едва
+  hiss('bandpass', body ? 420 : 1100, body ? 200 : 470, t, body ? .14 : .09, .6 * p, .9);
+  tone('sine', 118 * fm * (1 + p * .1), 36 * fm, t, .16 + .22 * p, 1.1 * p);         // тело удара
+  if(p > .3) tone('sine', 58 * fm, 24, t + .008, .28 + .32 * p + (body ? .1 : 0), .9 * p);   // суб: плотность
+  if(p > .55) tone('triangle', 190 * fm, 70, t, .12, .22 * p);
+  if(p > .8) hiss('lowpass', 260, 90, t + .02, .5, .35 * p, .6);
+}
+/* Хруст кости: очередь щелчков, треск разрыва и глухой толчок. Играет на
+   сдаче от болевого на руку или ногу и на переломе; удушения без хруста. */
+function sndCrack(str){
+  if(!AC) return;
+  var t = AC.currentTime, s = str == null ? 1 : str, i, d = 0;
+  musicDuck(.5);
+  for(i = 0; i < 4; i++){
+    hiss('bandpass', 2600 + Math.random() * 1400, 900, t + d, .014, .9 * s, 3);
+    d += .018 + Math.random() * .012;
   }
-  if(p > .85) hiss('lowpass', 260, 90, t + .02, .5, .35 * p, .6);
+  hiss('highpass', 1800, 700, t + .07, .11, .7 * s, 1.4);
+  tone('sine', 96, 38, t + .06, .26, .6 * s);
 }
 function sndBlock(){                              // перчатка о перчатку: плотно и глухо
   if(!AC) return;
@@ -6042,13 +6064,11 @@ function sndMat(){                                 // ладонь по наст
   tone('sine', 155, 62, t, .09, .5);
   hiss('lowpass', 950, 300, t, .07, .42, .8);
 }
-function sndSnap(){                                // сустав не выдержал
+function sndSnap(){                                // перелом: хруст и надлом
   if(!AC) return;
   var t = AC.currentTime;
-  musicDuck(.5);
-  hiss('highpass', 2700, 900, t, .09, .8, 1.2);
-  tone('square', 430, 90, t, .07, .3);
-  tone('sine', 128, 42, t + .03, .3, .55);
+  sndCrack(1);
+  tone('square', 430, 90, t + .02, .07, .3);
 }
 function sndTap(){
   if(!AC) return;
