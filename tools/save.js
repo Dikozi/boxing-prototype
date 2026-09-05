@@ -2,11 +2,12 @@
 // автосохранение снимается, когда бой окончен. Бокс и ММА.
 const { chromium } = require('./pw');
 const FILE = process.argv[2] || 'file://' + require('path').resolve(__dirname, '..', 'index.html');
+// Ходы синтетические: множители 9 и 4 подобраны так, чтобы оба боя шли все 14 раундов.
 const PLAY = (g, from, to, seedInit) => `(() => {
   ${seedInit ? "game='" + g + "'; mode='pvp'; pick=['wrestler','striker']; newFight(); rngS = fightSeed = 777;" : ''}
   const lv=['head','body'];
   for(let r=${from}; r<=${to} && !isOver(); r++){ round=r;
-    const mk=(k)=>{ if(F[k].pending) return F[k].pending; const L=legal(k); const id=L[(r*7+k*3)%L.length]; return ACT[id].level ? {id, lvl:lv[(r+k)%2]} : {id}; };
+    const mk=(k)=>{ if(F[k].pending) return F[k].pending; const L=legal(k); const id=L[(r*9+k*4)%L.length]; return ACT[id].level ? {id, lvl:lv[(r+k)%2]} : {id}; };
     choices=[mk(0),mk(1)]; resolveRound(); }
   const rec = JSON.stringify(bouts.map(b=>[b.round,b.choices,b.out.map(o=>[o.type,o.dmg||0,!!o.liver]),b.hp,b.st,b.winded,b.ko,b.after?[b.after.pos,b.after.top]:null]));
   return {code: codeOf(), rec, n: bouts.length, saved: localStorage.getItem('klinch.fight'), over: isOver()}; })()`;

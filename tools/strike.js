@@ -9,7 +9,8 @@ const FILE = process.argv[2] || 'file://' + require('path').resolve(__dirname, '
   const r=await p.evaluate(()=>{
     const ang=(a,c,d)=>{ const v1={x:a.x-c.x,y:a.y-c.y}, v2={x:d.x-c.x,y:d.y-c.y};
       return Math.atan2(v1.x*v2.y-v1.y*v2.x, v1.x*v2.x+v1.y*v2.y); };
-    const CASES=[['box','jab',0],['box','crossLand',0],['box','uppercut',0],['box','kick',1],['box','spinLand',1],
+    // limb: 0 — задняя рука, 1 — задняя нога, 2 — ведущая рука (прямой, хук)
+    const CASES=[['box','jab',2],['box','hook',2],['box','crossLand',0],['box','uppercut',0],['box','kick',1],['box','spinLand',1],
                  ['mma','gpunch',0],['mma','elbow',0],['mma','pound',0],['mma','cknee',1],['mma','upkick',1]];
     const out=[];
     for(const [g,id,limb] of CASES){
@@ -28,7 +29,7 @@ const FILE = process.argv[2] || 'file://' + require('path').resolve(__dirname, '
       rec._air=[airPoint(0,rec),airPoint(1,rec)];
       const B0=B[0];
       const IMP = (typeof impactMs==='function') ? impactMs(rec) : T_IMPACT;
-      const pt=()=> limb ? B0.J.legs[1].foot : B0.J.arms[1].hand;
+      const pt=()=> limb===1 ? B0.J.legs[1].foot : B0.J.arms[limb===2?0:1].hand;
       const aim=()=> ({x:B[1].J.head.x, y:B[1].J.head.y});
       const path=[]; let prev=null, flips=0, maxRate=0, d0=null, back=0;
       for(let t=0;t<=IMP+40;t+=16){

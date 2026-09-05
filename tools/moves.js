@@ -13,7 +13,7 @@ const FILE = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
       ['side',1,1,'tomount'],['side',1,1,'takeback'],['side',1,0,'reguard'],
       ['mount',1,0,'bridge'],['mount',1,0,'toguard'],['mount',1,1,'pound'],['mount',1,1,'armbar'],
       ['back',1,0,'shed'],['back',1,0,'spinout'],['back',1,1,'rnc'],
-      ['clinch',0,0,'throw'],['clinch',0,0,'cknee'],['stand',-1,0,'shoot'],['stand',-1,0,'sprawl']
+      ['clinch',0,0,'throw'],['clinch',0,0,'cknee'],['stand',-1,0,'shoot'],['stand',-1,0,'sprawl'],['stand',-1,0,'hook']
     ];
     const out = [];
     for(const [pos,top,who,id] of CASES){

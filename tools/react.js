@@ -7,7 +7,7 @@ const FILE = process.argv[2] || 'file://' + require('path').resolve(__dirname, '
   const errs=[]; p.on('pageerror',e=>errs.push(''+e));
   await p.goto(FILE);
   const r=await p.evaluate(async ()=>{
-    const CASES=[['jab',20,'head'],['uppercut',32,'head'],['crossLand',50,'head'],
+    const CASES=[['jab',20,'head'],['hook',26,'head'],['uppercut',32,'head'],['crossLand',50,'head'],
                  ['spinLand',58,'head'],['kick',32,'body'],['jab',20,'body']];
     const out=[];
     for(const [id,dmg,lvl] of CASES){
