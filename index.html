@@ -1300,6 +1300,9 @@ function Boxer(i){
   /* Раньше ступня жила только по горизонтали и была прибита к настилу.
      Для удара ногой ей нужна вертикаль. */
   this.footY = [new Sp(FLOOR, 190, 25), new Sp(FLOOR, 190, 25)];
+  /* глубина кистей и стоп: без цели на кадр — в плоскости плеча и таза */
+  this.handZ = [new Sp(0, 190, 25), new Sp(0, 190, 25)]; this.hzUse = [0, 0];
+  this.footZ = [new Sp(0, 170, 24), new Sp(0, 170, 24)]; this.fzUse = [0, 0];
   this.trail = [[], []];
   this.breath = Math.random() * 6;
   this.drift = [0, 0]; this.driftN = -1; this.driftK = 0; this.driftT = -9; this.driftFrom = 0; this.driftTo = 0;   // живая стойка
@@ -1346,6 +1349,26 @@ function ik(ax, ay, tx, ty, l1, l2, bend){
           ex: ax + dx / d * dc, ey: ay + dy / d * dc};
 }
 
+/* Двухзвенник в пространстве. Сторона сгиба — тот же перпендикуляр к звену
+   в плоскости экрана, что и у ik(), ортогонализованный к оси звена: при
+   равных z результат совпадает с плоским до единицы, старые позы не
+   двигаются; при разных z локоть и колено уходят в глубину честно. */
+function ik3(S, T, l1, l2, bend){
+  var sz = S.z || 0, dx = T.x - S.x, dy = T.y - S.y, dz = (T.z || 0) - sz;
+  var d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.001;
+  var dc = Math.min(d, l1 + l2 - 0.01);
+  var ax = dx / d, ay = dy / d, az = dz / d;
+  var c = Math.max(-1, Math.min(1, (dc * dc + l1 * l1 - l2 * l2) / (2 * dc * l1)));
+  var sn = Math.sqrt(1 - c * c);
+  var px = -ay * bend, py = ax * bend, pz = 0;
+  var dot = px * ax + py * ay; px -= dot * ax; py -= dot * ay; pz -= dot * az;
+  var pl = Math.sqrt(px * px + py * py + pz * pz);
+  if(pl < 1e-4){ px = 0; py = bend; pz = 0; pl = 1; }       // звено смотрит в зрителя
+  px /= pl; py /= pl; pz /= pl;
+  return {x:S.x + ax * l1 * c + px * l1 * sn, y:S.y + ay * l1 * c + py * l1 * sn, z:sz + az * l1 * c + pz * l1 * sn,
+          ex:S.x + ax * dc, ey:S.y + ay * dc, ez:sz + az * dc};
+}
+
 /* пересчёт всех точек скелета из текущего состояния пружин */
 var SPINE = 0.45;                                  // где ломается корпус: доля от таза к шее
 Boxer.prototype.solve = function(){
@@ -1366,13 +1389,21 @@ Boxer.prototype.solve = function(){
   var tw = this.twist.x;
   var o0 = (4.2 - tw * 4.4) * wd;
   var o1 = (-4.2 + tw * (tw > 0 ? 9.2 : 3.2)) * wd;   // вперёд плечо проносит, назад — только уводит
+  /* Глубина (z — к зрителю). Оси x/y считаются как прежде: кривые плеч
+     подобраны руками, и картинка стойки должна остаться той же. z идёт по
+     тем же кривым: с разворотом корпуса заднее плечо выходит вперёд И к
+     зрителю, переднее уходит назад и в глубину. Слои рисовалки, масштаб и
+     наклон камеры читают именно z. */
+  var zs0 = (4.2 - tw * 4.0) * wd, zs1 = (-4.2 + tw * (tw > 0 ? 7.5 : 2.5)) * wd;
   var sh = [
-    {x:shB.x + fw1.x * o0, y:shB.y + fw1.y * o0},
-    {x:shB.x + fw1.x * o1, y:shB.y + fw1.y * o1}
+    {x:shB.x + fw1.x * o0, y:shB.y + fw1.y * o0, z:zs0},
+    {x:shB.x + fw1.x * o1, y:shB.y + fw1.y * o1, z:zs1}
   ];
   var arms = [], legs = [], k, bk = this.broke;
   for(k = 0; k < 2; k++){
-    var h = {x:this.hand[k].x.x, y:this.hand[k].y.x};
+    /* без явной цели по глубине кисть висит в плоскости своего плеча */
+    if(!this.hzUse[k]){ this.handZ[k].x = sh[k].z; this.handZ[k].t = sh[k].z; this.handZ[k].v = 0; }
+    var h = {x:this.hand[k].x.x, y:this.hand[k].y.x, z:this.handZ[k].x};
     /* Перелом: сустав выгибается в обратную сторону. Это и есть весь эффект —
        знак сгиба у одной конечности инвертирован, остальное делает поза. */
     /* Сторона сгиба берётся из направления взгляда. Для стоящего это верно,
@@ -1381,20 +1412,22 @@ Boxer.prototype.solve = function(){
        работает как прежде. */
     var ba = this.flexA != null ? this.flexA : (f > 0 ? 1 : -1);
     if(bk && bk.limb === 'arm' && bk.k === k) ba = -ba;
-    var e = ik(sh[k].x, sh[k].y, h.x, h.y, UPARM, FOREARM, ba);
-    arms.push({sh:sh[k], el:{x:e.x, y:e.y}, hand:{x:e.ex, y:e.ey}});
+    var e = ik3(sh[k], h, UPARM, FOREARM, ba);
+    arms.push({sh:sh[k], el:{x:e.x, y:e.y, z:e.z}, hand:{x:e.ex, y:e.ey, z:e.ez}});
   }
   for(k = 0; k < 2; k++){
     var pv = this.pelvis.x;
     /* Разножка: в профиль обе ноги висят на одной линии, в три четверти
        расходятся по обе стороны тела — без этого маунт не читается. */
     var spread = (k === 0 ? 2 : -2) * (1 + tn * 3.2);
-    var hipK = {x:hip.x + fw.x * (spread + pv * (k === 0 ? 3.4 : -3.4)), y:hip.y + 1};
-    var ft = {x:this.foot[k].x, y:this.footY[k].x};
+    var hipK = {x:hip.x + fw.x * (spread + pv * (k === 0 ? 3.4 : -3.4)), y:hip.y + 1,
+                z:(k === 0 ? 2.4 : -2.4) + pv * (k === 0 ? -1.6 : 1.6)};
+    if(!this.fzUse[k]){ this.footZ[k].x = hipK.z; this.footZ[k].t = hipK.z; this.footZ[k].v = 0; }
+    var ft = {x:this.foot[k].x, y:this.footY[k].x, z:this.footZ[k].x};
     var bl = this.flexL != null ? this.flexL : (f > 0 ? -1 : 1);
     if(bk && bk.limb === 'leg' && bk.k === k) bl = -bl;
-    var kn = ik(hipK.x, hipK.y, ft.x, ft.y, THIGH, SHIN, bl);
-    legs.push({hip:hipK, knee:{x:kn.x, y:kn.y}, foot:{x:kn.ex, y:kn.ey}});
+    var kn = ik3(hipK, ft, THIGH, SHIN, bl);
+    legs.push({hip:hipK, knee:{x:kn.x, y:kn.y, z:kn.z}, foot:{x:kn.ex, y:kn.ey, z:kn.ez}});
   }
   this.J = {hip:hip, up:up, fw:fw, chest:chest, up1:up1, fw1:fw1, lo:lo, wd:wd,
             neck:neck, shB:shB, head:head, ha:ha, sh:sh, arms:arms, legs:legs};
@@ -1515,6 +1548,10 @@ function footTo(b, k, x, kk, dd){
   b.foot[k].set(limbSet(b.foot[k], x), kk, dd);
   b.footY[k].set(limbSet(b.footY[k], FLOOR), kk, dd);
 }
+/* Цель по глубине на этот кадр; без вызова кисть держит z своего плеча,
+   стопа — z своего таза (см. solve). */
+function handToZ(b, k, z, kk, dd){ b.handZ[k].set(z, kk || 190, dd || 25); b.hzUse[k] = 1; }
+function footToZ(b, k, z, kk, dd){ b.footZ[k].set(z, kk || 170, dd || 24); b.fzUse[k] = 1; }
 function footToXY(b, k, x, y, kk, dd){
   b.foot[k].set(limbSet(b.foot[k], x), kk, dd);
   b.footY[k].set(limbSet(b.footY[k], y), kk, dd);
@@ -3328,6 +3365,17 @@ function ragJ(b){
     legs.push({hip:endOf(th, -THIGH / 2), knee:lp(endOf(th, THIGH / 2), endOf(sn, -SHIN / 2), .5),
                foot:endOf(sn, SHIN / 2)});
   }
+  /* глубина у куклы — из позы: её продолжают решать под физикой, и при
+     переходе в куклу и обратно слои не прыгают */
+  var PJ = b.J;
+  if(PJ){
+    for(k = 0; k < 2; k++){
+      var pa = PJ.arms[k], pl = PJ.legs[k];
+      arms[k].sh.z = pa.sh.z; arms[k].el.z = pa.el.z; arms[k].hand.z = pa.hand.z;
+      legs[k].hip.z = pl.hip.z; legs[k].knee.z = pl.knee.z; legs[k].foot.z = pl.foot.z;
+      sh[k].z = PJ.sh[k].z;
+    }
+  }
   var lo = TORSO_H * SPINE;
   return {hip:hip, up:up, fw:fw, chest:{x:hip.x + up.x * lo, y:hip.y + up.y * lo},
           up1:up, fw1:fw, lo:lo, wd:1,
@@ -3335,7 +3383,7 @@ function ragJ(b){
           ha:r.head.angle * f, sh:sh, arms:arms, legs:legs};
 }
 
-function lp(a, b2, e){ return {x:a.x + (b2.x - a.x) * e, y:a.y + (b2.y - a.y) * e}; }
+function lp(a, b2, e){ var az = a.z || 0, bz = b2.z || 0; return {x:a.x + (b2.x - a.x) * e, y:a.y + (b2.y - a.y) * e, z:az + (bz - az) * e}; }
 /* Локоть и колено блендятся не по прямой. Когда у куклы рука согнута в одну
    сторону, а в позе — в другую, линейный лерп сустава проходит через линию
    плечо–кисть, и на кадр локоть складывается в ноль (замер: 0.4° в бленде
@@ -3677,8 +3725,8 @@ function limb(a, b2, c, r0, r1, r2, T, dim){
   jg.addColorStop(1, dimC(blend(T.base, T.shade, .75), dim));
   cx.fillStyle = jg; cx.fill(JP);
 }
-function arm(A, r0, r1, r2, T, dim){ limb(A.sh, A.el, A.hand, r0, r1, r2, T, dim); }
-function leg(L, r0, r1, r2, T, dim){ limb(L.hip, L.knee, L.foot, r0, r1, r2, T, dim); }
+function arm(A, r0, r1, r2, T, dim){ var sc = zScale(zMean3(A.sh, A.el, A.hand)); limb(A.sh, A.el, A.hand, r0 * sc, r1 * sc, r2 * sc, T, dim); }
+function leg(L, r0, r1, r2, T, dim){ var sc = zScale(zMean3(L.hip, L.knee, L.foot)); limb(L.hip, L.knee, L.foot, r0 * sc, r1 * sc, r2 * sc, T, dim); }
 
 /* Перчатка развёрнута по предплечью и «смотрит» туда, куда летит удар:
    тупая масса у костяшек, бинт на запястье, шов большого пальца. Кружок
@@ -3853,6 +3901,27 @@ function face(J, f, s, mix, turned, mood, marks){
    ========================================================================= */
 var PZ = {shadow:0, farLeg:10, farArm:20, torso:30, nearLeg:40, kickLeg:45,
           head:50, rearArm:55, nearArm:56, rearGlove:57};
+/* Лёгкая глубина: z сустава (к зрителю — плюс) чуть опускает точку на
+   экране (наклон камеры EL) и чуть увеличивает часть (перспектива PSP).
+   В стойке слои идут по средней глубине части, а не по таблице PZ: рука
+   или нога, вылетевшая перед корпусом, сама оказывается впереди. В клинче
+   и партере порядок подобран руками — там таблицы остаются. */
+var EL = .12, PSP = .008;
+function projP(p){ var z = p.z || 0; return {x:p.x, y:p.y + z * EL, z:z}; }
+function projJ(J){
+  var k, arms = [], legs = [];
+  for(k = 0; k < 2; k++){
+    arms.push({sh:projP(J.arms[k].sh), el:projP(J.arms[k].el), hand:projP(J.arms[k].hand)});
+    legs.push({hip:projP(J.legs[k].hip), knee:projP(J.legs[k].knee), foot:projP(J.legs[k].foot)});
+  }
+  var o = {}; for(k in J) if(J.hasOwnProperty(k)) o[k] = J[k];
+  o.sh = [projP(J.sh[0]), projP(J.sh[1])]; o.arms = arms; o.legs = legs;
+  return o;
+}
+function zMean3(a, b2, c){ return ((a.z || 0) + (b2.z || 0) + (c.z || 0)) / 3; }
+function zScale(z){ return 1 + z * PSP; }
+/* дальняя конечность темнее ближней; между ними — по глубине */
+function zDim(z){ return .62 + .38 * clamp((z + 4.2) / 8.4, 0, 1); }
 var ZB = 1000;                                  // слой второго бойца
 
 /* Кто над кем в каждой позиции. Ключ — роль и часть тела, значение — итоговая
@@ -3888,7 +3957,7 @@ function depthFor(i){
 }
 
 function boxerParts(b, out){
-  var s = SKIN[b.i], J = b.drawJ || poseOf(b), f = b.face, fw = J.fw, up = J.up;
+  var s = SKIN[b.i], J = projJ(b.drawJ || poseOf(b)), f = b.face, fw = J.fw, up = J.up;
   var dim = b.down ? 0.55 : 1;
   function mix(c){ return dim < 1 ? shadeHex(c, dim) : c; }
   var D = depthFor(b.i);
@@ -3903,11 +3972,21 @@ function boxerParts(b, out){
     wet = Math.max(0, Math.min(1, wet));
   }
   var TN = {base:mix(s.skin), lit:mix(s.skinL), shade:mix(s.skinD), rim:mix(s.skinR), wet:wet};
-  var FAR = .62;
-  function put(part, fn){ out.push({z:(D.ov && D.ov[part] != null) ? D.ov[part] : D.base + PZ[part], d:fn}); }
-
-  var legOut = J.legs[1].foot.y < FLOOR - 5;                // задняя нога пошла в удар
-  var rearOut = (J.arms[1].hand.x - J.neck.x) * f > 7;      // задняя рука вылетела вперёд
+  var dyn = !(game === 'mma' && RP.pos !== 'stand');       // в стойке слои — по глубине
+  var zPart = {shadow:-1e3, torso:0, head:.5,
+               farLeg:zMean3(J.legs[1].hip, J.legs[1].knee, J.legs[1].foot), kickLeg:0, rearArm:0, rearGlove:0,
+               nearLeg:zMean3(J.legs[0].hip, J.legs[0].knee, J.legs[0].foot),
+               farArm:zMean3(J.arms[1].sh, J.arms[1].el, J.arms[1].hand),
+               nearArm:zMean3(J.arms[0].sh, J.arms[0].el, J.arms[0].hand)};
+  var FAR = dyn ? zDim(zPart.farArm) : .62, FARL = dyn ? zDim(zPart.farLeg) : .62;
+  var NEAR = dyn ? zDim(zPart.nearArm) : 1, NEARL = dyn ? zDim(zPart.nearLeg) : 1;
+  function put(part, fn){
+    var z = (D.ov && D.ov[part] != null) ? D.ov[part] : (dyn ? D.base + 500 + zPart[part] * 10 : D.base + PZ[part]);
+    out.push({z:z, d:fn});
+  }
+  var legOut = !dyn && J.legs[1].foot.y < FLOOR - 5;         // партер/клинч: задняя нога пошла в удар
+  var rearOut = !dyn && (J.arms[1].hand.x - J.neck.x) * f > 7;   // партер/клинч: задняя рука вылетела вперёд
+  var farNear = dyn && zPart.farArm > 0;                     // дальняя рука вышла к зрителю — перчатка яркая
 
   put('shadow', function(){
     /* Тень по позе, а не пятно у таза. Тот же скелет кладётся на настил:
@@ -3950,14 +4029,15 @@ function boxerParts(b, out){
   });
 
   if(!legOut) put('farLeg', function(){
-    leg(J.legs[1], 4.7, 3.3, 2.4, TN, FAR);
+    leg(J.legs[1], 4.7, 3.3, 2.4, TN, FARL);
     cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
     boot(J.legs[1], f, 4.6, 2.5, mix(s.dark));
   });
   if(!rearOut) put('farArm', function(){
     arm(J.arms[1], 4.2, 2.9, 2.2, TN, FAR);
     glove(J.arms[1].hand, b.trail[1][0], unitV(J.arms[1].el, J.arms[1].hand), f,
-          mix(s.gloveD), mix(s.dark), mix(s.dark), gloveR() * .93);
+          mix(farNear ? s.glove : s.gloveD), mix(farNear ? s.gloveD : s.dark), mix(farNear ? s.trunkL : s.dark),
+          gloveR() * (farNear ? 1 : .93) * zScale(J.arms[1].hand.z || 0));
   });
 
   put('torso', function(){
@@ -4080,7 +4160,7 @@ function boxerParts(b, out){
   });
 
   put('nearLeg', function(){
-    leg(J.legs[0], 5.1, 3.6, 2.6, TN, 1);
+    leg(J.legs[0], 5.1, 3.6, 2.6, TN, NEARL);
     cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
     boot(J.legs[0], f, 4.8, 2.6, mix(s.trunkL));
   });
@@ -4112,9 +4192,9 @@ function boxerParts(b, out){
 
   if(rearOut) put('rearArm', function(){ arm(J.arms[1], 4.5, 3.1, 2.4, TN, .88); });
   put('nearArm', function(){
-    arm(J.arms[0], 4.8, 3.3, 2.5, TN, 1);
+    arm(J.arms[0], 4.8, 3.3, 2.5, TN, NEAR);
     glove(J.arms[0].hand, b.trail[0][0], unitV(J.arms[0].el, J.arms[0].hand), f,
-          mix(s.glove), mix(s.gloveD), mix(s.trunkL), gloveR());
+          mix(s.glove), mix(s.gloveD), mix(s.trunkL), gloveR() * zScale(J.arms[0].hand.z || 0));
   });
   if(rearOut) put('rearGlove', function(){
     glove(J.arms[1].hand, b.trail[1][0], unitV(J.arms[1].el, J.arms[1].hand), f,
@@ -5235,12 +5315,14 @@ function frame(now){
     bodyMech(b);
     b.hx.step(dt); b.hy.step(dt); b.lean.step(dt); b.head.step(dt); b.twist.step(dt); b.pelvis.step(dt);
     b.bend.step(dt); b.turn3.step(dt);
-    for(k = 0; k < 2; k++){ b.hand[k].x.step(dt); b.hand[k].y.step(dt); b.foot[k].step(dt); b.footY[k].step(dt); }
+    for(k = 0; k < 2; k++){ b.hand[k].x.step(dt); b.hand[k].y.step(dt); b.foot[k].step(dt); b.footY[k].step(dt);
+                            b.handZ[k].step(dt); b.footZ[k].step(dt); }
     for(k = 0; k < 2; k++){
       b.trail[k].unshift({x:b.J.arms[k].hand.x, y:b.J.arms[k].hand.y});
       if(b.trail[k].length > 2) b.trail[k].pop();
     }
     b.solve();
+    b.hzUse[0] = b.hzUse[1] = b.fzUse[0] = b.fzUse[1] = 0;   // цели по глубине живут один кадр
   }
   ghTick++;
   for(i = 0; i < 2; i++){
@@ -5388,8 +5470,10 @@ function settle(dt){
     bodyMech(b);
     b.hx.step(dt); b.hy.step(dt); b.lean.step(dt); b.head.step(dt); b.twist.step(dt); b.pelvis.step(dt);
     b.bend.step(dt); b.turn3.step(dt);
-    for(k = 0; k < 2; k++){ b.hand[k].x.step(dt); b.hand[k].y.step(dt); b.foot[k].step(dt); b.footY[k].step(dt); }
+    for(k = 0; k < 2; k++){ b.hand[k].x.step(dt); b.hand[k].y.step(dt); b.foot[k].step(dt); b.footY[k].step(dt);
+                            b.handZ[k].step(dt); b.footZ[k].step(dt); }
     b.solve();
+    b.hzUse[0] = b.hzUse[1] = b.fzUse[0] = b.fzUse[1] = 0;
   }
 }
 function skipSeq(){
