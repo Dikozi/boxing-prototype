@@ -4000,12 +4000,42 @@ function glove(p, prev, dir, f, col, colD, wrap, r){
    притягиваются к палитре из девяти, и силуэт обводится в один пиксель.
    Кэш на бойца, выражение и затемнение — рисуется один раз за бой.
    ========================================================================= */
+/* Внешность бойца: причёска, растительность, нос, бровь и сложение. Скелет,
+   физика и правила от этого не зависят — меняются только спрайт головы и
+   радиусы рисовки, поэтому все замеры остаются в силе. */
+var LOOK = [
+  {n:'Классик',      hair:'buzz',   beard:0,         nose:'straight', brow:1,   bw:1.00, sk:'#b98e77', hc:'#12182a'},
+  {n:'Ветеран',      hair:'recede', beard:'stubble', nose:'flat',     brow:1.5, bw:1.10, sk:'#c09277', hc:'#6e7280'},
+  {n:'Панк',         hair:'mohawk', beard:0,         nose:'straight', brow:1,   bw:0.90, sk:'#cfa484', hc:'#8e2230'},
+  {n:'Кубинец',      hair:'curly',  beard:'goatee',  nose:'straight', brow:1.2, bw:1.02, sk:'#a9713e', hc:'#1b1109'},
+  {n:'Тяжеловес',    hair:'bald',   beard:'full',    nose:'flat',     brow:1.5, bw:1.18, sk:'#c08a63', hc:'#2b1a12'},
+  {n:'Афро',         hair:'afro',   beard:'stubble', nose:'straight', brow:1.1, bw:1.02, sk:'#7a4b2a', hc:'#140d08'},
+  {n:'Самурай',      hair:'tail',   beard:'goatee',  nose:'hook',     brow:1.2, bw:0.94, sk:'#c9a06a', hc:'#0f1014'},
+  {n:'Молодой',      hair:'long',   beard:0,         nose:'straight', brow:0.9, bw:0.88, sk:'#d3ab8c', hc:'#3d2a16'},
+  {n:'Старая школа', hair:'flat',   beard:'moust',   nose:'flat',     brow:1.4, bw:1.12, sk:'#b8815c', hc:'#241a12'},
+  {n:'Фейд',         hair:'fade',   beard:'stubble', nose:'straight', brow:1.1, bw:1.06, sk:'#8f5c33', hc:'#150e0a'}
+];
+var LOOKS = [0, 1];                              // какой вариант у синего и у красного
+function lookOf(i){ return LOOK[LOOKS[i] % LOOK.length]; }
+/* Тон кожи и цвет волос — часть варианта. Тень кожи остаётся от угла: она
+   задаёт холодный или тёплый рефлекс, и менять её значит ломать освещение. */
+var skinCache = {};
+function skinOf(i){
+  var L = lookOf(i), key = i + '|' + LOOKS[i];
+  if(skinCache[key]) return skinCache[key];
+  var base = SKIN[i], o = {}, k;
+  for(k in base) o[k] = base[k];
+  if(L.sk){ o.skin = L.sk; o.skinL = blend(L.sk, '#ffffff', .34); }
+  if(L.hc) o.hair = L.hc;
+  skinCache[key] = o;
+  return o;
+}
 var HPW = 26, HPH = 28, HPCX = 12, HPCY = 12, HPR = 9;   // сетка, центр черепа, его радиус
 var headCache = {};
 function headArt(i, variant, dim){
-  var key = i + '|' + variant + '|' + (dim < 1 ? 'd' : 'n');
+  var key = i + '|' + variant + '|' + (dim < 1 ? 'd' : 'n') + '|' + LOOKS[i];
   if(headCache[key]) return headCache[key];
-  var s = SKIN[i], C = document.createElement('canvas'), g;
+  var s = skinOf(i), L = lookOf(i), C = document.createElement('canvas'), g;
   C.width = HPW; C.height = HPH; g = C.getContext('2d');
   function tn(c){ return dim < 1 ? shadeHex(c, dim) : c; }
   var SK = tn(s.skin), SL = tn(s.skinL), SD = tn(blend(s.skin, s.skinD, .5)),
@@ -4026,21 +4056,46 @@ function headArt(i, variant, dim){
   }
   el(12, 11.5, 8.6, 9.2, SK);
   poly(SK, [6.5, 14.5, 20, 14.5, 19.4, 20.4, 12.5, 21.8]);        // челюсть с подбородком
-  if(!back) poly(SK, [18.5, 12, 22.8, 15.2, 18.5, 16.4]);         // нос — часть силуэта
-  el(back ? 12 : 9.5, back ? 11 : 4.2, back ? 9.3 : 8.2, back ? 9.0 : 4.4, HR);   // линия волос выше: иначе лоб съеден и бровь не видна
-  if(!back) rc(6, 9.5, 2.6, 4.5, HR);                             // бакенбард
+  if(!back){                                                      // нос — часть силуэта
+    if(L.nose === 'flat')      poly(SK, [18.5, 12.4, 21.6, 15.4, 18.5, 16.6]);
+    else if(L.nose === 'hook') poly(SK, [18.5, 11.6, 23.2, 14.4, 19.8, 15.4, 18.5, 16.4]);
+    else                       poly(SK, [18.5, 12, 22.8, 15.2, 18.5, 16.4]);
+  }
+  /* Причёски. Линия волос держится выше брови: ниже — лоб съеден и лицо
+     читается шапкой с подбородком. */
+  var H = L.hair;
+  if(back){ el(12, 11, 9.3, 9.0, HR); }
+  else if(H === 'bald'){ el(7.5, 8.5, 3.4, 3.6, tn(blend(s.skin, s.hair, .3))); }
+  else if(H === 'flat'){ rc(2.6, 1.4, 15.4, 4.2, HR); el(9.5, 4.6, 8.2, 3.4, HR); }
+  else if(H === 'curly'){ el(5.6, 5.4, 3.6, 3.4, HR); el(10, 3.4, 4.2, 3.8, HR); el(14.6, 4.8, 3.4, 3.2, HR); }
+  else if(H === 'mohawk'){ rc(7.6, 0.4, 5.2, 6.2, HR); el(10.2, 3.2, 3.2, 3.2, HR);
+                           el(6.5, 9, 3.2, 3.4, tn(blend(s.skin, s.hair, .35))); }
+  else if(H === 'recede'){ el(7.6, 4.4, 7.0, 4.0, HR); }
+  else if(H === 'afro'){ el(10.5, 4.6, 9.6, 6.2, HR); }
+  else if(H === 'long'){ el(9.5, 4.2, 8.2, 4.4, HR); rc(2.4, 8, 4.6, 9, HR); }
+  else if(H === 'tail'){ el(9.5, 4.2, 8.2, 4.4, HR); el(2.6, 11, 2.3, 3.4, HR); }
+  else if(H === 'fade'){ el(9.5, 3.4, 8.0, 3.6, HR); el(7, 8.5, 4.2, 3.4, tn(blend(s.skin, s.hair, .45))); }
+  else { el(9.5, 4.2, 8.2, 4.4, HR); }                            // короткий ёжик
+  if(!back && H !== 'bald' && H !== 'mohawk' && H !== 'fade') rc(6, 9.5, 2.6, 4.5, HR);   // бакенбард
   g.globalCompositeOperation = 'source-atop';
   el(6.2, 13.5, 3.6, 5.2, back ? tn(blend(s.hair, '#000000', .35)) : SD);   // затылок в тени, у спины — тенью волос
   el(14.5, 21.2, 4.0, 1.4, SD);                                   // тень под челюстью
   if(!back) el(15.2, 8.2, 2.8, 1.1, SL);                          // блик по лбу, НАД бровью
-  el(back ? 10.5 : 8.6, back ? 6.5 : 3.6, back ? 3.6 : 3.4, 1.2, HL);   // блик на волосах
+  if(back || (L.hair !== 'bald' && L.hair !== 'mohawk'))                 // блик на волосах
+    el(back ? 10.5 : 8.6, back ? 6.5 : (L.hair === 'flat' ? 2.6 : 3.6), back ? 3.6 : 3.4, 1.2, HL);
   el(back ? 15.5 : 8.5, 14.4, 1.6, 2.2, SD);                      // ухо
   el(back ? 15.7 : 8.7, 14.4, .7, 1.1, tn(blend(s.skin, s.skinD, .8)));
   if(!back){
     var bl = mood === 'pain' ? 1.0 : (mood === 'shout' ? .6 : (mood === 'smile' ? -.8 : 0));
     el(15, 12.8, 3.4, 1.6, tn(blend(s.skin, s.skinD, .35)));      // скула тенью — форма лица
-    rc(14, 9.9 + bl, 2.6, 1.4, INK);                              // бровь клином, к виску тоньше
-    rc(16.4, 9.4 + bl * 1.3, 3.4, 1.5, INK);
+    var BD = L.beard, BC = tn(blend(s.hair, s.skin, BD === 'stubble' ? .45 : .1));
+    if(BD === 'full') poly(BC, [7.5, 13.5, 10, 20.5, 19, 20.2, 19.6, 15.5, 17, 17, 12, 16.5]);
+    else if(BD === 'stubble') poly(BC, [8, 15, 11.5, 20.4, 19, 20, 19.4, 17.4, 13, 18.2]);
+    else if(BD === 'goatee'){ el(18.3, 19.4, 2.4, 2.0, BC); rc(16.8, 16.9, 3.6, 1.0, BC); }
+    else if(BD === 'moust') rc(16.8, 16.9, 3.8, 1.2, BC);
+    var bh = 1.4 * L.brow;
+    rc(14, 10.6 - bh * .5 + bl, 2.6, bh, INK);                    // бровь клином, к виску тоньше
+    rc(16.4, 10.1 - bh * .5 + bl * 1.3, 3.4, bh + .1, INK);
     if(mood === 'pain') rc(16.2, 12.2, 3.8, 1.1, INK);            // зажмурился
     else {
       el(17.6, 12.6, 2.2, mood === 'shout' ? 1.7 : 1.4, EW);
@@ -4078,7 +4133,7 @@ function headArt(i, variant, dim){
     if(near){ d[o2] = ir; d[o2 + 1] = ig; d[o2 + 2] = ib; d[o2 + 3] = 255; }
   }
   g.putImageData(id, 0, 0);
-  headCache[i + '|' + variant + '|' + (dim < 1 ? 'd' : 'n')] = C;
+  headCache[key] = C;
   return C;
 }
 /* Голова на сцене: спрайт поворачивается вместе с ней, без сглаживания. */
@@ -4197,8 +4252,8 @@ function depthFor(i){
 }
 
 function boxerParts(b, out){
-  var s = SKIN[b.i], J = projJ(b.drawJ || poseOf(b)), f = b.face, fw = J.fw, up = J.up;
-  var dim = b.down ? 0.55 : 1;
+  var s = skinOf(b.i), J = projJ(b.drawJ || poseOf(b)), f = b.face, fw = J.fw, up = J.up;
+  var dim = b.down ? 0.55 : 1, BW = lookOf(b.i).bw;   // сложение: только толщина рисовки, скелет тот же
   function mix(c){ return dim < 1 ? shadeHex(c, dim) : c; }
   var D = depthFor(b.i);
   /* Тон кожи бойца. dim отделяет ближние конечности от дальних: дальние
@@ -4269,12 +4324,12 @@ function boxerParts(b, out){
   });
 
   if(!legOut) put('farLeg', function(){
-    leg(J.legs[1], 4.7, 3.3, 2.4, TN, FARL);
+    leg(J.legs[1], 4.7 * BW, 3.3 * BW, 2.4 * BW, TN, FARL);
     cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
     boot(J.legs[1], f, 4.6, 2.5, mix(s.dark));
   });
   if(!rearOut) put('farArm', function(){
-    arm(J.arms[1], 4.2, 2.9, 2.2, TN, FAR);
+    arm(J.arms[1], 4.2 * BW, 2.9 * BW, 2.2 * BW, TN, FAR);
     glove(J.arms[1].hand, b.trail[1][0], unitV(J.arms[1].el, J.arms[1].hand), f,
           mix(farNear ? s.glove : s.gloveD), mix(farNear ? s.gloveD : s.dark), mix(farNear ? s.trunkL : s.dark),
           gloveR() * (farNear ? 1 : .93) * zScale(J.arms[1].hand.z || 0));
@@ -4285,7 +4340,7 @@ function boxerParts(b, out){
        от груди. Прямой многоугольник по одному наклону не согнуть. */
     var LO = J.lo, U1 = J.up1, F1 = J.fw1, CH = J.chest, WD = J.wd;
     var p = function(t, n){
-      t *= TS; n *= TW * WD;
+      t *= TS; n *= TW * WD * BW;
       if(t <= LO) return {x:J.hip.x + up.x * t + fw.x * n, y:J.hip.y + up.y * t + fw.y * n};
       var d = t - LO;
       return {x:CH.x + U1.x * d + F1.x * n, y:CH.y + U1.y * d + F1.y * n};
@@ -4400,12 +4455,12 @@ function boxerParts(b, out){
   });
 
   put('nearLeg', function(){
-    leg(J.legs[0], 5.1, 3.6, 2.6, TN, NEARL);
+    leg(J.legs[0], 5.1 * BW, 3.6 * BW, 2.6 * BW, TN, NEARL);
     cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
     boot(J.legs[0], f, 4.8, 2.6, mix(s.trunkL));
   });
   if(legOut) put('kickLeg', function(){
-    leg(J.legs[1], 4.9, 3.4, 2.5, TN, .88);
+    leg(J.legs[1], 4.9 * BW, 3.4 * BW, 2.5 * BW, TN, .88);
     cx.fillStyle = mix(s.boot); cx.strokeStyle = INK; cx.lineWidth = 1.5;
     boot(J.legs[1], f, 4.7, 2.55, mix(s.trunkL));
   });
@@ -4416,9 +4471,9 @@ function boxerParts(b, out){
     faceMarks(J, f, s, mix, b.turned > .5, b.marks);
   });
 
-  if(rearOut) put('rearArm', function(){ arm(J.arms[1], 4.5, 3.1, 2.4, TN, .88); });
+  if(rearOut) put('rearArm', function(){ arm(J.arms[1], 4.5 * BW, 3.1 * BW, 2.4 * BW, TN, .88); });
   put('nearArm', function(){
-    arm(J.arms[0], 4.8, 3.3, 2.5, TN, NEAR);
+    arm(J.arms[0], 4.8 * BW, 3.3 * BW, 2.5 * BW, TN, NEAR);
     glove(J.arms[0].hand, b.trail[0][0], unitV(J.arms[0].el, J.arms[0].hand), f,
           mix(s.glove), mix(s.gloveD), mix(s.tape), gloveR() * zScale(J.arms[0].hand.z || 0));
   });
