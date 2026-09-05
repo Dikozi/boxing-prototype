@@ -4950,55 +4950,75 @@ function cutEye(ex, ey, ew, eh, sq, look, glint, s, lw){
 function cutHead(x, y, R, side, o){
   o = o || {};
   var s = SKIN[side], f = o.face == null ? 1 : o.face, sq = o.squint || 0, mo = o.open || 0;
-  var lw = Math.max(2, R * .095), look = o.look || 0;
+  var lw = Math.max(2, R * .085), look = o.look || 0;
   cx.save();
   cx.translate(x, y); cx.rotate(o.tilt || 0); cx.scale(f, 1);
   cx.lineJoin = 'round'; cx.lineCap = 'round';
-  var g = cx.createRadialGradient(-R * .3, -R * .36, R * .12, 0, 0, R * 1.2);
-  g.addColorStop(0, shadeHex(s.body, 1.12)); g.addColorStop(1, shadeHex(s.bodyD, .92));
-  cx.fillStyle = g; cx.strokeStyle = INK; cx.lineWidth = lw;
-  cx.beginPath(); cx.arc(0, 0, R, 0, 6.284); cx.fill(); cx.stroke();
-
-  cx.save();                                             // шлем — козырёк, не полголовы
-  cx.beginPath(); cx.arc(0, 0, R, 0, 6.284); cx.clip();
-  cx.fillStyle = s.dark;
+  /* Череп с челюстью одним контуром, а не круг; кожа телесная, цвет угла
+     даёт только рефлекс по затылку. Раньше голова была залита цветом угла
+     с двумя глазами — на весь экран это читалось маской. */
+  var HP = new Path2D();
+  HP.moveTo(-R * .98, -R * .1);
+  HP.quadraticCurveTo(-R * 1.0, -R * 1.02, 0, -R * 1.04);
+  HP.quadraticCurveTo(R * .98, -R * 1.02, R * 1.0, -R * .12);
+  HP.quadraticCurveTo(R * 1.02, R * .42, R * .78, R * .72);
+  HP.quadraticCurveTo(R * .5, R * 1.02, R * .1, R * .98);
+  HP.quadraticCurveTo(-R * .4, R * .92, -R * .72, R * .6);
+  HP.quadraticCurveTo(-R * 1.0, R * .3, -R * .98, -R * .1);
+  HP.closePath();
+  var g = cx.createRadialGradient(R * .25, -R * .3, R * .1, 0, 0, R * 1.25);
+  g.addColorStop(0, s.skinL); g.addColorStop(.55, s.skin); g.addColorStop(1, shadeHex(s.skinD, .9));
+  cx.fillStyle = g; cx.fill(HP);
+  cx.save(); cx.clip(HP);
+  cx.globalAlpha = .55; cx.fillStyle = blend(s.skinR, s.skin, .35);            // рефлекс угла по затылку
+  cx.beginPath(); cx.ellipse(-R * .8, R * .05, R * .28, R * .8, 0, 0, 6.284); cx.fill();
+  cx.globalAlpha = 1; cx.fillStyle = 'rgba(0,0,0,.18)';                        // тень под скулой и челюстью
+  cx.beginPath(); cx.ellipse(R * .2, R * .7, R * .7, R * .22, .1, 0, 6.284); cx.fill();
+  cx.fillStyle = s.hair;                                                        // волосы: линия волос дугой, бакенбард
   cx.beginPath();
-  cx.moveTo(-R * 1.2, -R * .36);
-  cx.quadraticCurveTo(0, -R * .68, R * 1.2, -R * .42);
-  cx.lineTo(R * 1.2, -R * 1.3); cx.lineTo(-R * 1.2, -R * 1.3); cx.closePath();
-  cx.fill();
+  cx.moveTo(-R * 1.1, -R * .2); cx.quadraticCurveTo(-R * .2, -R * .9, R * .55, -R * .62);
+  cx.quadraticCurveTo(R * .85, -R * .5, R * .92, -R * .3); cx.lineTo(R * 1.2, -R * 1.3); cx.lineTo(-R * 1.2, -R * 1.3); cx.closePath(); cx.fill();
+  cx.beginPath(); cx.moveTo(-R * .95, -R * .25); cx.lineTo(-R * .62, -R * .3); cx.lineTo(-R * .58, R * .25); cx.lineTo(-R * .86, R * .2); cx.closePath(); cx.fill();
+  cx.fillStyle = blend(s.hair, '#ffffff', .18);                                 // блик на волосах
+  cx.beginPath(); cx.ellipse(-R * .3, -R * .82, R * .45, R * .1, -.15, 0, 6.284); cx.fill();
+  if(s.beard){                                                                   // щетина по челюсти
+    cx.globalAlpha = .3; cx.fillStyle = s.hair;
+    cx.beginPath(); cx.moveTo(-R * .7, R * .45); cx.quadraticCurveTo(0, R * 1.05, R * .8, R * .6);
+    cx.quadraticCurveTo(R * .5, R * .5, R * .2, R * .55); cx.quadraticCurveTo(-R * .3, R * .6, -R * .7, R * .3); cx.closePath(); cx.fill();
+    cx.globalAlpha = 1;
+  }
   cx.restore();
-  cx.lineWidth = lw * .8;
-  cx.beginPath();
-  cx.moveTo(-R * .95, -R * .32);
-  cx.quadraticCurveTo(0, -R * .67, R * .92, -R * .38);
-  cx.stroke();
-
-  cutEye(R * .36, R * .12, R * .46, R * .28 * (1 - .55 * sq), sq, look, o.glint, s, lw * .58);
-  cutEye(-R * .32, R * .16, R * .32, R * .21 * (1 - .55 * sq), sq, look, null, s, lw * .5);
-  cx.lineCap = 'round'; cx.lineWidth = lw * .78;         // злые брови: внутренний край ниже
-  cx.strokeStyle = INK;
-  cx.beginPath();
-  cx.moveTo(R * .12, -R * .26); cx.lineTo(R * .64, -R * .44); cx.stroke();
-  cx.beginPath();
-  cx.moveTo(-R * .5, -R * .34); cx.lineTo(-R * .16, -R * .2); cx.stroke();
-
-  cx.fillStyle = '#20090f'; cx.lineWidth = lw * .55;     // рот
-  cx.beginPath();
-  cx.ellipse(R * .12, R * .55, R * .15 + R * .05 * mo, R * .045 + R * .17 * mo, .06, 0, 6.284);
-  cx.fill();
-  if(mo > .3){
-    cx.save(); cx.clip();
-    cx.fillStyle = '#fff';
-    cx.fillRect(-R * .1, R * .55 - (R * .045 + R * .17 * mo), R * .45, R * .06 + R * .04 * mo);
-    cx.restore();
+  cx.strokeStyle = INK; cx.lineWidth = lw; cx.stroke(HP);
+  cx.fillStyle = blend(s.skin, s.skinD, .3); cx.lineWidth = lw * .55;           // ухо с завитком
+  cx.beginPath(); cx.ellipse(-R * .8, R * .1, R * .16, R * .24, .1, 0, 6.284); cx.fill(); cx.stroke();
+  cx.beginPath(); cx.moveTo(-R * .78, -R * .05); cx.quadraticCurveTo(-R * .68, R * .1, -R * .8, R * .22); cx.stroke();
+  /* Три четверти: ближний глаз крупнее, дальний меньше и чуть выше. */
+  cutEye(R * .42, R * .1, R * .4, R * .24 * (1 - .55 * sq), sq, look, o.glint, s, lw * .55);
+  cutEye(-R * .22, R * .06, R * .26, R * .17 * (1 - .55 * sq), sq, look, null, s, lw * .45);
+  var bd = R * .1 * sq;                                                         // брови клином, сведены при прищуре
+  cx.fillStyle = INK;
+  cx.beginPath(); cx.moveTo(R * .1, -R * .2 + bd); cx.quadraticCurveTo(R * .45, -R * .42, R * .78, -R * .3 + bd * .3);
+  cx.lineTo(R * .8, -R * .2 + bd * .3); cx.quadraticCurveTo(R * .45, -R * .3, R * .12, -R * .1 + bd); cx.closePath(); cx.fill();
+  cx.beginPath(); cx.moveTo(-R * .5, -R * .3); cx.quadraticCurveTo(-R * .3, -R * .38, -R * .06, -R * .22 + bd);
+  cx.lineTo(-R * .06, -R * .13 + bd); cx.quadraticCurveTo(-R * .3, -R * .28, -R * .5, -R * .22); cx.closePath(); cx.fill();
+  cx.strokeStyle = INK; cx.lineWidth = lw * .7;                                 // нос клином с ноздрёй
+  cx.beginPath(); cx.moveTo(R * .3, -R * .05); cx.quadraticCurveTo(R * .75, R * .2, R * .62, R * .42);
+  cx.quadraticCurveTo(R * .5, R * .5, R * .38, R * .4); cx.stroke();
+  cx.fillStyle = 'rgba(0,0,0,.35)';
+  cx.beginPath(); cx.ellipse(R * .48, R * .45, R * .09, R * .05, .3, 0, 6.284); cx.fill();
+  var mw = R * .22 + R * .06 * mo, mh = R * .05 + R * .2 * mo, mx = R * .18, my = R * .66;   // рот
+  cx.fillStyle = '#20090f'; cx.lineWidth = lw * .5; cx.strokeStyle = INK;
+  cx.beginPath(); cx.ellipse(mx, my, mw, mh, .08, 0, 6.284); cx.fill();
+  if(mo > .3){                                                                   // зубы в раскрытом рту
+    cx.save(); cx.clip(); cx.fillStyle = '#fff3e6';
+    cx.fillRect(mx - mw, my - mh, mw * 2, mh * .55); cx.restore();
   }
   cx.stroke();
   if(o.sweat){
     cx.fillStyle = 'rgba(200,232,255,.9)'; cx.strokeStyle = 'rgba(120,170,220,.9)';
     cx.lineWidth = lw * .35;
-    cx.beginPath(); cx.ellipse(-R * .62, -R * .5, R * .08, R * .13, .35, 0, 6.284);
-    cx.fill(); cx.stroke();
+    cx.beginPath(); cx.ellipse(-R * .5, -R * .62, R * .08, R * .13, .35, 0, 6.284); cx.fill(); cx.stroke();
+    cx.beginPath(); cx.ellipse(R * .92, -R * .02, R * .06, R * .1, -.3, 0, 6.284); cx.fill(); cx.stroke();
   }
   cx.restore();
 }
