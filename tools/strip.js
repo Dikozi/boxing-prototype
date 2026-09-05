@@ -35,7 +35,7 @@ const TAG  = process.argv[4] || 'now';
     const N=8, shots=[];
     // расписание снимков: удар — до попадания; победа — по ходу сцены
     const times = win>=0 ? [1500,2000,2400,2800,3200,3600,4000,4400]
-                 : ko    ? [IMP, IMP+120, IMP+260, IMP+420, IMP+620, IMP+900, IMP+1300, IMP+1900]
+                 : ko    ? [IMP, IMP+2300, IMP+2420, IMP+2560, IMP+2720, IMP+2900, IMP+3200, IMP+3900]
                          : Array.from({length:N},(_,k)=>Math.round(k*IMP/(N-1)));
     playRound(rec,()=>{});
     let k=0;

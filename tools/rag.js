@@ -26,7 +26,8 @@ const FILE = process.argv[2] || 'file://' + require('path').resolve(__dirname, '
       playRound(rc,()=>{});
       await new Promise(res=>{ const tick=()=>{ if(!seq) return res();
         const J=D.drawJ || poseOf(D); frames++;
-        if(D.rd){ rag++;
+        // rd.t === 0: физика только что стартовала в конце этого же кадра, а нарисован ещё позный скелет
+        if(D.rd && D.rd.t > 0){ rag++;
           for(let k=0;k<2;k++){
             const e=ang(J.arms[k].sh,J.arms[k].el,J.arms[k].hand), kn=ang(J.legs[k].hip,J.legs[k].knee,J.legs[k].foot);
             minE=Math.min(minE,e); maxE=Math.max(maxE,e); minK=Math.min(minK,kn); maxK=Math.max(maxK,kn);

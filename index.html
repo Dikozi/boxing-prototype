@@ -1220,6 +1220,7 @@ function Boxer(i){
   this.breath = Math.random() * 6;
   this.drift = [0, 0]; this.driftN = -1; this.driftK = 0; this.driftT = -9; this.driftFrom = 0; this.driftTo = 0;   // живая стойка
   this.tx0 = null; this.tf0 = null;                                          // откуда шагаем при переходе
+  this.koWait = null;                                                        // нокаут ждёт конца панели
   this.charge = false; this.down = false; this.tired = false; this.winded = false; this.rocked = false;
   this.win = null; this.mood = 0; this.tapping = 0; this.broke = null; this.hurt = null;
   this.turned = 0;                              // 0 — лицом к сопернику, 1 — спиной
@@ -2810,14 +2811,25 @@ function applyImpact(rec){
       if(c.id === 'crossLand' && o.mult === 1) cutArm('cross', {i:i, j:j, dir:f, lvl:lvl, round:rec.round});
       else if(c.id === 'uppercut' && rec.choices[j].id === 'slip')
         cutArm('upper', {i:i, j:j, dir:f, lvl:lvl, round:rec.round});
+      if(mode === 'down'){
+        /* Нокаут: физика падения НЕ стартует в момент попадания — она
+           проходила целиком под панелью «НОКАУТ» (по ленте кадров: с
+           попадания до +1300 мс на экране одни врезки), и суставов куклы
+           было не увидеть. Тело сперва отвечает позой, как на тяжёлый
+           удар, панель идёт поверх этой реакции, а падение начинается,
+           когда панель ушла — koFall. */
+        d.koWait = {id:c.id, lvl:lvl, f:f};
+        rag = true;
+        seqExtend(2600);
+        spawnRays(hp.x, hp.y, 14, f > 0 ? 0 : Math.PI);
+        mode = null;                                  // ниже — реакция позой
+      }
       if(mode && ragHit(d, mode, c.id, lvl, f)){
         rag = true;
-        seqExtend(mode === 'down' ? 2600 : 1700);
-        slowT = RM ? 0 : (mode === 'down' ? 1150 : 520);
-        cinePush(hp.x, hp.y, mode === 'down' ? 1.52 : 1.42,
-                 mode === 'down' ? 2300 : 1000, mode === 'down' ? j : -1);
-        spawnRays(hp.x, hp.y, mode === 'down' ? 14 : 10, f > 0 ? 0 : Math.PI);
-        if(mode === 'down') seqDark = seq.t + 1250;
+        seqExtend(1700);
+        slowT = RM ? 0 : 520;
+        cinePush(hp.x, hp.y, 1.42, 1000, -1);
+        spawnRays(hp.x, hp.y, 10, f > 0 ? 0 : Math.PI);
       } else {
         /* Рывок скоростей остаётся — он даёт первый резкий кадр, — но теперь
            за ним держится ПОЗА реакции, а не мгновенный возврат в стойку. */
@@ -2831,6 +2843,7 @@ function applyImpact(rec){
           d.hy.v += 34 * k; d.head.v += 2.5 * k;
         }
         hurtSet(d, c.id, lvl, k, f);
+        if(d.koWait && d.hurt) d.hurt.ms = 4000;    // держит реакцию, пока идёт панель
       }
       a.hx.v -= f * 26 * k;                          // отдача бьющему
       if(kick) a.foot[1].v -= f * 34 * k;
@@ -3086,6 +3099,10 @@ function ragHit(b, mode, id, lvl, back){
       r.supIn = false;
     }
   }
+  /* Поза может складывать локоть туже предела шарнира (замер: 17° против
+     31°); под рапидом до первого шага физики проходит несколько кадров,
+     и кукла рисовалась бы в этой позе как есть. Доворачиваем сразу. */
+  limitHinges(r, b.face);
   var im = impulseFor(id, lvl, mode, back);
   if(mode !== 'down'){                              // ступни держат настил, верх качается
     r.sup[0].stiffness = im.sup[0]; r.sup[0].damping = .05;
@@ -3274,6 +3291,20 @@ function cinePush(px, py, z, hold, follow){
   camFx = px; camFy = py; cineZ = z;
   cineT = Math.max(cineT, hold);
   cineFollow = follow == null ? -1 : follow;
+}
+/* Падение в нокауте — после панели, на виду (см. applyImpact). Стартует из
+   той позы, в которой тело держало реакцию под панелью. */
+function koFallFn(z){ return function(){ koFall(z); }; }
+function koFall(z){
+  var b = B[z], kw = b.koWait; if(!kw) return;
+  b.koWait = null; b.hurt = null;                   // реакция позой уступает физике
+  if(ragHit(b, 'down', kw.id, kw.lvl, kw.f)){
+    slowT = RM ? 0 : 1150;
+    cinePush(b.J.hip.x, b.J.hip.y - 10, 1.52, 2300, z);
+    if(seq) seqDark = seq.t + 1250;
+  } else { b.lean.v -= 3.6; b.hy.v += 30; }         // запасной путь без Matter
+  b.down = true; koCardT = 1500;
+  seqExtend(2600);
 }
 function viewCx(){ return STAGE_W / 2 + (cam ? cam.x : 0); }
 function viewCy(){ return STAGE_H / 2 + (camY ? camY.x : 0); }
@@ -4931,14 +4962,20 @@ function frame(now){
           seqExtend(1500);
           continue;
         }
-        B[z].down = true; koCardT = 1500;
+        var kw = B[z].koWait, kf = kw ? koFallFn(z) : null;
+        if(!kw){
+          B[z].down = true; koCardT = 1500;
+          if(!B[z].rd){ B[z].lean.v -= 3.6; B[z].hy.v += 30; }   // запасной путь без Matter
+        }
         sndDown(); crowdCheer(1.4); musicKO();
-        if(!B[z].rd){ B[z].lean.v -= 3.6; B[z].hy.v += 30; }   // запасной путь без Matter
         shake = Math.max(shake, 6);
-        /* нокаут-панель встаёт в очередь за уже идущей, а не перебивает её */
-        cutArm('ko', {i:1 - z, j:z, dir:B[1 - z].face, round:seq.rec.round});
-        seqExtend(CUT.ko.dur + (cut ? cut.t : 0) + 300);
+        /* нокаут-панель встаёт в очередь за уже идущей, а не перебивает её;
+           само падение (koFall) начинается, когда панель ушла — досмотрена
+           или пропущена тапом */
+        cutArm('ko', {i:1 - z, j:z, dir:B[1 - z].face, round:seq.rec.round, then:kf});
+        seqExtend(CUT.ko.dur + (cut ? cut.t : 0) + 300 + (kw ? 2600 : 0));
         if(cut) cut.then = cutFlush; else cutFlush();
+        if(kf && !((cut && cut.then === kf) || (cutQ && cutQ.then === kf))) kf();   // панель не взвелась — падать сразу
       }
     }
     driveActor(0, seq.t, seq.rec); driveActor(1, seq.t, seq.rec);
@@ -5110,6 +5147,7 @@ function playRound(rec, done){
     }
   }
   rec._air = [airPoint(0, rec), airPoint(1, rec)];
+  B[0].koWait = B[1].koWait = null;
   if(rec.mma) setRP(rec.before.pos, rec.before.top, rec.before.sub);
   drawOrder = (rec.out[0].dmg || 0) >= (rec.out[1].dmg || 0) ? [1, 0] : [0, 1];
   var IMP = impactMs(rec);                       // момент попадания у этого раунда
@@ -5130,6 +5168,7 @@ function snapEnd(rec){
   for(i = 0; i < 2; i++){
     disp[i].hp = rec.hp[i]; disp[i].st = rec.st[i];
     B[i].charge = rec.choices[i].id === 'cross' ? 'cross' : (rec.choices[i].id === 'spin' ? 'spin' : false);
+    B[i].koWait = null;                             // пропущенный размен: падение не играется
     B[i].down = !!rec.ko[i];
     B[i].tired = rec.st[i] < LOW_ST;
     B[i].winded = !!rec.winded[i];
