@@ -20,9 +20,15 @@ const FILE = process.argv[2] || 'file://' + require('path').resolve(__dirname, '
       // однополюсный lowpass 300 Гц — доля низа
       const a=1-Math.exp(-2*Math.PI*300/44100); let y=0, lo=0; for(let i=0;i<act.length;i++){ y+=a*(act[i]-y); lo+=y*y; } lo=Math.sqrt(lo/Math.max(1,act.length));
       let zc=0; for(let i=1;i<act.length;i++) if((act[i]>=0)!==(act[i-1]>=0)) zc++;
-      // огибающая для щелчков: пики выше −12 дБ, не ближе 8 мс, в первых 120 мс
+      /* Щелчки считаются по АТАКАМ — резким подъёмам огибающей, — а не по
+         пикам выше доли общего максимума. Щелчок здесь шумовой, его пиковая
+         амплитуда случайна от прогона к прогону, и абсолютный порог ловил то
+         два, то четыре: пробник мерил реализацию шума, а не очередь. Подъём
+         же есть у каждого щелчка независимо от того, насколько он громкий. */
       const w=Math.round(44100*.002), env=[]; for(let i=0;i<Math.min(n,44100*.12);i+=w){ let m=0; for(let j=i;j<i+w&&j<n;j++) m=Math.max(m,Math.abs(x[j])); env.push(m); }
-      let peaks=0, lastP=-99; for(let i=1;i<env.length-1;i++) if(env[i]>=env[i-1]&&env[i]>env[i+1]&&env[i]>peak*.25&&(i-lastP)*w>=44100*.008){ peaks++; lastP=i; }
+      let peaks=0, lastP=-99;
+      for(let i=2;i<env.length;i++)
+        if(env[i]>env[i-1] && env[i]>env[i-2]*1.8 && env[i]>peak*.10 && (i-lastP)*w>=44100*.008){ peaks++; lastP=i; }
       return {пик:+peak.toFixed(2), длит_с:+(last/44100).toFixed(2), низ:+(lo/Math.max(1e-6,rms)).toFixed(2), zcr:Math.round(zc/Math.max(1e-3,act.length/44100)), щелчков:peaks};
     }
     const out={};
