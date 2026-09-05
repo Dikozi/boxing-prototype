@@ -4394,61 +4394,7 @@ function shadeHex(h, m){
   return 'rgb(' + ((n >> 16 & 255) * m | 0) + ',' + ((n >> 8 & 255) * m | 0) + ',' + ((n & 255) * m | 0) + ')';
 }
 
-/* =========================================================================
-   ПИКСЕЛЬНЫЙ КОНВЕЙЕР
-   -------------------------------------------------------------------------
-   Кадр рисуется в буфер с крупным текселем (PIXEL css-пикселей на тексель)
-   и выводится на экран без сглаживания: сцена, тела, кровь и врезки
-   становятся одного пиксельного вида. Постеризация сводит тона к PIX_LEVELS
-   ступеням на канал — плавные градиенты превращаются в плоские пятна, как в
-   пиксель-арте. Киношный слой (виньетка, зерно) ложится поверх, резко.
-   PIXEL = 0 выключает всё: рисование идёт прямо в экран, как раньше.
-   ========================================================================= */
-var PIXEL = 1.25, PIX_LEVELS = 8;   // тексель в css-пикселях; ступеней яркости (0 — без постеризации)
-var pxC = null, pxCx = null, pxW = 0, pxH = 0, pxLut = null, mainCx = cx;
-function pixLut(){
-  if(pxLut && pxLut.n === PIX_LEVELS) return pxLut;
-  var t = new Uint8ClampedArray(256), i, q = PIX_LEVELS - 1;
-  for(i = 0; i < 256; i++) t[i] = Math.round(Math.round(i / 255 * q) / q * 255);
-  t.n = PIX_LEVELS; pxLut = t; return t;
-}
-function pixBegin(){                              // рисовать в буфер: cx и DPR подменяются на кадр
-  var F = PIXEL * DPR, w = Math.max(1, Math.round(VW * DPR / F)), h = Math.max(1, Math.round(VH * DPR / F));
-  if(!pxC){ pxC = document.createElement('canvas'); pxCx = pxC.getContext('2d'); }
-  if(pxW !== w || pxH !== h){ pxC.width = w; pxC.height = h; pxW = w; pxH = h; }
-  mainCx = cx; cx = pxCx;
-  cx.setTransform(1, 0, 0, 1, 0, 0); cx.clearRect(0, 0, w, h);
-  return {D0:DPR, F:F};
-}
-function pixEnd(st){
-  if(PIX_LEVELS > 1 && filmTier > 0){         // на слабом телефоне ярус 0 снимает и постеризацию
-    /* Ступени по ЯРКОСТИ с сохранением оттенка: квантование по каналам
-       красило тёмный фон в зелёные полосы, а кожу в серые. */
-    var id = pxCx.getImageData(0, 0, pxW, pxH), d = id.data, t = pixLut(), i, n = d.length, L, f;
-    for(i = 0; i < n; i += 4){
-      L = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
-      if(L < 1) continue;
-      f = t[L | 0] / L;
-      d[i] = d[i] * f; d[i + 1] = d[i + 1] * f; d[i + 2] = d[i + 2] * f;
-    }
-    pxCx.putImageData(id, 0, 0);
-  }
-  cx = mainCx; DPR = st.D0;
-  cx.setTransform(1, 0, 0, 1, 0, 0);
-  cx.imageSmoothingEnabled = false;
-  cx.clearRect(0, 0, cv.width, cv.height);
-  cx.drawImage(pxC, 0, 0, pxW, pxH, 0, 0, cv.width, cv.height);
-  cx.imageSmoothingEnabled = true;
-}
-
 function drawStage(){
-  var pst = null;
-  if(PIXEL > 0){ pst = pixBegin(); DPR = pst.D0 / pst.F; }
-  drawScene();
-  if(pst) pixEnd(pst);
-  filmPass();                                        // киношный слой поверх готового кадра, резко
-}
-function drawScene(){
   cx.setTransform(DPR, 0, 0, DPR, 0, 0);
   cx.clearRect(0, 0, VW, VH);
   cx.save();
@@ -4490,6 +4436,7 @@ function drawScene(){
   if(flashA > 0){ cx.fillStyle = 'rgba(255,255,255,' + flashA + ')'; cx.fillRect(0, 0, VW, VH); }
   drawCut();                                         // врезка ложится поверх сцены,
   drawKoCard();                                      // но «НОКАУТ» остаётся читаемым
+  filmPass();                                        // киношный слой поверх готового кадра
 }
 
 /* =========================================================================
