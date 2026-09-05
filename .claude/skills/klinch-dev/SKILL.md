@@ -36,14 +36,24 @@ Pages деплоит её после зелёных пробников (`.github
 - Следы боя (`marks`) считаются от записей (`marksUpTo`), не копятся по ходу.
 - Дуга шага стартует от положения пружины раз за размен (`hopFrom`), не от
   текущей цели: стойка (`driveGuard`) идёт раньше удара и цели переставляет.
+- Ось z (2.5D, «лёгкая» глубина `EL .12`, `PSP .008`): суставы несут `z`
+  (к зрителю — плюс), конечности решает `ik3`, кисти и стопы по умолчанию
+  висят в плоскости своего плеча/таза — пружина `handZ/footZ` СНАПАЕТСЯ к
+  плечу в кадре без `handToZ/footToZ`. Удар, ведущий z, обязан вести его и
+  на возврате (`handToZ(b,k,b.J.arms[k].sh.z)`), иначе скачок. Слой части
+  в стойке — по средней глубине (`zPart`), в клинче и партере — таблицы
+  `GZ`/`depthFor`. Пробник `tools/depth.js`.
+- Ведущая рука — `leadOf(id)` (прямой, хук — 0; остальное — 1); не
+  хардкодить `'jab' ? 0 : 1`.
 - Картинки врезок и музыка — в хвостовом `<script id="tail">` в конце файла
   (`tailArt`/`tailMusic`); `chk.py` берёт игровой скрипт по последнему
   точному `<script>`. Музыка собирается `tools/music.py` (нужен ffmpeg).
 
 ## Карта кода (искать по именам)
 
-Сцена: `STAGE_W/STAGE_H/FLOOR/HIP_Y/POS`, пружины `Sp`, `ik`, `Boxer`
-(`solve`, `reset`), цели `handTo/footTo/footToXY/stepFoot/stepAir/stepArc/walkTo`.
+Сцена: `STAGE_W/STAGE_H/FLOOR/HIP_Y/POS`, пружины `Sp`, `ik`/`ik3`, `Boxer`
+(`solve`, `reset`), цели `handTo/footTo/footToXY/stepFoot/stepAir/stepArc/walkTo`,
+глубина `handToZ/footToZ`, проекция `projJ/zScale/zDim`.
 Стойка и действия: `driveGuard` (живая стойка — переступы, `b.drift`),
 `driveActor` (удары, `stepTo`, `hopFrom`), `driveMMA`, `driveClinchPose`,
 `driveGround`, `driveSubHold`, `driveHurt/hurtSet/HURT`, `driveWin`, `driveDown`.
@@ -53,7 +63,9 @@ Pages деплоит её после зелёных пробников (`.github
 конечности). Рисование: `boxerParts` (корпус, следы на рёбрах), `face`
 (отёк, рассечение, покраснение), `drawStage`, `filmPass`, `drawCut`/`CUT`.
 Звук: `tone/hiss`, `sndHit`, `sndCrack`, `sndSnap`, музыка `musLoop`.
-Правила: `ACT/MMA_ACT`, `resolve`, `resolveRound`, `resolveRoundMMA`,
+Правила: `ACT/MMA_ACT` (бокс: прямой, апперкот, хук, нога, вертушка, кросс),
+`resolve`, `resolveRound`, `resolveRoundMMA`, коды боя `CODE_IDS` (новые id —
+только в конец),
 `legal`, `heavyMode`, бот `botChoose` (уровни `botLevel`: веса /
 расчёт размена `botChooseHard`), `botChooseMMA`. Интерфейс: `render`,
 `screen*`, обработчик кликов по `t.dataset.go`, `startRound/nextChooser`,
