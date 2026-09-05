@@ -21,7 +21,7 @@ const FILE = process.argv[2] || 'file://' + require('path').resolve(__dirname, '
         out:[{type:'atk',dmg:dmg,mult:1,why:'',ok:true},{type:'def',dmg:0}],
         hp:[100,Math.max(0,hp-dmg)],st:[70,80],ko:[false,ko],
         before:{hp:[100,hp],st:[100,100],pending:[null,null]}};
-      const D=B[1]; let frames=0, rag=0, minE=180, maxE=0, minK=180, maxK=0, tip=0, prev=null, prevT=0, dtMax=0;
+      const D=B[1]; let frames=0, rag=0, minE=180, maxE=0, minK=180, maxK=0, tip=0, tipHit=0, prev=null, prevT=0, dtMax=0, tipAt='', minKAt='';
       let straightE=0, straightK=0;
       playRound(rc,()=>{});
       await new Promise(res=>{ const tick=()=>{ if(!seq) return res();
@@ -31,34 +31,41 @@ const FILE = process.argv[2] || 'file://' + require('path').resolve(__dirname, '
         if(D.rd && D.rd.t > 0){ rag++;
           for(let k=0;k<2;k++){
             const e=ang(J.arms[k].sh,J.arms[k].el,J.arms[k].hand), kn=ang(J.legs[k].hip,J.legs[k].knee,J.legs[k].foot);
-            minE=Math.min(minE,e); maxE=Math.max(maxE,e); minK=Math.min(minK,kn); maxK=Math.max(maxK,kn);
+            minE=Math.min(minE,e); maxE=Math.max(maxE,e); if(kn<minK){ minK=kn; minKAt='rd.t='+D.rd.t+' dt='+(now-prevT).toFixed(0); } maxK=Math.max(maxK,kn);
             if(e>176) straightE++; if(kn>176) straightK++;
           }
         }
         // сдвиг за кадр нормируется на кадр 60 к/с по реальному dt: под нагрузкой кадры
         // выпадают, и «за кадр» удваивается на ровном месте (замер: 7.9 → 13.2 на одном файле)
         if(prev){ const dt=Math.max(1, now-prevT), sc=16.667/dt; dtMax=Math.max(dtMax, dt);
-          for(let k=0;k<2;k++){ tip=Math.max(tip, sc*Math.hypot(J.arms[k].hand.x-prev.arms[k].hand.x, J.arms[k].hand.y-prev.arms[k].hand.y),
-                                              sc*Math.hypot(J.legs[k].foot.x-prev.legs[k].foot.x, J.legs[k].foot.y-prev.legs[k].foot.y)); } }
+          for(let k=0;k<2;k++){ const v=Math.max(sc*Math.hypot(J.arms[k].hand.x-prev.arms[k].hand.x, J.arms[k].hand.y-prev.arms[k].hand.y),
+                                              sc*Math.hypot(J.legs[k].foot.x-prev.legs[k].foot.x, J.legs[k].foot.y-prev.legs[k].foot.y));
+            // Первые два кадра физики — сам импульс удара: там конечность и должна
+            // рвануть (замер: максимум всегда на rd.t ≈ 17 мс, 6–15 ед. от прогона к прогону).
+            // Прыжок ищем ПОСЛЕ импульса: там движение обязано быть непрерывным.
+            if(D.rd && D.rd.t>0 && D.rd.t<=36){ tipHit=Math.max(tipHit, v); }
+            else if(v>tip){ tip=v; tipAt=(D.rd?'rd.t='+(D.rd.t|0):'поза')+' dt='+dt.toFixed(0)+' seq.t='+(seq?seq.t|0:'-'); } } }
         prev=JSON.parse(JSON.stringify(J)); prevT=now;
         requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
       out.push({удар:id, режим:ko?'нокаут':'стаггер', кадров_физики:rag, локоть_мин:+minE.toFixed(0), локоть_макс:+maxE.toFixed(0),
                 колено_мин:+minK.toFixed(0), колено_макс:+maxK.toFixed(0), прямых_локтей:+(straightE/Math.max(1,rag*2)).toFixed(2),
-                прямых_коленей:+(straightK/Math.max(1,rag*2)).toFixed(2), макс_скорость_конца:+tip.toFixed(1), кадр_макс_мс:+dtMax.toFixed(0)});
+                прямых_коленей:+(straightK/Math.max(1,rag*2)).toFixed(2), макс_скорость_конца:+tip.toFixed(1), в_импульсе:+tipHit.toFixed(1), кадр_макс_мс:+dtMax.toFixed(0), где_макс:tipAt, где_колено_мин:minKAt});
     }
     return out;
   });
   console.log('углы в градусах (180 — прямая конечность); доля прямых — доля кадров физики с суставом > 176°');
-  console.log('удар'.padEnd(11)+'режим    физ.кадров  локоть мин/макс  колено мин/макс  прямых Л/К  конец, ед/кадр@60  кадр, мс');
+  console.log('удар'.padEnd(11)+'режим    физ.кадров  локоть мин/макс  колено мин/макс  прямых Л/К  после импульса, ед/кадр@60  кадр, мс');
   let ok=true;
   for(const x of r){
-    const bend = x.локоть_мин<165 && x.колено_мин<165, safe = x.локоть_макс<=190 && x.колено_макс<=190 && x.локоть_мин>=20 && x.колено_мин>=20;
+    // сгиб до 12° — пятка к тазу, так бывает у лежащего; переразгибание (> 190°) — дефект
+    const bend = x.локоть_мин<165 && x.колено_мин<165, safe = x.локоть_макс<=190 && x.колено_макс<=190 && x.локоть_мин>=12 && x.колено_мин>=12;
     if(x.кадров_физики>0 && !(bend&&safe)) ok=false;
     if(x.макс_скорость_конца>9) ok=false;
     console.log(x.удар.padEnd(11)+x.режим.padEnd(9)+String(x.кадров_физики).padStart(10)+
       (x.локоть_мин+'/'+x.локоть_макс).padStart(17)+(x.колено_мин+'/'+x.колено_макс).padStart(17)+
       (x.прямых_локтей+'/'+x.прямых_коленей).padStart(12)+String(x.макс_скорость_конца).padStart(10)+String(x.кадр_макс_мс).padStart(9));
   }
+  for(const x of r) console.log('   ', x.удар, x.режим, 'в импульсе:', x.в_импульсе, '| макс после:', x.где_макс, '| колено мин:', x.где_колено_мин);
   console.log(ok?'✔ кукла гнётся в суставах и не выворачивается':'✖ кукла: сустав не гнётся, выворачивается или конечность прыгает', ' ошибок:', errs.length, errs.slice(0,2));
   await b.close();
 })();
